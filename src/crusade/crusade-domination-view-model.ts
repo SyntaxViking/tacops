@@ -68,6 +68,17 @@ function isJustCaptured(planet: CrusadePlanet): boolean {
   return race !== null && race.pointsRemaining < 0;
 }
 
+// Struggle-gated so an Expansion planet (never has struggleData, and can legitimately show 0/0
+// before its first leaderboard fetch) never gets swept into this - only real Domination cooldown
+// (post-capture lockout, or simply not fought over yet this stage) counts.
+function isInDominationCooldown(planet: CrusadePlanet): boolean {
+  return planet.struggleData != null && (planet.pointsFor ?? 0) === 0 && (planet.pointsAgainst ?? 0) === 0;
+}
+
+function isDominationSunk(planet: CrusadePlanet): boolean {
+  return isJustCaptured(planet) || isInDominationCooldown(planet);
+}
+
 function pointsRemaining(planet: CrusadePlanet): { imperial: number; devastation: number } {
   const progress = computeConquestProgress(planet);
   if (!progress) return { imperial: Infinity, devastation: Infinity };
@@ -96,23 +107,29 @@ function compareBySortMode(mode: DominationSortMode, a: CrusadePlanet, b: Crusad
   }
 }
 
-// Three-bucket partition shared by both Crusade phases: planets a side has already captured (see
-// isJustCaptured) always sink to the very bottom, checked before rank so a just-flipped planet
-// never gets to hide in the ranked group; then planets where the player has a faction rank (which
-// always implies a side rank too, for the same planet) come next; everything else follows. Each
-// bucket is ordered by the caller's compare, so "ranked first" doesn't disturb whatever ordering
-// is currently selected.
+// Four-bucket partition shared by both Crusade phases, in priority order: sunk planets (caller's
+// isSunk - e.g. Domination's already-captured-or-cooldown check) always go last, checked first so
+// they can't hide in a group above; starred planets come next (outranks being ranked - a planet
+// the player deliberately flagged is a stronger signal than an incidental leaderboard rank);
+// then ranked (a faction rank always implies a side rank too, for the same planet); everything
+// else follows. Each bucket is ordered by the caller's compare, so none of this grouping disturbs
+// whatever sort is currently selected.
 export function sortPlanetsRankedFirst(
   planets: CrusadePlanet[],
   leaderboardByPlanet: Map<string, PlanetLeaderboard>,
+  starredPlanetIds: ReadonlySet<string>,
   compare: (a: CrusadePlanet, b: CrusadePlanet) => number,
+  isSunk: (planet: CrusadePlanet) => boolean = () => false,
 ): CrusadePlanet[] {
+  const starred: CrusadePlanet[] = [];
   const ranked: CrusadePlanet[] = [];
   const unranked: CrusadePlanet[] = [];
-  const justCaptured: CrusadePlanet[] = [];
+  const sunk: CrusadePlanet[] = [];
   for (const planet of planets) {
-    if (isJustCaptured(planet)) {
-      justCaptured.push(planet);
+    if (isSunk(planet)) {
+      sunk.push(planet);
+    } else if (starredPlanetIds.has(planet.planetId)) {
+      starred.push(planet);
     } else if (leaderboardByPlanet.get(planet.planetId)?.faction?.myRank != null) {
       ranked.push(planet);
     } else {
@@ -120,21 +137,29 @@ export function sortPlanetsRankedFirst(
     }
   }
 
+  starred.sort(compare);
   ranked.sort(compare);
   unranked.sort(compare);
-  justCaptured.sort(compare);
+  sunk.sort(compare);
 
-  return [...ranked, ...unranked, ...justCaptured];
+  return [...starred, ...ranked, ...unranked, ...sunk];
 }
 
 export function sortDominationPlanets(
   planets: CrusadePlanet[],
   leaderboardByPlanet: Map<string, PlanetLeaderboard>,
+  starredPlanetIds: ReadonlySet<string>,
   sortMode: DominationSortMode = "closestToCapture",
 ): CrusadePlanet[] {
-  return sortPlanetsRankedFirst(planets, leaderboardByPlanet, (a, b) => {
-    const cmp = compareBySortMode(sortMode, a, b);
-    if (cmp !== 0) return cmp;
-    return factionParticipants(leaderboardByPlanet.get(a.planetId)) - factionParticipants(leaderboardByPlanet.get(b.planetId));
-  });
+  return sortPlanetsRankedFirst(
+    planets,
+    leaderboardByPlanet,
+    starredPlanetIds,
+    (a, b) => {
+      const cmp = compareBySortMode(sortMode, a, b);
+      if (cmp !== 0) return cmp;
+      return factionParticipants(leaderboardByPlanet.get(a.planetId)) - factionParticipants(leaderboardByPlanet.get(b.planetId));
+    },
+    isDominationSunk,
+  );
 }

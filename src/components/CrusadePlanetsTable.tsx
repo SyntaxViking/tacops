@@ -1,6 +1,7 @@
 import { FactionBadge, LeaderboardBreakdownCell, SidePercentCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
+import { StarIconButton } from "./StarIconButton";
 import { Spinner } from "./Spinner";
 import { EMPTY_REFRESH_ENTRY } from "./planet-refresh-defaults";
 import type { CrusadePlanet, PlanetRefreshEntry } from "../api/types";
@@ -11,13 +12,22 @@ interface CrusadePlanetsTableProps {
   planets: CrusadePlanet[];
   planetRefreshState: Map<string, PlanetRefreshEntry>;
   onRefreshPlanet: (planetId: string) => void;
+  favoritedPlanetIds: ReadonlySet<string>;
+  onToggleFavoritePlanet: (planetId: string) => void;
 }
 
-export function CrusadePlanetsTable({ planets, planetRefreshState, onRefreshPlanet }: CrusadePlanetsTableProps) {
+export function CrusadePlanetsTable({
+  planets,
+  planetRefreshState,
+  onRefreshPlanet,
+  favoritedPlanetIds,
+  onToggleFavoritePlanet,
+}: CrusadePlanetsTableProps) {
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
       <thead>
         <tr>
+          <th className={cellClass}>Favorite</th>
           <th className={cellClass}>Planet</th>
           <th className={cellClass}>Imperium % / Devastation %</th>
           <th className={cellClass}>Leading Factions (Imperium)</th>
@@ -33,6 +43,9 @@ export function CrusadePlanetsTable({ planets, planetRefreshState, onRefreshPlan
           const lb = refreshEntry.leaderboard;
           return (
             <tr key={planet.planetId} className={refreshEntry.isLoading ? "pointer-events-none opacity-60" : ""}>
+              <td className={cellClass}>
+                <StarIconButton isFavorited={favoritedPlanetIds.has(planet.planetId)} onToggle={() => onToggleFavoritePlanet(planet.planetId)} />
+              </td>
               <td className={cellClass}>{planet.name}</td>
               <td className={cellClass}>
                 <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />

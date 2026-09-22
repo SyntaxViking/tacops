@@ -1,6 +1,7 @@
 import { fetchCrusadeDataFromLoki, fetchLeaderboardDataFromLoki, fetchPlayerDataFromLoki } from "./loki-client";
 import { recordSighting } from "./track";
 import { renderInsightsPage } from "./insights";
+import { getUserPreferences, setUserPreferenceColumn } from "./user-preferences";
 
 interface Env {
   DB: D1Database;
@@ -20,6 +21,16 @@ interface LeaderboardRequestBody extends RequestBody {
 
 interface TrackRequestBody {
   userHash: string;
+}
+
+interface GetPreferencesRequestBody {
+  userHash: string;
+}
+
+interface SetPreferenceRequestBody {
+  userHash: string;
+  secretHash: string;
+  ids: string[];
 }
 
 // Cloudflare serves a matching file out of the [assets] directory before this Worker ever runs
@@ -78,6 +89,24 @@ export default {
       const body = (await request.json()) as TrackRequestBody;
       ctx.waitUntil(recordSighting(env.DB, body.userHash));
       return new Response(null, { status: 204 });
+    }
+
+    if (url.pathname === "/api/preferences/get" && request.method === "POST") {
+      const body = (await request.json()) as GetPreferencesRequestBody;
+      const preferences = await getUserPreferences(env.DB, body.userHash);
+      return Response.json(preferences);
+    }
+
+    if (url.pathname === "/api/preferences/favorited-characters" && request.method === "POST") {
+      const body = (await request.json()) as SetPreferenceRequestBody;
+      const result = await setUserPreferenceColumn(env.DB, body.userHash, body.secretHash, "favorited_characters", body.ids);
+      return result.ok ? new Response(null, { status: 204 }) : Response.json({ error: result.error }, { status: 403 });
+    }
+
+    if (url.pathname === "/api/preferences/favorited-planets" && request.method === "POST") {
+      const body = (await request.json()) as SetPreferenceRequestBody;
+      const result = await setUserPreferenceColumn(env.DB, body.userHash, body.secretHash, "favorited_planets", body.ids);
+      return result.ok ? new Response(null, { status: 204 }) : Response.json({ error: result.error }, { status: 403 });
     }
 
     if (url.pathname === "/insights" && request.method === "GET") {

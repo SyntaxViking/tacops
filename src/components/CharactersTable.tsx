@@ -1,11 +1,18 @@
 import { Icon } from "./Icon";
 import { IconRow } from "./IconRow";
+import { StarIconButton } from "./StarIconButton";
 import { getCharacterRow } from "../characters/character-view-model";
 import type { RawUnit } from "../api/types";
 
 const cellClass = "border-b border-black/10 px-3 py-2 align-top dark:border-white/15";
 
-export function CharactersTable({ heroes }: { heroes: RawUnit[] }) {
+interface CharactersTableProps {
+  heroes: RawUnit[];
+  favoritedCharacterIds: ReadonlySet<string>;
+  onToggleFavorite: (characterId: string) => void;
+}
+
+export function CharactersTable({ heroes, favoritedCharacterIds, onToggleFavorite }: CharactersTableProps) {
   if (heroes.length === 0) {
     return <p>No characters found.</p>;
   }
@@ -17,6 +24,7 @@ export function CharactersTable({ heroes }: { heroes: RawUnit[] }) {
       <thead>
         <tr>
           <th className={cellClass}>Character</th>
+          <th className={cellClass}>Favorite</th>
           <th className={cellClass}>Portrait</th>
           <th className={cellClass}>Faction</th>
           <th className={cellClass}>Rarity</th>
@@ -32,6 +40,9 @@ export function CharactersTable({ heroes }: { heroes: RawUnit[] }) {
           return (
             <tr key={row.id}>
               <td className={cellClass}>{row.name}</td>
+              <td className={cellClass}>
+                <StarIconButton isFavorited={favoritedCharacterIds.has(row.id)} onToggle={() => onToggleFavorite(row.id)} />
+              </td>
               <td className={cellClass}>
                 <Icon
                   src={row.portraitUrl}

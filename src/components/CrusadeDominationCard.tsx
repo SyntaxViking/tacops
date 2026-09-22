@@ -1,6 +1,7 @@
 import { FactionBadge, LeaderboardBreakdownCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
+import { StarIconButton } from "./StarIconButton";
 import { Spinner } from "./Spinner";
 import { computeCaptureRace, computeConquestProgress, isPlanetRanked } from "../crusade/crusade-domination-view-model";
 import type { CrusadePlanet, PlanetRefreshEntry } from "../api/types";
@@ -12,9 +13,11 @@ interface CrusadeDominationCardProps {
   refreshEntry: PlanetRefreshEntry;
   onSelectPlanet: (planetId: string) => void;
   onRefresh: () => void;
+  isFavorited: boolean;
+  onToggleFavorite: () => void;
 }
 
-export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, onRefresh }: CrusadeDominationCardProps) {
+export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, onRefresh, isFavorited, onToggleFavorite }: CrusadeDominationCardProps) {
   const leaderboard = refreshEntry.leaderboard ?? undefined;
   const progress = computeConquestProgress(planet);
   const captureRace = computeCaptureRace(planet);
@@ -34,7 +37,10 @@ export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, on
         } ${refreshEntry.isLoading ? "pointer-events-none" : ""}`}
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="font-medium">{planet.name}</span>
+          <div className="flex items-center gap-1">
+            <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} />
+            <span className="font-medium">{planet.name}</span>
+          </div>
           {planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}
         </div>
         <div className="flex items-start justify-between gap-2">

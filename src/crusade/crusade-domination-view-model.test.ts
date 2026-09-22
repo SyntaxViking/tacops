@@ -10,6 +10,8 @@ function leaderboard(overrides: Partial<PlanetLeaderboard> = {}): PlanetLeaderbo
   return { planetId: "planet_001", topFactionsFor: [], topFactionsAgainst: [], side: null, faction: null, ...overrides };
 }
 
+const noStars = new Set<string>();
+
 describe("computeConquestProgress", () => {
   it("returns null when the planet has no struggleData (not currently contestable)", () => {
     expect(computeConquestProgress(planet())).toBeNull();
@@ -117,7 +119,7 @@ describe("sortDominationPlanets", () => {
       ["far", leaderboard({ planetId: "far", faction: { numParticipants: 100, myRank: 5, myPoints: 1, benchmarks: [], referenceScore: null } })],
       ["close", leaderboard({ planetId: "close", faction: { numParticipants: 100, myRank: 50, myPoints: 1, benchmarks: [], referenceScore: null } })],
     ]);
-    expect(sortDominationPlanets(planets, byPlanet).map((p) => p.planetId)).toEqual(["close", "far", "unranked"]);
+    expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["close", "far", "unranked"]);
   });
 
   it("sinks a planet that is both ranked and just-captured to the bottom, overriding rank", () => {
@@ -135,7 +137,7 @@ describe("sortDominationPlanets", () => {
       ["ranked-but-captured", leaderboard({ planetId: "ranked-but-captured", faction: { numParticipants: 100, myRank: 1, myPoints: 1, benchmarks: [], referenceScore: null } })],
       ["ranked-and-contested", leaderboard({ planetId: "ranked-and-contested", faction: { numParticipants: 100, myRank: 5, myPoints: 1, benchmarks: [], referenceScore: null } })],
     ]);
-    expect(sortDominationPlanets(planets, byPlanet).map((p) => p.planetId)).toEqual(["ranked-and-contested", "ranked-but-captured"]);
+    expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["ranked-and-contested", "ranked-but-captured"]);
   });
 
   it("sorts unranked planets after ranked ones, ascending by points remaining for the closest side to capture", () => {
@@ -147,7 +149,7 @@ describe("sortDominationPlanets", () => {
     const byPlanet = new Map<string, PlanetLeaderboard>([
       ["ranked", leaderboard({ planetId: "ranked", faction: { numParticipants: 100, myRank: 5, myPoints: 1, benchmarks: [], referenceScore: null } })],
     ]);
-    expect(sortDominationPlanets(planets, byPlanet).map((p) => p.planetId)).toEqual(["ranked", "easy", "hard"]);
+    expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["ranked", "easy", "hard"]);
   });
 
   it("tie-breaks equal points-remaining (or both missing struggleData) by ascending faction participant count", () => {
@@ -156,7 +158,7 @@ describe("sortDominationPlanets", () => {
       ["crowded", leaderboard({ planetId: "crowded", faction: { numParticipants: 500, myRank: null, myPoints: null, benchmarks: [], referenceScore: null } })],
       ["sparse", leaderboard({ planetId: "sparse", faction: { numParticipants: 20, myRank: null, myPoints: null, benchmarks: [], referenceScore: null } })],
     ]);
-    expect(sortDominationPlanets(planets, byPlanet).map((p) => p.planetId)).toEqual(["sparse", "crowded"]);
+    expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["sparse", "crowded"]);
   });
 
   it("handles planets with no leaderboard data at all (sorts them into the unranked group, last)", () => {
@@ -164,7 +166,7 @@ describe("sortDominationPlanets", () => {
     const byPlanet = new Map<string, PlanetLeaderboard>([
       ["has-data", leaderboard({ planetId: "has-data", faction: { numParticipants: 100, myRank: null, myPoints: null, benchmarks: [{ rank: 10, points: 500 }], referenceScore: null } })],
     ]);
-    expect(sortDominationPlanets(planets, byPlanet).map((p) => p.planetId)).toEqual(["has-data", "no-data"]);
+    expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["has-data", "no-data"]);
   });
 
   it("always sinks just-captured planets (negative points remaining) below live contested ones, regardless of sort mode", () => {
@@ -187,7 +189,7 @@ describe("sortDominationPlanets", () => {
     ];
     const byPlanet = new Map<string, PlanetLeaderboard>();
     for (const mode of ["closestToCapture", "imperialFirst", "devastationFirst"] as const) {
-      expect(sortDominationPlanets(planets, byPlanet, mode).map((p) => p.planetId)).toEqual(["still-contested", "just-captured"]);
+      expect(sortDominationPlanets(planets, byPlanet, noStars, mode).map((p) => p.planetId)).toEqual(["still-contested", "just-captured"]);
     }
   });
 
@@ -209,7 +211,7 @@ describe("sortDominationPlanets", () => {
       }),
     ];
     const byPlanet = new Map<string, PlanetLeaderboard>();
-    expect(sortDominationPlanets(planets, byPlanet, "imperialFirst").map((p) => p.planetId)).toEqual(["imperial-close", "imperial-far"]);
+    expect(sortDominationPlanets(planets, byPlanet, noStars, "imperialFirst").map((p) => p.planetId)).toEqual(["imperial-close", "imperial-far"]);
   });
 
   it("devastationFirst mode sorts by devastation points remaining first, imperial as tiebreak", () => {
@@ -230,6 +232,50 @@ describe("sortDominationPlanets", () => {
       }),
     ];
     const byPlanet = new Map<string, PlanetLeaderboard>();
-    expect(sortDominationPlanets(planets, byPlanet, "devastationFirst").map((p) => p.planetId)).toEqual(["devastation-close", "devastation-far"]);
+    expect(sortDominationPlanets(planets, byPlanet, noStars, "devastationFirst").map((p) => p.planetId)).toEqual(["devastation-close", "devastation-far"]);
+  });
+
+  it("puts starred planets ahead of ranked ones, ordered by sort mode within the starred group", () => {
+    const planets = [
+      planet({ planetId: "ranked-only" }),
+      planet({
+        planetId: "starred-far",
+        sideOwner: "For",
+        pointsFor: 100,
+        pointsAgainst: 100,
+        struggleData: { conquestThresholdPointsAttacker: 10000, conquestThresholdPointsDefender: 10000 },
+      }),
+      planet({
+        planetId: "starred-close",
+        sideOwner: "For",
+        pointsFor: 100,
+        pointsAgainst: 9900,
+        struggleData: { conquestThresholdPointsAttacker: 10000, conquestThresholdPointsDefender: 10000 },
+      }),
+    ];
+    const byPlanet = new Map<string, PlanetLeaderboard>([
+      ["ranked-only", leaderboard({ planetId: "ranked-only", faction: { numParticipants: 100, myRank: 1, myPoints: 1, benchmarks: [], referenceScore: null } })],
+    ]);
+    const starred = new Set(["starred-far", "starred-close"]);
+    expect(sortDominationPlanets(planets, byPlanet, starred).map((p) => p.planetId)).toEqual(["starred-close", "starred-far", "ranked-only"]);
+  });
+
+  it("sinks a starred planet in cooldown (0 points both sides) to the bottom, overriding star", () => {
+    const planets = [
+      planet({
+        planetId: "starred-cooldown",
+        struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
+      }),
+      planet({ planetId: "starred-live" }),
+    ];
+    const byPlanet = new Map<string, PlanetLeaderboard>();
+    const starred = new Set(["starred-cooldown", "starred-live"]);
+    expect(sortDominationPlanets(planets, byPlanet, starred).map((p) => p.planetId)).toEqual(["starred-live", "starred-cooldown"]);
+  });
+
+  it("does not treat a planet with 0/0 points but no struggleData as cooldown (never fetched yet, not Domination-active)", () => {
+    const planets = [planet({ planetId: "no-struggle-data" })];
+    const byPlanet = new Map<string, PlanetLeaderboard>();
+    expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["no-struggle-data"]);
   });
 });

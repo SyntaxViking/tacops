@@ -22,6 +22,7 @@ import { entryIsUnavailable } from "./board/board-view-model";
 import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
 import { storeWebCredential } from "./api/store-web-credential";
 import { fetchTakedownScreenEnabled } from "./api/fetch-app-config";
+import { fetchUserPreferences, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
 import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
 import type { SolveRequest, SolveResponse } from "./board/board-solver.worker";
@@ -59,6 +60,8 @@ export function App() {
   const [secondsRemaining, setSecondsRemaining] = useState(FETCH_COUNTDOWN_SECONDS);
   const [board, setBoard] = useState<ExpeditionBoardEntry[]>([]);
   const [heroes, setHeroes] = useState<RawUnit[]>([]);
+  const [favoritedCharacterIds, setFavoritedCharacterIds] = useState<Set<string>>(new Set());
+  const [favoritedPlanetIds, setFavoritedPlanetIds] = useState<Set<string>>(new Set());
   const [machinesOfWar, setMachinesOfWar] = useState<RawUnit[]>([]);
   const [adViewsRemaining, setAdViewsRemaining] = useState<number | null>(null);
   const [resources, setResources] = useState<PlayerResources | null>(null);
@@ -263,6 +266,14 @@ export function App() {
         void storeWebCredential(userId, clientSecret);
         void trackUsage(userId, environment);
       }
+      // Best-effort restore of starred characters/planets - a failure here shouldn't affect the
+      // data that already loaded successfully above, so it's not part of the try/catch's failure path.
+      fetchUserPreferences(userId)
+        .then((preferences) => {
+          setFavoritedCharacterIds(new Set(preferences.favoritedCharacters));
+          setFavoritedPlanetIds(new Set(preferences.favoritedPlanets));
+        })
+        .catch((error) => console.error("[App] go(): fetchUserPreferences failed", error));
     } catch (error) {
       console.error("[App] go(): caught error", error);
       setStatus(`Failed: ${error}`);
@@ -445,6 +456,29 @@ export function App() {
     void fetchOnePlanet(planetId);
   }
 
+  // Optimistically updates local state, then fires the full replacement list to the backend -
+  // best-effort, matching trackUsage/storeWebCredential above (a sync failure shouldn't block the
+  // UI from reflecting the click).
+  function toggleFavoriteCharacter(characterId: string) {
+    const next = new Set(favoritedCharacterIds);
+    if (next.has(characterId)) next.delete(characterId);
+    else next.add(characterId);
+    setFavoritedCharacterIds(next);
+    setFavoritedCharacters(userId, clientSecret, [...next]).catch((error) =>
+      console.error("[App] toggleFavoriteCharacter(): setFavoritedCharacters failed", error),
+    );
+  }
+
+  function toggleFavoritePlanet(planetId: string) {
+    const next = new Set(favoritedPlanetIds);
+    if (next.has(planetId)) next.delete(planetId);
+    else next.add(planetId);
+    setFavoritedPlanetIds(next);
+    setFavoritedPlanets(userId, clientSecret, [...next]).catch((error) =>
+      console.error("[App] toggleFavoritePlanet(): setFavoritedPlanets failed", error),
+    );
+  }
+
   async function exportPlayerData() {
     const contents = JSON.stringify(rawPlayerData, null, 2);
     const defaultFileName = `tacops-${environment}-player-data.json`;
@@ -618,7 +652,9 @@ export function App() {
                 </div>
               </>
             )}
-            {activeTab === "characters" && <CharactersTable heroes={heroes} />}
+            {activeTab === "characters" && (
+              <CharactersTable heroes={heroes} favoritedCharacterIds={favoritedCharacterIds} onToggleFavorite={toggleFavoriteCharacter} />
+            )}
             {activeTab === "mows" && <MowTable machinesOfWar={machinesOfWar} />}
             {activeTab === "guildchat" && <GuildChatTab environment={environment} />}
             {activeTab === "coverage" && <BoardCoverageTab />}
@@ -631,6 +667,8 @@ export function App() {
                 error={crusadeError}
                 viewMode={viewMode}
                 onRefreshPlanet={refreshPlanetNow}
+                favoritedPlanetIds={favoritedPlanetIds}
+                onToggleFavoritePlanet={toggleFavoritePlanet}
               />
             )}
           </div>

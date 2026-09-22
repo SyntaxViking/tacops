@@ -1,6 +1,7 @@
 import { FactionBadge, LeaderboardBreakdownCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
+import { StarIconButton } from "./StarIconButton";
 import { Spinner } from "./Spinner";
 import { EMPTY_REFRESH_ENTRY } from "./planet-refresh-defaults";
 import { computeCaptureRace, computeConquestProgress, isPlanetRanked } from "../crusade/crusade-domination-view-model";
@@ -13,13 +14,23 @@ interface CrusadeDominationTableProps {
   planetRefreshState: Map<string, PlanetRefreshEntry>;
   onSelectPlanet: (planetId: string) => void;
   onRefreshPlanet: (planetId: string) => void;
+  favoritedPlanetIds: ReadonlySet<string>;
+  onToggleFavoritePlanet: (planetId: string) => void;
 }
 
-export function CrusadeDominationTable({ planets, planetRefreshState, onSelectPlanet, onRefreshPlanet }: CrusadeDominationTableProps) {
+export function CrusadeDominationTable({
+  planets,
+  planetRefreshState,
+  onSelectPlanet,
+  onRefreshPlanet,
+  favoritedPlanetIds,
+  onToggleFavoritePlanet,
+}: CrusadeDominationTableProps) {
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
       <thead>
         <tr>
+          <th className={cellClass}>Favorite</th>
           <th className={cellClass}>Planet</th>
           <th className={cellClass}>Sector</th>
           <th className={cellClass}>Owner</th>
@@ -45,6 +56,9 @@ export function CrusadeDominationTable({ planets, planetRefreshState, onSelectPl
                 refreshEntry.isLoading ? "pointer-events-none opacity-60" : ""
               }`}
             >
+              <td className={cellClass}>
+                <StarIconButton isFavorited={favoritedPlanetIds.has(planet.planetId)} onToggle={() => onToggleFavoritePlanet(planet.planetId)} />
+              </td>
               <td className={cellClass}>{planet.name}</td>
               <td className={cellClass}>{(planet.zone ?? 0) + 1}</td>
               <td className={cellClass}>{planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}</td>
