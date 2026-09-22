@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Icon } from "./Icon";
 import { IconRow } from "./IconRow";
 import { StarIconButton } from "./StarIconButton";
-import { getCharacterRow } from "../characters/character-view-model";
+import { CharacterSortModeToggle } from "./CharacterSortModeToggle";
+import { getCharacterRow, sortCharacterRows, type CharacterSortMode } from "../characters/character-view-model";
 import type { RawUnit } from "../api/types";
 
 const cellClass = "border-b border-black/10 px-3 py-2 align-top dark:border-white/15";
@@ -13,31 +15,33 @@ interface CharactersTableProps {
 }
 
 export function CharactersTable({ heroes, favoritedCharacterIds, onToggleFavorite }: CharactersTableProps) {
+  const [sortMode, setSortMode] = useState<CharacterSortMode>("powerDesc");
+
   if (heroes.length === 0) {
     return <p>No characters found.</p>;
   }
 
-  const sortedHeroes = [...heroes].sort((a, b) => (b.power ?? -Infinity) - (a.power ?? -Infinity));
+  const sortedRows = sortCharacterRows(heroes.map(getCharacterRow), sortMode);
 
   return (
-    <table className="mt-4 w-full table-auto border-collapse text-left">
-      <thead>
-        <tr>
-          <th className={cellClass}>Character</th>
-          <th className={cellClass}>Favorite</th>
-          <th className={cellClass}>Portrait</th>
-          <th className={cellClass}>Faction</th>
-          <th className={cellClass}>Rarity</th>
-          <th className={cellClass}>Stars</th>
-          <th className={cellClass}>Rank</th>
-          <th className={cellClass}>Damage Profile</th>
-          <th className={cellClass}>Traits</th>
-        </tr>
-      </thead>
-      <tbody>
-        {sortedHeroes.map((hero) => {
-          const row = getCharacterRow(hero);
-          return (
+    <>
+      <CharacterSortModeToggle value={sortMode} onChange={setSortMode} />
+      <table className="mt-4 w-full table-auto border-collapse text-left">
+        <thead>
+          <tr>
+            <th className={cellClass}>Character</th>
+            <th className={cellClass}>Favorite</th>
+            <th className={cellClass}>Portrait</th>
+            <th className={cellClass}>Faction</th>
+            <th className={cellClass}>Rarity</th>
+            <th className={cellClass}>Stars</th>
+            <th className={cellClass}>Rank</th>
+            <th className={cellClass}>Damage Profile</th>
+            <th className={cellClass}>Traits</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sortedRows.map((row) => (
             <tr key={row.id}>
               <td className={cellClass}>{row.name}</td>
               <td className={cellClass}>
@@ -78,9 +82,9 @@ export function CharactersTable({ heroes, favoritedCharacterIds, onToggleFavorit
                 </IconRow>
               </td>
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
