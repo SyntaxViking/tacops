@@ -58,13 +58,6 @@ function factionParticipants(leaderboard: PlanetLeaderboard | undefined): number
   return leaderboard?.faction?.numParticipants ?? Infinity;
 }
 
-function factionPercentile(leaderboard: PlanetLeaderboard | undefined): number {
-  const rank = leaderboard?.faction?.myRank;
-  const numParticipants = leaderboard?.faction?.numParticipants;
-  if (rank == null || !numParticipants) return Infinity;
-  return rank / numParticipants;
-}
-
 export type DominationSortMode = "closestToCapture" | "imperialFirst" | "devastationFirst";
 
 // A negative pointsRemaining means a side has already crossed its conquest threshold - the planet
@@ -103,39 +96,45 @@ function compareBySortMode(mode: DominationSortMode, a: CrusadePlanet, b: Crusad
   }
 }
 
-// Two-group sort: planets where the player has a faction rank come first (best percentile first -
-// "how am I already doing here"); the rest follow, ordered per sortMode, tie-broken by how few
-// faction participants they're competing against. Planets a side has already captured (see
-// isJustCaptured) always sink to the very bottom regardless of sortMode - they're stale, not
-// live opportunities.
+// Three-bucket partition shared by both Crusade phases: planets a side has already captured (see
+// isJustCaptured) always sink to the very bottom, checked before rank so a just-flipped planet
+// never gets to hide in the ranked group; then planets where the player has a faction rank (which
+// always implies a side rank too, for the same planet) come next; everything else follows. Each
+// bucket is ordered by the caller's compare, so "ranked first" doesn't disturb whatever ordering
+// is currently selected.
+export function sortPlanetsRankedFirst(
+  planets: CrusadePlanet[],
+  leaderboardByPlanet: Map<string, PlanetLeaderboard>,
+  compare: (a: CrusadePlanet, b: CrusadePlanet) => number,
+): CrusadePlanet[] {
+  const ranked: CrusadePlanet[] = [];
+  const unranked: CrusadePlanet[] = [];
+  const justCaptured: CrusadePlanet[] = [];
+  for (const planet of planets) {
+    if (isJustCaptured(planet)) {
+      justCaptured.push(planet);
+    } else if (leaderboardByPlanet.get(planet.planetId)?.faction?.myRank != null) {
+      ranked.push(planet);
+    } else {
+      unranked.push(planet);
+    }
+  }
+
+  ranked.sort(compare);
+  unranked.sort(compare);
+  justCaptured.sort(compare);
+
+  return [...ranked, ...unranked, ...justCaptured];
+}
+
 export function sortDominationPlanets(
   planets: CrusadePlanet[],
   leaderboardByPlanet: Map<string, PlanetLeaderboard>,
   sortMode: DominationSortMode = "closestToCapture",
 ): CrusadePlanet[] {
-  const ranked: CrusadePlanet[] = [];
-  const contested: CrusadePlanet[] = [];
-  const justCaptured: CrusadePlanet[] = [];
-  for (const planet of planets) {
-    const leaderboard = leaderboardByPlanet.get(planet.planetId);
-    if (leaderboard?.faction?.myRank != null) {
-      ranked.push(planet);
-    } else if (isJustCaptured(planet)) {
-      justCaptured.push(planet);
-    } else {
-      contested.push(planet);
-    }
-  }
-
-  ranked.sort((a, b) => factionPercentile(leaderboardByPlanet.get(a.planetId)) - factionPercentile(leaderboardByPlanet.get(b.planetId)));
-
-  const byModeThenParticipants = (a: CrusadePlanet, b: CrusadePlanet) => {
+  return sortPlanetsRankedFirst(planets, leaderboardByPlanet, (a, b) => {
     const cmp = compareBySortMode(sortMode, a, b);
     if (cmp !== 0) return cmp;
     return factionParticipants(leaderboardByPlanet.get(a.planetId)) - factionParticipants(leaderboardByPlanet.get(b.planetId));
-  };
-  contested.sort(byModeThenParticipants);
-  justCaptured.sort(byModeThenParticipants);
-
-  return [...ranked, ...contested, ...justCaptured];
+  });
 }

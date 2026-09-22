@@ -105,13 +105,37 @@ describe("isPlanetRanked", () => {
 });
 
 describe("sortDominationPlanets", () => {
-  it("puts faction-ranked planets first, best percentile first", () => {
-    const planets = [planet({ planetId: "worse" }), planet({ planetId: "better" })];
+  it("puts faction-ranked planets first, ordered by the selected sort mode rather than leaderboard percentile", () => {
+    // "far" has a much better (lower) faction rank/percentile than "close", but "close" is nearer
+    // to capture - the ranked group should still follow the sort mode, not the percentile.
+    const planets = [
+      planet({ planetId: "far", sideOwner: "For", pointsFor: 100, pointsAgainst: 100, struggleData: { conquestThresholdPointsAttacker: 10000, conquestThresholdPointsDefender: 10000 } }),
+      planet({ planetId: "close", sideOwner: "For", pointsFor: 100, pointsAgainst: 9900, struggleData: { conquestThresholdPointsAttacker: 10000, conquestThresholdPointsDefender: 10000 } }),
+      planet({ planetId: "unranked" }),
+    ];
     const byPlanet = new Map<string, PlanetLeaderboard>([
-      ["worse", leaderboard({ planetId: "worse", faction: { numParticipants: 100, myRank: 50, myPoints: 1, benchmarks: [], referenceScore: null } })],
-      ["better", leaderboard({ planetId: "better", faction: { numParticipants: 100, myRank: 5, myPoints: 1, benchmarks: [], referenceScore: null } })],
+      ["far", leaderboard({ planetId: "far", faction: { numParticipants: 100, myRank: 5, myPoints: 1, benchmarks: [], referenceScore: null } })],
+      ["close", leaderboard({ planetId: "close", faction: { numParticipants: 100, myRank: 50, myPoints: 1, benchmarks: [], referenceScore: null } })],
     ]);
-    expect(sortDominationPlanets(planets, byPlanet).map((p) => p.planetId)).toEqual(["better", "worse"]);
+    expect(sortDominationPlanets(planets, byPlanet).map((p) => p.planetId)).toEqual(["close", "far", "unranked"]);
+  });
+
+  it("sinks a planet that is both ranked and just-captured to the bottom, overriding rank", () => {
+    const planets = [
+      planet({
+        planetId: "ranked-but-captured",
+        sideOwner: "For",
+        pointsFor: 10,
+        pointsAgainst: 9999,
+        struggleData: { conquestThresholdPointsAttacker: 9000, conquestThresholdPointsDefender: 10000 },
+      }),
+      planet({ planetId: "ranked-and-contested" }),
+    ];
+    const byPlanet = new Map<string, PlanetLeaderboard>([
+      ["ranked-but-captured", leaderboard({ planetId: "ranked-but-captured", faction: { numParticipants: 100, myRank: 1, myPoints: 1, benchmarks: [], referenceScore: null } })],
+      ["ranked-and-contested", leaderboard({ planetId: "ranked-and-contested", faction: { numParticipants: 100, myRank: 5, myPoints: 1, benchmarks: [], referenceScore: null } })],
+    ]);
+    expect(sortDominationPlanets(planets, byPlanet).map((p) => p.planetId)).toEqual(["ranked-and-contested", "ranked-but-captured"]);
   });
 
   it("sorts unranked planets after ranked ones, ascending by points remaining for the closest side to capture", () => {

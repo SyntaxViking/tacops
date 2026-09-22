@@ -5,7 +5,7 @@ import { CrusadeDominationCards } from "./CrusadeDominationCards";
 import { CrusadeDominationTable } from "./CrusadeDominationTable";
 import { DominationSortModeToggle } from "./DominationSortModeToggle";
 import { PlanetSectorMapModal } from "./PlanetSectorMapModal";
-import { sortDominationPlanets, type DominationSortMode } from "../crusade/crusade-domination-view-model";
+import { sortDominationPlanets, sortPlanetsRankedFirst, type DominationSortMode } from "../crusade/crusade-domination-view-model";
 import { computeSectorMap } from "../crusade/crusade-sector-map-view-model";
 import type { ViewMode } from "./ViewModeToggle";
 import type { CrusadeData, CrusadeSectorMap, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
@@ -94,16 +94,19 @@ export function CrusadeTab({ crusadeData, planetRefreshState, sectorMap, error, 
     return <p>No crusade zone is currently active (between phases).</p>;
   }
 
-  // Ascending by Faction Leaderboard reference score - a rough "how competitive is this planet"
-  // signal (see fetch-crusade-data.ts's pickReferenceScore). Planets with no score yet (still
-  // loading, or genuinely no faction leaderboard data) sort last rather than being dropped.
-  const activePlanets = crusadeData.planets
-    .filter((p) => planetRefreshState.has(p.planetId))
-    .sort((a, b) => {
+  // Ranked-first (see sortPlanetsRankedFirst), then ascending by Faction Leaderboard reference
+  // score within each group - a rough "how competitive is this planet" signal (see
+  // fetch-crusade-data.ts's pickReferenceScore). Planets with no score yet (still loading, or
+  // genuinely no faction leaderboard data) sort last within their group rather than being dropped.
+  const activePlanets = sortPlanetsRankedFirst(
+    crusadeData.planets.filter((p) => planetRefreshState.has(p.planetId)),
+    leaderboardByPlanet,
+    (a, b) => {
       const scoreA = leaderboardByPlanet.get(a.planetId)?.faction?.referenceScore?.points ?? Infinity;
       const scoreB = leaderboardByPlanet.get(b.planetId)?.faction?.referenceScore?.points ?? Infinity;
       return scoreA - scoreB;
-    });
+    },
+  );
 
   if (activePlanets.length === 0) {
     return <p>No active-zone planet data loaded yet.</p>;
