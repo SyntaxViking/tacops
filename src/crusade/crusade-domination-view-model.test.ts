@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { computeCaptureRace, computeConquestProgress, isPlanetRanked, sortDominationPlanets } from "./crusade-domination-view-model";
-import type { CrusadePlanet, PlanetLeaderboard } from "../api/types";
+import {
+  computeCaptureRace,
+  computeConquestProgress,
+  isPlanetRanked,
+  parsePositiveIntFilter,
+  passesDominationFilters,
+  sortDominationPlanets,
+} from "./crusade-domination-view-model";
+import type { CrusadePlanet, FactionLeaderboardResult, PlanetLeaderboard, SideLeaderboardResult } from "../api/types";
 
 function planet(overrides: Partial<CrusadePlanet> = {}): CrusadePlanet {
   return { planetId: "planet_001", name: "Test Planet", zone: null, ...overrides };
@@ -8,6 +15,14 @@ function planet(overrides: Partial<CrusadePlanet> = {}): CrusadePlanet {
 
 function leaderboard(overrides: Partial<PlanetLeaderboard> = {}): PlanetLeaderboard {
   return { planetId: "planet_001", topFactionsFor: [], topFactionsAgainst: [], side: null, faction: null, ...overrides };
+}
+
+function sideResult(overrides: Partial<SideLeaderboardResult> = {}): SideLeaderboardResult {
+  return { numParticipants: 25, myRank: null, myPoints: null, benchmarks: [], referenceScore: null, ...overrides };
+}
+
+function factionResult(overrides: Partial<FactionLeaderboardResult> = {}): FactionLeaderboardResult {
+  return { numParticipants: 25, myRank: null, myPoints: null, benchmarks: [], referenceScore: null, ...overrides };
 }
 
 const noStars = new Set<string>();
@@ -277,5 +292,70 @@ describe("sortDominationPlanets", () => {
     const planets = [planet({ planetId: "no-struggle-data" })];
     const byPlanet = new Map<string, PlanetLeaderboard>();
     expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["no-struggle-data"]);
+  });
+});
+
+describe("parsePositiveIntFilter", () => {
+  it("parses a positive integer string", () => {
+    expect(parsePositiveIntFilter("150")).toBe(150);
+  });
+
+  it("treats an empty string as no filter", () => {
+    expect(parsePositiveIntFilter("")).toBeNull();
+    expect(parsePositiveIntFilter("   ")).toBeNull();
+  });
+
+  it("treats zero, negative, and non-numeric input as no filter", () => {
+    expect(parsePositiveIntFilter("0")).toBeNull();
+    expect(parsePositiveIntFilter("-5")).toBeNull();
+    expect(parsePositiveIntFilter("abc")).toBeNull();
+    expect(parsePositiveIntFilter("12.5")).toBeNull();
+  });
+});
+
+describe("passesDominationFilters", () => {
+  it("passes when neither filter is set", () => {
+    const lb = leaderboard({ side: sideResult({ benchmarks: [{ rank: 25, points: 9999 }] }) });
+    expect(passesDominationFilters(lb, null, null)).toBe(true);
+  });
+
+  it("hides a planet whose side #25 needs more points than the threshold", () => {
+    const lb = leaderboard({ side: sideResult({ benchmarks: [{ rank: 25, points: 500 }] }) });
+    expect(passesDominationFilters(lb, 499, null)).toBe(false);
+    expect(passesDominationFilters(lb, 500, null)).toBe(true);
+    expect(passesDominationFilters(lb, 501, null)).toBe(true);
+  });
+
+  it("hides a planet whose faction #10 needs more points than the threshold", () => {
+    const lb = leaderboard({ faction: factionResult({ benchmarks: [{ rank: 10, points: 500 }] }) });
+    expect(passesDominationFilters(lb, null, 499)).toBe(false);
+    expect(passesDominationFilters(lb, null, 500)).toBe(true);
+  });
+
+  it("treats fewer participants than the target rank as 0 points, so it always passes", () => {
+    const sideLb = leaderboard({ side: sideResult({ numParticipants: 24, benchmarks: [{ rank: 10, points: 99999 }] }) });
+    expect(passesDominationFilters(sideLb, 1, null)).toBe(true);
+
+    const factionLb = leaderboard({ faction: factionResult({ numParticipants: 9, benchmarks: [{ rank: 5, points: 99999 }] }) });
+    expect(passesDominationFilters(factionLb, null, 1)).toBe(true);
+  });
+
+  it("treats a missing row at the target rank (despite enough participants) as 0 points", () => {
+    const lb = leaderboard({ side: sideResult({ numParticipants: 25, benchmarks: [{ rank: 10, points: 99999 }] }) });
+    expect(passesDominationFilters(lb, 1, null)).toBe(true);
+  });
+
+  it("always passes when the leaderboard hasn't loaded yet", () => {
+    expect(passesDominationFilters(undefined, 1, 1)).toBe(true);
+  });
+
+  it("applies both filters independently - either one failing hides the planet", () => {
+    const lb = leaderboard({
+      side: sideResult({ benchmarks: [{ rank: 25, points: 100 }] }),
+      faction: factionResult({ benchmarks: [{ rank: 10, points: 100 }] }),
+    });
+    expect(passesDominationFilters(lb, 200, 200)).toBe(true);
+    expect(passesDominationFilters(lb, 50, 200)).toBe(false);
+    expect(passesDominationFilters(lb, 200, 50)).toBe(false);
   });
 });

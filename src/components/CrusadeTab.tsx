@@ -4,8 +4,15 @@ import { CrusadePlanetsCards } from "./CrusadePlanetsCards";
 import { CrusadeDominationCards } from "./CrusadeDominationCards";
 import { CrusadeDominationTable } from "./CrusadeDominationTable";
 import { DominationSortModeToggle } from "./DominationSortModeToggle";
+import { DominationTopTenFilter } from "./DominationTopTenFilter";
 import { PlanetSectorMapModal } from "./PlanetSectorMapModal";
-import { sortDominationPlanets, sortPlanetsRankedFirst, type DominationSortMode } from "../crusade/crusade-domination-view-model";
+import {
+  parsePositiveIntFilter,
+  passesDominationFilters,
+  sortDominationPlanets,
+  sortPlanetsRankedFirst,
+  type DominationSortMode,
+} from "../crusade/crusade-domination-view-model";
 import { computeSectorMap } from "../crusade/crusade-sector-map-view-model";
 import type { ViewMode } from "./ViewModeToggle";
 import type { CrusadeData, CrusadeSectorMap, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
@@ -33,6 +40,8 @@ export function CrusadeTab({
 }: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>("closestToCapture");
+  const [maxSideInput, setMaxSideInput] = useState("");
+  const [maxFactionInput, setMaxFactionInput] = useState("");
 
   if (!crusadeData) {
     return error ? (
@@ -79,12 +88,26 @@ export function CrusadeTab({
     if (dominationPlanets.length === 0) {
       return <p>No planet data loaded yet.</p>;
     }
+    // Display-only - deliberately doesn't touch planetRefreshState/dominationPlanets above, so a
+    // filtered-out planet keeps refreshing in the background and can reappear once its leaderboard
+    // no longer exceeds the threshold.
+    const maxSide = parsePositiveIntFilter(maxSideInput);
+    const maxFaction = parsePositiveIntFilter(maxFactionInput);
+    const visibleDominationPlanets = dominationPlanets.filter((p) =>
+      passesDominationFilters(leaderboardByPlanet.get(p.planetId), maxSide, maxFaction),
+    );
     return (
       <>
         <DominationSortModeToggle value={dominationSortMode} onChange={setDominationSortMode} />
+        <DominationTopTenFilter
+          maxSideInput={maxSideInput}
+          onChangeMaxSideInput={setMaxSideInput}
+          maxFactionInput={maxFactionInput}
+          onChangeMaxFactionInput={setMaxFactionInput}
+        />
         {viewMode === "table" ? (
           <CrusadeDominationTable
-            planets={dominationPlanets}
+            planets={visibleDominationPlanets}
             planetRefreshState={planetRefreshState}
             onSelectPlanet={setSelectedPlanetId}
             onRefreshPlanet={onRefreshPlanet}
@@ -93,7 +116,7 @@ export function CrusadeTab({
           />
         ) : (
           <CrusadeDominationCards
-            planets={dominationPlanets}
+            planets={visibleDominationPlanets}
             planetRefreshState={planetRefreshState}
             onSelectPlanet={setSelectedPlanetId}
             onRefreshPlanet={onRefreshPlanet}

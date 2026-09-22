@@ -145,6 +145,39 @@ export function sortPlanetsRankedFirst(
   return [...starred, ...ranked, ...unranked, ...sunk];
 }
 
+// The rank each filter checks - side against the #25 row, faction against the #10 row (both are
+// among BENCHMARK_RANKS in fetch-crusade-data.ts, so they're always computed when present).
+const SIDE_FILTER_RANK = 25;
+const FACTION_FILTER_RANK = 10;
+
+// Fewer participants than the target rank means there's no real row at that rank to worry about -
+// treated as 0 points (per the caller's spec) so a filter threshold, which is always a positive
+// integer, never hides a planet on that basis alone.
+function pointsAtRank(result: PlanetLeaderboard["side"] | PlanetLeaderboard["faction"] | undefined, rank: number): number {
+  if (!result || result.numParticipants < rank) return 0;
+  return result.benchmarks.find((b) => b.rank === rank)?.points ?? 0;
+}
+
+// Empty or non-positive-integer input means "no filter" - only an actual positive integer
+// activates the corresponding threshold.
+export function parsePositiveIntFilter(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+// A planet fails (is hidden) when its relevant leaderboard's target rank (see SIDE_FILTER_RANK/
+// FACTION_FILTER_RANK) already needs more points than the user's threshold - i.e. cracking that
+// rank is already out of reach. A planet with no leaderboard data loaded yet always passes (same
+// as pointsAtRank treating "no row at that rank" as 0) - a filter should never hide a planet just
+// because its data hasn't arrived, only once it positively demonstrates the threshold is exceeded.
+export function passesDominationFilters(leaderboard: PlanetLeaderboard | undefined, maxSide: number | null, maxFaction: number | null): boolean {
+  if (maxSide !== null && pointsAtRank(leaderboard?.side, SIDE_FILTER_RANK) > maxSide) return false;
+  if (maxFaction !== null && pointsAtRank(leaderboard?.faction, FACTION_FILTER_RANK) > maxFaction) return false;
+  return true;
+}
+
 export function sortDominationPlanets(
   planets: CrusadePlanet[],
   leaderboardByPlanet: Map<string, PlanetLeaderboard>,
