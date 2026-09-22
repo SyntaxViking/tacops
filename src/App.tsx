@@ -17,11 +17,13 @@ import { RewardPriorityPicker } from "./components/RewardPriorityPicker";
 import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
+import { Toast } from "./components/Toast";
 import { fetchPlayerData } from "./api/fetch-player-data";
 import { entryIsUnavailable } from "./board/board-view-model";
 import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
 import { storeWebCredential } from "./api/store-web-credential";
 import { fetchTakedownScreenEnabled } from "./api/fetch-app-config";
+import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
 import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
 import type { SolveRequest, SolveResponse } from "./board/board-solver.worker";
@@ -59,6 +61,10 @@ export function App() {
   const [secondsRemaining, setSecondsRemaining] = useState(FETCH_COUNTDOWN_SECONDS);
   const [board, setBoard] = useState<ExpeditionBoardEntry[]>([]);
   const [heroes, setHeroes] = useState<RawUnit[]>([]);
+  const [favoritedCharacterIds, setFavoritedCharacterIds] = useState<Set<string>>(new Set());
+  const [antiFavoritedCharacterIds, setAntiFavoritedCharacterIds] = useState<Set<string>>(new Set());
+  const [favoritedPlanetIds, setFavoritedPlanetIds] = useState<Set<string>>(new Set());
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [machinesOfWar, setMachinesOfWar] = useState<RawUnit[]>([]);
   const [adViewsRemaining, setAdViewsRemaining] = useState<number | null>(null);
   const [resources, setResources] = useState<PlayerResources | null>(null);
@@ -66,6 +72,12 @@ export function App() {
   const [sectorMap, setSectorMap] = useState<CrusadeSectorMap>({ planets: [], connections: [] });
   const [rawPlayerData, setRawPlayerData] = useState<unknown>(null);
   const [crusadeData, setCrusadeData] = useState<CrusadeData | null>(null);
+  // Bumped only in go() - unlike crusadeData itself, this changes exactly once per GO click, never
+  // on the background per-planet score refresh inside fetchOnePlanet (which also calls
+  // setCrusadeData to keep planet scores fresh - see below). The rolling-refresh scheduler effect
+  // keys off this instead of crusadeData so a routine planet-score update can't tear down and
+  // restart every worker mid-flight.
+  const [crusadeSessionId, setCrusadeSessionId] = useState(0);
   const [planetRefreshState, setPlanetRefreshState] = useState<Map<string, PlanetRefreshEntry>>(new Map());
   const [crusadeError, setCrusadeError] = useState<string | null>(null);
   // Mirrors planetRefreshState for the scheduler's long-lived async worker loops (see the effect
@@ -157,9 +169,16 @@ export function App() {
     setSolverState("solving");
     setSolverError(undefined);
     setSolverIncompleteReason(undefined);
-    const request: SolveRequest = { requestId, board, heroes, priorityOrder };
+    const request: SolveRequest = {
+      requestId,
+      board,
+      heroes,
+      priorityOrder,
+      favoritedCharacterIds: [...favoritedCharacterIds],
+      antiFavoritedCharacterIds: [...antiFavoritedCharacterIds],
+    };
     worker.postMessage(request);
-  }, [board, heroes, priorityOrder]);
+  }, [board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds]);
 
   // Env-controlled takedown gate: only ever flips devModeEnabled on early (skipping the screen),
   // never back off - the 8x gesture still works as a manual fallback either way.
@@ -263,6 +282,15 @@ export function App() {
         void storeWebCredential(userId, clientSecret);
         void trackUsage(userId, environment);
       }
+      // Best-effort restore of starred characters/planets - a failure here shouldn't affect the
+      // data that already loaded successfully above, so it's not part of the try/catch's failure path.
+      fetchUserPreferences(userId)
+        .then((preferences) => {
+          setFavoritedCharacterIds(new Set(preferences.favoritedCharacters));
+          setFavoritedPlanetIds(new Set(preferences.favoritedPlanets));
+          setAntiFavoritedCharacterIds(new Set(preferences.antiFavoritedCharacters));
+        })
+        .catch((error) => console.error("[App] go(): fetchUserPreferences failed", error));
     } catch (error) {
       console.error("[App] go(): caught error", error);
       setStatus(`Failed: ${error}`);
@@ -287,6 +315,9 @@ export function App() {
       planetRefreshStateRef.current = new Map();
       setPlanetRefreshState(new Map());
       setCrusadeError(`GET_CRUSADE failed: ${error}`);
+      // Also stops any scheduler still running from a previous successful session - otherwise it
+      // would keep polling planets for a crusade the UI no longer shows.
+      setCrusadeSessionId((id) => id + 1);
       return;
     }
 
@@ -301,6 +332,7 @@ export function App() {
     );
     planetRefreshStateRef.current = seeded;
     setPlanetRefreshState(seeded);
+    setCrusadeSessionId((id) => id + 1);
     sessionParamsRef.current = {
       environment,
       crusadeId: crusade.crusadeId,
@@ -359,6 +391,22 @@ export function App() {
     }
   }
 
+  // GET_CRUSADE has no per-planet variant - it always returns every planet's own score/ownership
+  // data (pointsFor/pointsAgainst/sideOwner/struggleData) in one shot, unlike the per-planet
+  // leaderboard fetch above. Decoupled onto its own cadence (see crusadeScoreRefreshLoop) rather
+  // than piggybacking on every leaderboard tick, since it's a much heavier call - manual refresh
+  // still always fires it too, see refreshPlanetNow.
+  async function refreshCrusadeScores(): Promise<void> {
+    const session = sessionParamsRef.current;
+    if (!session) return;
+    try {
+      const crusade = await fetchCrusadeData(session.environment, { userId: session.userId, clientSecret: session.clientSecret });
+      setCrusadeData(crusade);
+    } catch (error) {
+      console.error("[App] refreshCrusadeScores() failed", error);
+    }
+  }
+
   // Auto-refresh cadence: 5 minutes normally, backing off to 1 hour once the user's been away
   // from the Crusades tab for more than 10 continuous minutes - see the activeTab effect below,
   // which tracks awayFromCrusadeSinceRef.
@@ -367,6 +415,12 @@ export function App() {
   const AWAY_REFRESH_MS = 60 * 60 * 1000;
   const AWAY_TRIGGER_MS = 10 * 60 * 1000;
   const IDLE_POLL_MS = 5_000;
+
+  // Separate, much slower cadence for refreshCrusadeScores (see currentCrusadeScoreRefreshMs) -
+  // deliberately not tied to NORMAL_REFRESH_MS/AWAY_REFRESH_MS above, since GET_CRUSADE is a much
+  // heavier call than a single planet's leaderboard.
+  const CRUSADE_SCORE_ACTIVE_REFRESH_MS = 60 * 1000;
+  const CRUSADE_SCORE_AWAY_REFRESH_MS = 5 * 60 * 1000;
 
   // Claims the most-overdue eligible planet (not currently loading, past its cadence threshold)
   // by marking it isLoading synchronously - contains no `await`, so with up to 4 workers calling
@@ -398,9 +452,14 @@ export function App() {
     return awaySince !== null && Date.now() - awaySince > AWAY_TRIGGER_MS ? AWAY_REFRESH_MS : NORMAL_REFRESH_MS;
   }
 
+  function currentCrusadeScoreRefreshMs(): number {
+    const awaySince = awayFromCrusadeSinceRef.current;
+    return awaySince !== null && Date.now() - awaySince > AWAY_TRIGGER_MS ? CRUSADE_SCORE_AWAY_REFRESH_MS : CRUSADE_SCORE_ACTIVE_REFRESH_MS;
+  }
+
   // Rolling auto-refresh: a fixed pool of workers continuously cycles through planets, always
   // picking whichever is most overdue, never touching one currently loading or under its
-  // cadence's threshold. Restarts (new generation) on every fresh crusadeData (a new GO).
+  // cadence's threshold. Restarts (new generation) on every new GO - see crusadeSessionId.
   useEffect(() => {
     if (!crusadeData) return;
     const myGeneration = ++generationRef.current;
@@ -417,12 +476,23 @@ export function App() {
       }
     }
 
-    const workers = Array.from({ length: AUTO_REFRESH_WORKERS }, () => worker());
+    // Separate loop, same generation lifecycle as the per-planet workers above - go() already
+    // fetched crusade scores once, so this waits a full interval before its first refresh rather
+    // than immediately re-fetching.
+    async function crusadeScoreRefreshLoop() {
+      while (generationRef.current === myGeneration) {
+        await new Promise((resolve) => setTimeout(resolve, currentCrusadeScoreRefreshMs()));
+        if (generationRef.current !== myGeneration) return;
+        await refreshCrusadeScores();
+      }
+    }
+
+    const workers = [...Array.from({ length: AUTO_REFRESH_WORKERS }, () => worker()), crusadeScoreRefreshLoop()];
     return () => {
       generationRef.current++;
       void workers;
     };
-  }, [crusadeData]);
+  }, [crusadeSessionId]);
 
   // Tracks how long the user has been away from the Crusades tab - reset to null the instant
   // they return (snapping the auto-refresh cadence back to 5 minutes immediately), started the
@@ -443,6 +513,65 @@ export function App() {
     if (!entry || entry.isLoading) return;
     commitPlanetRefresh(planetId, { ...entry, isLoading: true });
     void fetchOnePlanet(planetId);
+    // Manual refresh always also refreshes planet scores, independent of the slower background
+    // cadence in crusadeScoreRefreshLoop.
+    void refreshCrusadeScores();
+  }
+
+  // Optimistically updates local state, then fires the full replacement list to the backend -
+  // best-effort, matching trackUsage/storeWebCredential above (a sync failure shouldn't block the
+  // UI from reflecting the click). Shows a brief auto-dismissing confirmation once the save
+  // actually lands, rather than optimistically on the click itself.
+  function toggleFavoriteCharacter(characterId: string) {
+    const next = new Set(favoritedCharacterIds);
+    const turningOn = !next.has(characterId);
+    if (turningOn) next.add(characterId);
+    else next.delete(characterId);
+    setFavoritedCharacterIds(next);
+    setFavoritedCharacters(userId, clientSecret, [...next])
+      .then(() => setToastMessage("Favorite characters saved"))
+      .catch((error) => console.error("[App] toggleFavoriteCharacter(): setFavoritedCharacters failed", error));
+
+    // Favoriting and anti-favoriting a character at once makes no sense for the solver's
+    // preference logic - turning one on clears the other, both locally and server-side.
+    if (turningOn && antiFavoritedCharacterIds.has(characterId)) {
+      const nextAnti = new Set(antiFavoritedCharacterIds);
+      nextAnti.delete(characterId);
+      setAntiFavoritedCharacterIds(nextAnti);
+      setAntiFavoritedCharacters(userId, clientSecret, [...nextAnti]).catch((error) =>
+        console.error("[App] toggleFavoriteCharacter(): clearing anti-favorite failed", error),
+      );
+    }
+  }
+
+  function toggleAntiFavoriteCharacter(characterId: string) {
+    const next = new Set(antiFavoritedCharacterIds);
+    const turningOn = !next.has(characterId);
+    if (turningOn) next.add(characterId);
+    else next.delete(characterId);
+    setAntiFavoritedCharacterIds(next);
+    setAntiFavoritedCharacters(userId, clientSecret, [...next])
+      .then(() => setToastMessage("Deprioritized characters saved"))
+      .catch((error) => console.error("[App] toggleAntiFavoriteCharacter(): setAntiFavoritedCharacters failed", error));
+
+    if (turningOn && favoritedCharacterIds.has(characterId)) {
+      const nextFav = new Set(favoritedCharacterIds);
+      nextFav.delete(characterId);
+      setFavoritedCharacterIds(nextFav);
+      setFavoritedCharacters(userId, clientSecret, [...nextFav]).catch((error) =>
+        console.error("[App] toggleAntiFavoriteCharacter(): clearing favorite failed", error),
+      );
+    }
+  }
+
+  function toggleFavoritePlanet(planetId: string) {
+    const next = new Set(favoritedPlanetIds);
+    if (next.has(planetId)) next.delete(planetId);
+    else next.add(planetId);
+    setFavoritedPlanetIds(next);
+    setFavoritedPlanets(userId, clientSecret, [...next])
+      .then(() => setToastMessage("Favorite planets saved"))
+      .catch((error) => console.error("[App] toggleFavoritePlanet(): setFavoritedPlanets failed", error));
   }
 
   async function exportPlayerData() {
@@ -471,6 +600,7 @@ export function App() {
       className="mx-auto flex min-h-screen w-full flex-col items-center bg-neutral-100 px-4 py-[5vh] text-center text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
     >
       <BuildTimestamp />
+      {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />}
       <h1 className="cursor-pointer text-2xl font-semibold select-none" onClick={handleTitleTap}>
         TacOps
       </h1>
@@ -618,7 +748,15 @@ export function App() {
                 </div>
               </>
             )}
-            {activeTab === "characters" && <CharactersTable heroes={heroes} />}
+            {activeTab === "characters" && (
+              <CharactersTable
+                heroes={heroes}
+                favoritedCharacterIds={favoritedCharacterIds}
+                onToggleFavorite={toggleFavoriteCharacter}
+                antiFavoritedCharacterIds={antiFavoritedCharacterIds}
+                onToggleAntiFavorite={toggleAntiFavoriteCharacter}
+              />
+            )}
             {activeTab === "mows" && <MowTable machinesOfWar={machinesOfWar} />}
             {activeTab === "guildchat" && <GuildChatTab environment={environment} />}
             {activeTab === "coverage" && <BoardCoverageTab />}
@@ -631,6 +769,8 @@ export function App() {
                 error={crusadeError}
                 viewMode={viewMode}
                 onRefreshPlanet={refreshPlanetNow}
+                favoritedPlanetIds={favoritedPlanetIds}
+                onToggleFavoritePlanet={toggleFavoritePlanet}
               />
             )}
           </div>

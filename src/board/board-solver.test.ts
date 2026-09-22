@@ -73,6 +73,8 @@ function character(id: string, overrides: Partial<RosterCharacter> = {}): Roster
     xpLevel: 0,
     power: null,
     profile: profile(),
+    isFavorited: false,
+    isAntiFavorited: false,
     ...overrides,
   };
 }
@@ -209,6 +211,36 @@ describe("solveGreedyFallback", () => {
 
     expect(result.get("exp")!.optionalCharacterIds).toEqual(["cappedHigh", "uncappedLow"]);
   });
+
+  it("prefers a favorited character over a higher-power neutral one when padding", () => {
+    const favoritedLow = character("favoritedLow", { power: 100, isFavorited: true });
+    const neutralHigh = character("neutralHigh", { power: 9999 });
+    const unsolvableBoard = board({ bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Necrons" }] });
+
+    const result = solveGreedyFallback([unsolvableBoard], [favoritedLow, neutralHigh]);
+
+    expect(result.get("exp")!.optionalCharacterIds).toEqual(["favoritedLow"]);
+  });
+
+  it("avoids an anti-favorited character in favor of an uncapped, non-anti-favorited alternative - same as XP-capped avoidance", () => {
+    const antiFavoritedHigh = character("antiFavoritedHigh", { rank: Rank.Adamantine2, power: 9999, isAntiFavorited: true });
+    const neutralLow = character("neutralLow", { rank: Rank.Iron1, power: 1 });
+    const unsolvableBoard = board({ bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Necrons" }] });
+
+    const result = solveGreedyFallback([unsolvableBoard], [antiFavoritedHigh, neutralLow]);
+
+    expect(result.get("exp")!.optionalCharacterIds).toEqual(["neutralLow"]);
+  });
+
+  it("still uses an anti-favorited character when there's no other eligible body", () => {
+    const antiFavoritedOnly = character("antiFavoritedOnly", { isAntiFavorited: true });
+    const unsolvableBoard = board({ bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Necrons" }] });
+
+    const result = solveGreedyFallback([unsolvableBoard], [antiFavoritedOnly]);
+
+    expect(result.get("exp")!.run).toBe(true);
+    expect(result.get("exp")!.optionalCharacterIds).toEqual(["antiFavoritedOnly"]);
+  });
 });
 
 describe("solveBoardAssignment", () => {
@@ -245,5 +277,40 @@ describe("solveBoardAssignment", () => {
     );
 
     expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraInceptorSgt", "ultraEliminatorSgt"]);
+  });
+
+  it("prefers a favorited character over a higher-power one, since favoriteScore outranks powerUsed", () => {
+    // Both start with xpLevel 0 (estimateXpGain 0 either way), so xpGain and runCount tie - only
+    // the new favoriteScore pass (which runs before powerUsed) can decide this.
+    const favoritedWeak: RawUnit = { id: "ultraTigurius", power: 100 };
+    const neutralStrong: RawUnit = { id: "ultraEliminatorSgt", power: 9999 };
+    const openBoard = board({ rarity: "Common", category: "all_vanguard" });
+
+    const { assignment } = solveBoardAssignment(
+      [openBoard],
+      [favoritedWeak, neutralStrong],
+      ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
+      new Set(["ultraTigurius"]),
+    );
+
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
+  });
+
+  it("avoids assigning an anti-favorited character when a growth-eligible alternative exists, mirroring XP-capped avoidance", () => {
+    // xpLevel 3 is uncapped for both under a normal xp-cap check - effectiveXpGain must be the one
+    // forcing antiFavoritedStrong's contribution to zero for this to distinguish from a natural tie.
+    const antiFavoritedStrong: RawUnit = { id: "ultraEliminatorSgt", power: 9999, xpLevel: 3 };
+    const neutralWeak: RawUnit = { id: "ultraTigurius", power: 100, xpLevel: 3 };
+    const openBoard = board({ rarity: "Common", category: "all_vanguard" });
+
+    const { assignment } = solveBoardAssignment(
+      [openBoard],
+      [antiFavoritedStrong, neutralWeak],
+      ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
+      new Set(),
+      new Set(["ultraEliminatorSgt"]),
+    );
+
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
   });
 });

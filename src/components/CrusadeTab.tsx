@@ -4,8 +4,15 @@ import { CrusadePlanetsCards } from "./CrusadePlanetsCards";
 import { CrusadeDominationCards } from "./CrusadeDominationCards";
 import { CrusadeDominationTable } from "./CrusadeDominationTable";
 import { DominationSortModeToggle } from "./DominationSortModeToggle";
+import { DominationTopTenFilter } from "./DominationTopTenFilter";
 import { PlanetSectorMapModal } from "./PlanetSectorMapModal";
-import { sortDominationPlanets, type DominationSortMode } from "../crusade/crusade-domination-view-model";
+import {
+  parsePositiveIntFilter,
+  passesDominationFilters,
+  sortDominationPlanets,
+  sortPlanetsRankedFirst,
+  type DominationSortMode,
+} from "../crusade/crusade-domination-view-model";
 import { computeSectorMap } from "../crusade/crusade-sector-map-view-model";
 import type { ViewMode } from "./ViewModeToggle";
 import type { CrusadeData, CrusadeSectorMap, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
@@ -17,11 +24,24 @@ interface CrusadeTabProps {
   error: string | null;
   viewMode: ViewMode;
   onRefreshPlanet: (planetId: string) => void;
+  favoritedPlanetIds: ReadonlySet<string>;
+  onToggleFavoritePlanet: (planetId: string) => void;
 }
 
-export function CrusadeTab({ crusadeData, planetRefreshState, sectorMap, error, viewMode, onRefreshPlanet }: CrusadeTabProps) {
+export function CrusadeTab({
+  crusadeData,
+  planetRefreshState,
+  sectorMap,
+  error,
+  viewMode,
+  onRefreshPlanet,
+  favoritedPlanetIds,
+  onToggleFavoritePlanet,
+}: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>("closestToCapture");
+  const [maxSideInput, setMaxSideInput] = useState("");
+  const [maxFactionInput, setMaxFactionInput] = useState("");
 
   if (!crusadeData) {
     return error ? (
@@ -62,27 +82,46 @@ export function CrusadeTab({ crusadeData, planetRefreshState, sectorMap, error, 
     const dominationPlanets = sortDominationPlanets(
       crusadeData.planets.filter((p) => planetRefreshState.has(p.planetId)),
       leaderboardByPlanet,
+      favoritedPlanetIds,
       dominationSortMode,
     );
     if (dominationPlanets.length === 0) {
       return <p>No planet data loaded yet.</p>;
     }
+    // Display-only - deliberately doesn't touch planetRefreshState/dominationPlanets above, so a
+    // filtered-out planet keeps refreshing in the background and can reappear once its leaderboard
+    // no longer exceeds the threshold.
+    const maxSide = parsePositiveIntFilter(maxSideInput);
+    const maxFaction = parsePositiveIntFilter(maxFactionInput);
+    const visibleDominationPlanets = dominationPlanets.filter((p) =>
+      passesDominationFilters(leaderboardByPlanet.get(p.planetId), maxSide, maxFaction),
+    );
     return (
       <>
         <DominationSortModeToggle value={dominationSortMode} onChange={setDominationSortMode} />
+        <DominationTopTenFilter
+          maxSideInput={maxSideInput}
+          onChangeMaxSideInput={setMaxSideInput}
+          maxFactionInput={maxFactionInput}
+          onChangeMaxFactionInput={setMaxFactionInput}
+        />
         {viewMode === "table" ? (
           <CrusadeDominationTable
-            planets={dominationPlanets}
+            planets={visibleDominationPlanets}
             planetRefreshState={planetRefreshState}
             onSelectPlanet={setSelectedPlanetId}
             onRefreshPlanet={onRefreshPlanet}
+            favoritedPlanetIds={favoritedPlanetIds}
+            onToggleFavoritePlanet={onToggleFavoritePlanet}
           />
         ) : (
           <CrusadeDominationCards
-            planets={dominationPlanets}
+            planets={visibleDominationPlanets}
             planetRefreshState={planetRefreshState}
             onSelectPlanet={setSelectedPlanetId}
             onRefreshPlanet={onRefreshPlanet}
+            favoritedPlanetIds={favoritedPlanetIds}
+            onToggleFavoritePlanet={onToggleFavoritePlanet}
           />
         )}
         {sectorMapModal}
@@ -94,24 +133,41 @@ export function CrusadeTab({ crusadeData, planetRefreshState, sectorMap, error, 
     return <p>No crusade zone is currently active (between phases).</p>;
   }
 
-  // Ascending by Faction Leaderboard reference score - a rough "how competitive is this planet"
+  // Starred, then ranked, then everyone else (see sortPlanetsRankedFirst), each group ordered
+  // ascending by Faction Leaderboard reference score - a rough "how competitive is this planet"
   // signal (see fetch-crusade-data.ts's pickReferenceScore). Planets with no score yet (still
-  // loading, or genuinely no faction leaderboard data) sort last rather than being dropped.
-  const activePlanets = crusadeData.planets
-    .filter((p) => planetRefreshState.has(p.planetId))
-    .sort((a, b) => {
+  // loading, or genuinely no faction leaderboard data) sort last within their group rather than
+  // being dropped.
+  const activePlanets = sortPlanetsRankedFirst(
+    crusadeData.planets.filter((p) => planetRefreshState.has(p.planetId)),
+    leaderboardByPlanet,
+    favoritedPlanetIds,
+    (a, b) => {
       const scoreA = leaderboardByPlanet.get(a.planetId)?.faction?.referenceScore?.points ?? Infinity;
       const scoreB = leaderboardByPlanet.get(b.planetId)?.faction?.referenceScore?.points ?? Infinity;
       return scoreA - scoreB;
-    });
+    },
+  );
 
   if (activePlanets.length === 0) {
     return <p>No active-zone planet data loaded yet.</p>;
   }
 
   return viewMode === "table" ? (
-    <CrusadePlanetsTable planets={activePlanets} planetRefreshState={planetRefreshState} onRefreshPlanet={onRefreshPlanet} />
+    <CrusadePlanetsTable
+      planets={activePlanets}
+      planetRefreshState={planetRefreshState}
+      onRefreshPlanet={onRefreshPlanet}
+      favoritedPlanetIds={favoritedPlanetIds}
+      onToggleFavoritePlanet={onToggleFavoritePlanet}
+    />
   ) : (
-    <CrusadePlanetsCards planets={activePlanets} planetRefreshState={planetRefreshState} onRefreshPlanet={onRefreshPlanet} />
+    <CrusadePlanetsCards
+      planets={activePlanets}
+      planetRefreshState={planetRefreshState}
+      onRefreshPlanet={onRefreshPlanet}
+      favoritedPlanetIds={favoritedPlanetIds}
+      onToggleFavoritePlanet={onToggleFavoritePlanet}
+    />
   );
 }

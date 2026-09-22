@@ -1,6 +1,7 @@
 import { FactionBadge, LeaderboardBreakdownCell, SidePercentCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
+import { StarIconButton } from "./StarIconButton";
 import { Spinner } from "./Spinner";
 import type { CrusadePlanet, PlanetRefreshEntry } from "../api/types";
 
@@ -10,9 +11,11 @@ interface CrusadePlanetCardProps {
   planet: CrusadePlanet;
   refreshEntry: PlanetRefreshEntry;
   onRefresh: () => void;
+  isFavorited: boolean;
+  onToggleFavorite: () => void;
 }
 
-export function CrusadePlanetCard({ planet, refreshEntry, onRefresh }: CrusadePlanetCardProps) {
+export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited, onToggleFavorite }: CrusadePlanetCardProps) {
   const leaderboard = refreshEntry.leaderboard;
   return (
     <div className="relative">
@@ -27,7 +30,10 @@ export function CrusadePlanetCard({ planet, refreshEntry, onRefresh }: CrusadePl
         }`}
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="font-medium">{planet.name}</span>
+          <div className="flex items-center gap-1">
+            <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} />
+            <span className="font-medium">{planet.name}</span>
+          </div>
           <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />
         </div>
         <div className="flex items-center justify-end gap-1">
