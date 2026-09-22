@@ -17,12 +17,13 @@ import { RewardPriorityPicker } from "./components/RewardPriorityPicker";
 import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
+import { Toast } from "./components/Toast";
 import { fetchPlayerData } from "./api/fetch-player-data";
 import { entryIsUnavailable } from "./board/board-view-model";
 import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
 import { storeWebCredential } from "./api/store-web-credential";
 import { fetchTakedownScreenEnabled } from "./api/fetch-app-config";
-import { fetchUserPreferences, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
+import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
 import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
 import type { SolveRequest, SolveResponse } from "./board/board-solver.worker";
@@ -61,7 +62,9 @@ export function App() {
   const [board, setBoard] = useState<ExpeditionBoardEntry[]>([]);
   const [heroes, setHeroes] = useState<RawUnit[]>([]);
   const [favoritedCharacterIds, setFavoritedCharacterIds] = useState<Set<string>>(new Set());
+  const [antiFavoritedCharacterIds, setAntiFavoritedCharacterIds] = useState<Set<string>>(new Set());
   const [favoritedPlanetIds, setFavoritedPlanetIds] = useState<Set<string>>(new Set());
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [machinesOfWar, setMachinesOfWar] = useState<RawUnit[]>([]);
   const [adViewsRemaining, setAdViewsRemaining] = useState<number | null>(null);
   const [resources, setResources] = useState<PlayerResources | null>(null);
@@ -160,9 +163,16 @@ export function App() {
     setSolverState("solving");
     setSolverError(undefined);
     setSolverIncompleteReason(undefined);
-    const request: SolveRequest = { requestId, board, heroes, priorityOrder };
+    const request: SolveRequest = {
+      requestId,
+      board,
+      heroes,
+      priorityOrder,
+      favoritedCharacterIds: [...favoritedCharacterIds],
+      antiFavoritedCharacterIds: [...antiFavoritedCharacterIds],
+    };
     worker.postMessage(request);
-  }, [board, heroes, priorityOrder]);
+  }, [board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds]);
 
   // Env-controlled takedown gate: only ever flips devModeEnabled on early (skipping the screen),
   // never back off - the 8x gesture still works as a manual fallback either way.
@@ -272,6 +282,7 @@ export function App() {
         .then((preferences) => {
           setFavoritedCharacterIds(new Set(preferences.favoritedCharacters));
           setFavoritedPlanetIds(new Set(preferences.favoritedPlanets));
+          setAntiFavoritedCharacterIds(new Set(preferences.antiFavoritedCharacters));
         })
         .catch((error) => console.error("[App] go(): fetchUserPreferences failed", error));
     } catch (error) {
@@ -458,15 +469,48 @@ export function App() {
 
   // Optimistically updates local state, then fires the full replacement list to the backend -
   // best-effort, matching trackUsage/storeWebCredential above (a sync failure shouldn't block the
-  // UI from reflecting the click).
+  // UI from reflecting the click). Shows a brief auto-dismissing confirmation once the save
+  // actually lands, rather than optimistically on the click itself.
   function toggleFavoriteCharacter(characterId: string) {
     const next = new Set(favoritedCharacterIds);
-    if (next.has(characterId)) next.delete(characterId);
-    else next.add(characterId);
+    const turningOn = !next.has(characterId);
+    if (turningOn) next.add(characterId);
+    else next.delete(characterId);
     setFavoritedCharacterIds(next);
-    setFavoritedCharacters(userId, clientSecret, [...next]).catch((error) =>
-      console.error("[App] toggleFavoriteCharacter(): setFavoritedCharacters failed", error),
-    );
+    setFavoritedCharacters(userId, clientSecret, [...next])
+      .then(() => setToastMessage("Favorite characters saved"))
+      .catch((error) => console.error("[App] toggleFavoriteCharacter(): setFavoritedCharacters failed", error));
+
+    // Favoriting and anti-favoriting a character at once makes no sense for the solver's
+    // preference logic - turning one on clears the other, both locally and server-side.
+    if (turningOn && antiFavoritedCharacterIds.has(characterId)) {
+      const nextAnti = new Set(antiFavoritedCharacterIds);
+      nextAnti.delete(characterId);
+      setAntiFavoritedCharacterIds(nextAnti);
+      setAntiFavoritedCharacters(userId, clientSecret, [...nextAnti]).catch((error) =>
+        console.error("[App] toggleFavoriteCharacter(): clearing anti-favorite failed", error),
+      );
+    }
+  }
+
+  function toggleAntiFavoriteCharacter(characterId: string) {
+    const next = new Set(antiFavoritedCharacterIds);
+    const turningOn = !next.has(characterId);
+    if (turningOn) next.add(characterId);
+    else next.delete(characterId);
+    setAntiFavoritedCharacterIds(next);
+    setAntiFavoritedCharacters(userId, clientSecret, [...next])
+      .then(() => setToastMessage("Deprioritized characters saved"))
+      .catch((error) => console.error("[App] toggleAntiFavoriteCharacter(): setAntiFavoritedCharacters failed", error));
+
+    if (turningOn && favoritedCharacterIds.has(characterId)) {
+      const nextFav = new Set(favoritedCharacterIds);
+      nextFav.delete(characterId);
+      setFavoritedCharacterIds(nextFav);
+      setFavoritedCharacters(userId, clientSecret, [...nextFav]).catch((error) =>
+        console.error("[App] toggleAntiFavoriteCharacter(): clearing favorite failed", error),
+      );
+    }
   }
 
   function toggleFavoritePlanet(planetId: string) {
@@ -474,9 +518,9 @@ export function App() {
     if (next.has(planetId)) next.delete(planetId);
     else next.add(planetId);
     setFavoritedPlanetIds(next);
-    setFavoritedPlanets(userId, clientSecret, [...next]).catch((error) =>
-      console.error("[App] toggleFavoritePlanet(): setFavoritedPlanets failed", error),
-    );
+    setFavoritedPlanets(userId, clientSecret, [...next])
+      .then(() => setToastMessage("Favorite planets saved"))
+      .catch((error) => console.error("[App] toggleFavoritePlanet(): setFavoritedPlanets failed", error));
   }
 
   async function exportPlayerData() {
@@ -505,6 +549,7 @@ export function App() {
       className="mx-auto flex min-h-screen w-full flex-col items-center bg-neutral-100 px-4 py-[5vh] text-center text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
     >
       <BuildTimestamp />
+      {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />}
       <h1 className="cursor-pointer text-2xl font-semibold select-none" onClick={handleTitleTap}>
         TacOps
       </h1>
@@ -653,7 +698,13 @@ export function App() {
               </>
             )}
             {activeTab === "characters" && (
-              <CharactersTable heroes={heroes} favoritedCharacterIds={favoritedCharacterIds} onToggleFavorite={toggleFavoriteCharacter} />
+              <CharactersTable
+                heroes={heroes}
+                favoritedCharacterIds={favoritedCharacterIds}
+                onToggleFavorite={toggleFavoriteCharacter}
+                antiFavoritedCharacterIds={antiFavoritedCharacterIds}
+                onToggleAntiFavorite={toggleAntiFavoriteCharacter}
+              />
             )}
             {activeTab === "mows" && <MowTable machinesOfWar={machinesOfWar} />}
             {activeTab === "guildchat" && <GuildChatTab environment={environment} />}

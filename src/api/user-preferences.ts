@@ -3,6 +3,7 @@ import { sha256Hex } from "./sha256";
 export interface UserPreferences {
   favoritedCharacters: string[];
   favoritedPlanets: string[];
+  antiFavoritedCharacters: string[];
 }
 
 export async function fetchUserPreferences(userId: string): Promise<UserPreferences> {
@@ -34,4 +35,8 @@ export function setFavoritedCharacters(userId: string, clientSecret: string, ids
 
 export function setFavoritedPlanets(userId: string, clientSecret: string, ids: string[]): Promise<void> {
   return setFavoritedIds("/api/preferences/favorited-planets", userId, clientSecret, ids);
+}
+
+export function setAntiFavoritedCharacters(userId: string, clientSecret: string, ids: string[]): Promise<void> {
+  return setFavoritedIds("/api/preferences/anti-favorited-characters", userId, clientSecret, ids);
 }

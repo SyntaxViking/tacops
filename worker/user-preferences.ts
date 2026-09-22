@@ -2,12 +2,13 @@
 // migrations/0002_create_user_preferences_table.sql. Adding a new favorited-* preference is just:
 // add it to PREFERENCE_COLUMNS, add a migration for the column (DEFAULT '[]'), add a route in
 // worker/index.ts that calls setUserPreferenceColumn with the new column name.
-const PREFERENCE_COLUMNS = ["favorited_characters", "favorited_planets"] as const;
+const PREFERENCE_COLUMNS = ["favorited_characters", "favorited_planets", "anti_favorited_characters"] as const;
 export type PreferenceColumn = (typeof PREFERENCE_COLUMNS)[number];
 
 export interface UserPreferences {
   favoritedCharacters: string[];
   favoritedPlanets: string[];
+  antiFavoritedCharacters: string[];
 }
 
 type PreferenceRow = Record<PreferenceColumn, string>;
@@ -20,6 +21,7 @@ export async function getUserPreferences(db: D1Database, userHash: string): Prom
   return {
     favoritedCharacters: row ? (JSON.parse(row.favorited_characters) as string[]) : [],
     favoritedPlanets: row ? (JSON.parse(row.favorited_planets) as string[]) : [],
+    antiFavoritedCharacters: row ? (JSON.parse(row.anti_favorited_characters) as string[]) : [],
   };
 }
 

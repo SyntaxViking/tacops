@@ -7,6 +7,8 @@ export interface SolveRequest {
   board: ExpeditionBoardEntry[];
   heroes: RawUnit[];
   priorityOrder: [PriorityKey, PriorityKey, PriorityKey, PriorityKey];
+  favoritedCharacterIds: string[];
+  antiFavoritedCharacterIds: string[];
 }
 
 // "status" here is the worker-protocol outcome (did the call throw an unexpected exception);
@@ -29,9 +31,15 @@ export type SolveResponse =
     };
 
 self.onmessage = (event: MessageEvent<SolveRequest>) => {
-  const { requestId, board, heroes, priorityOrder } = event.data;
+  const { requestId, board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds } = event.data;
   try {
-    const { assignment, status, message } = solveBoardAssignment(board, heroes, priorityOrder);
+    const { assignment, status, message } = solveBoardAssignment(
+      board,
+      heroes,
+      priorityOrder,
+      new Set(favoritedCharacterIds),
+      new Set(antiFavoritedCharacterIds),
+    );
     const response: SolveResponse = {
       requestId,
       status: "success",

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Icon } from "./Icon";
 import { IconRow } from "./IconRow";
 import { StarIconButton } from "./StarIconButton";
+import { ThumbsDownIconButton } from "./ThumbsDownIconButton";
 import { CharacterSortModeToggle } from "./CharacterSortModeToggle";
 import { getCharacterRow, sortCharacterRows, type CharacterSortMode } from "../characters/character-view-model";
 import type { RawUnit } from "../api/types";
@@ -12,9 +13,17 @@ interface CharactersTableProps {
   heroes: RawUnit[];
   favoritedCharacterIds: ReadonlySet<string>;
   onToggleFavorite: (characterId: string) => void;
+  antiFavoritedCharacterIds: ReadonlySet<string>;
+  onToggleAntiFavorite: (characterId: string) => void;
 }
 
-export function CharactersTable({ heroes, favoritedCharacterIds, onToggleFavorite }: CharactersTableProps) {
+export function CharactersTable({
+  heroes,
+  favoritedCharacterIds,
+  onToggleFavorite,
+  antiFavoritedCharacterIds,
+  onToggleAntiFavorite,
+}: CharactersTableProps) {
   const [sortMode, setSortMode] = useState<CharacterSortMode>("powerDesc");
 
   if (heroes.length === 0) {
@@ -31,6 +40,7 @@ export function CharactersTable({ heroes, favoritedCharacterIds, onToggleFavorit
           <tr>
             <th className={cellClass}>Character</th>
             <th className={cellClass}>Favorite</th>
+            <th className={cellClass}>Deprioritize</th>
             <th className={cellClass}>Portrait</th>
             <th className={cellClass}>Faction</th>
             <th className={cellClass}>Rarity</th>
@@ -46,6 +56,9 @@ export function CharactersTable({ heroes, favoritedCharacterIds, onToggleFavorit
               <td className={cellClass}>{row.name}</td>
               <td className={cellClass}>
                 <StarIconButton isFavorited={favoritedCharacterIds.has(row.id)} onToggle={() => onToggleFavorite(row.id)} />
+              </td>
+              <td className={cellClass}>
+                <ThumbsDownIconButton isAntiFavorited={antiFavoritedCharacterIds.has(row.id)} onToggle={() => onToggleAntiFavorite(row.id)} />
               </td>
               <td className={cellClass}>
                 <Icon

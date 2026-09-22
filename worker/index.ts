@@ -109,6 +109,12 @@ export default {
       return result.ok ? new Response(null, { status: 204 }) : Response.json({ error: result.error }, { status: 403 });
     }
 
+    if (url.pathname === "/api/preferences/anti-favorited-characters" && request.method === "POST") {
+      const body = (await request.json()) as SetPreferenceRequestBody;
+      const result = await setUserPreferenceColumn(env.DB, body.userHash, body.secretHash, "anti_favorited_characters", body.ids);
+      return result.ok ? new Response(null, { status: 204 }) : Response.json({ error: result.error }, { status: 403 });
+    }
+
     if (url.pathname === "/insights" && request.method === "GET") {
       return renderInsightsPage(env.DB);
     }

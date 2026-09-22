@@ -17,6 +17,8 @@ export interface RosterCharacter extends RankedUnit {
   xpLevel: number;
   power: number | null;
   profile: CharacterProfile;
+  isFavorited: boolean;
+  isAntiFavorited: boolean;
 }
 
 export interface BoardSolution {
@@ -42,7 +44,12 @@ function committedCharacterIds(board: ExpeditionBoardEntry[]): Set<string> {
   return ids;
 }
 
-function buildRoster(heroes: RawUnit[], excludedIds: Set<string>): RosterCharacter[] {
+function buildRoster(
+  heroes: RawUnit[],
+  excludedIds: Set<string>,
+  favoritedCharacterIds: ReadonlySet<string>,
+  antiFavoritedCharacterIds: ReadonlySet<string>,
+): RosterCharacter[] {
   return heroes
     .filter((hero) => !excludedIds.has(hero.id))
     .map((hero) => ({
@@ -52,6 +59,8 @@ function buildRoster(heroes: RawUnit[], excludedIds: Set<string>): RosterCharact
       xpLevel: hero.xpLevel ?? 0,
       power: hero.power ?? null,
       profile: getCharacterProfile(hero.id),
+      isFavorited: favoritedCharacterIds.has(hero.id),
+      isAntiFavorited: antiFavoritedCharacterIds.has(hero.id),
     }));
 }
 
@@ -84,7 +93,7 @@ export function groupObjectives(objectives: BonusObjective[]): ObjectiveGroup[] 
 }
 
 type PriorityPassKey = `priority${number}`;
-type PassKey = PriorityPassKey | "xpGain" | "runCount" | "powerUsed";
+type PassKey = PriorityPassKey | "xpGain" | "runCount" | "favoriteScore" | "powerUsed";
 
 const PRIORITY_TIER_COUNT = 4;
 
@@ -94,13 +103,19 @@ function priorityPassKey(tierIndex: number): PriorityPassKey {
 
 // The first N passes are the user's priority tiers (lexicographic - each pass's achieved value
 // gets locked in via an `equal` constraint before the next pass runs, see runPasses), followed by
-// the fixed xpGain/runCount/powerUsed tail that always applies regardless of priority order.
-// powerUsed runs last (after run/slot decisions are already locked in) purely as a tiebreaker:
-// among assignments that are otherwise equally good, prefer using the highest-power characters.
+// the fixed xpGain/runCount/favoriteScore/powerUsed tail that always applies regardless of
+// priority order. Each of these only ever decides WHICH specific characters fill an
+// already-decided set of run/bonus outcomes - by the time favoriteScore runs, run count and total
+// xp gain are already locked in, so maximizing "how many favorited characters got used" can never
+// cost a bonus, a board run, or roster growth (see effectiveXpGain - anti-favorited units already
+// can't compete for xp-growth slots either, same as an xp-capped unit). powerUsed runs last, after
+// favoriteScore is also locked in, purely as a final tiebreaker among assignments that are equally
+// good on every other axis: prefer using the highest-power characters.
 const PASS_ORDER: Array<{ key: PassKey; opType: "max" | "min" }> = [
   ...Array.from({ length: PRIORITY_TIER_COUNT }, (_, i) => ({ key: priorityPassKey(i), opType: "max" as const })),
   { key: "xpGain", opType: "max" },
   { key: "runCount", opType: "max" },
+  { key: "favoriteScore", opType: "max" },
   { key: "powerUsed", opType: "max" },
 ];
 
@@ -182,7 +197,8 @@ function buildModel(
       addCoef(assignVar, slotConstraint, 1);
       addCoef(assignVar, `excl::${unit.id}`, 1);
       addCoef(assignVar, "powerUsed", unit.power ?? 0);
-      addCoef(assignVar, "xpGain", estimateXpGain(unit.rarity, unit.xpLevel));
+      addCoef(assignVar, "xpGain", effectiveXpGain(unit));
+      addCoef(assignVar, "favoriteScore", unit.isFavorited ? 1 : 0);
       assignRefs.push({ varName: assignVar, characterId: unit.id, boardId });
       usedCharacterIds.add(unit.id);
     }
@@ -317,16 +333,33 @@ export function findMinimalRequiredSubset(assignedIds: string[], groupRequiremen
   return best ?? new Set(assignedIds);
 }
 
-// Shared "who to prefer when there's no objective-coverage signal to go on" ordering: uncapped
-// units first (deploying an XP-capped unit wastes a growth opportunity when an uncapped
-// alternative exists - mirrors the LP's own xpGain optimization pass), then by power descending
-// (falling back to last-place, not 0, when power is unknown - an uncomputed power shouldn't look
-// weaker than a genuinely low-power character). Negative return means `a` is preferred over `b`,
-// matching Array.prototype.sort's contract.
+// An anti-favorited unit is deliberately treated exactly like an XP-capped one for growth/fill
+// purposes: deploying either wastes a growth opportunity (capped, no XP left to gain) or works
+// against the player's own stated intent (anti-favorited) when an equally-usable alternative
+// exists, so both get zeroed out of the xpGain-maximizing pass (see effectiveXpGain) and sink to
+// the bottom of fillComparator's preference order - only ever used when no other eligible unit can
+// fill the slot.
+function isDeprioritizedForGrowth(unit: RosterCharacter): boolean {
+  return isXpCapped(unit.rarity, unit.xpLevel) || unit.isAntiFavorited;
+}
+
+function effectiveXpGain(unit: RosterCharacter): number {
+  return isDeprioritizedForGrowth(unit) ? 0 : estimateXpGain(unit.rarity, unit.xpLevel);
+}
+
+// Shared "who to prefer when there's no objective-coverage signal to go on" ordering: units
+// deprioritized for growth (capped or anti-favorited, see isDeprioritizedForGrowth) sink to the
+// bottom, then favorited units are preferred, then by power descending (falling back to
+// last-place, not 0, when power is unknown - an uncomputed power shouldn't look weaker than a
+// genuinely low-power character). Negative return means `a` is preferred over `b`, matching
+// Array.prototype.sort's contract.
 function fillComparator(a: RosterCharacter, b: RosterCharacter): number {
-  const aCapped = isXpCapped(a.rarity, a.xpLevel) ? 1 : 0;
-  const bCapped = isXpCapped(b.rarity, b.xpLevel) ? 1 : 0;
-  if (aCapped !== bCapped) return aCapped - bCapped;
+  const aAvoid = isDeprioritizedForGrowth(a) ? 1 : 0;
+  const bAvoid = isDeprioritizedForGrowth(b) ? 1 : 0;
+  if (aAvoid !== bAvoid) return aAvoid - bAvoid;
+  const aFav = a.isFavorited ? 1 : 0;
+  const bFav = b.isFavorited ? 1 : 0;
+  if (aFav !== bFav) return bFav - aFav;
   return (b.power ?? -Infinity) - (a.power ?? -Infinity);
 }
 
@@ -540,13 +573,15 @@ export function solveBoardAssignment(
   board: ExpeditionBoardEntry[],
   heroes: RawUnit[],
   priorityOrder: [PriorityKey, PriorityKey, PriorityKey, PriorityKey],
+  favoritedCharacterIds: ReadonlySet<string> = new Set(),
+  antiFavoritedCharacterIds: ReadonlySet<string> = new Set(),
 ): SolveBoardAssignmentResult {
   const openBoards = board.filter((entry) => !entryIsUnavailable(entry));
   if (openBoards.length === 0) {
     return { assignment: new Map(), status: "ok" };
   }
 
-  const roster = buildRoster(heroes, committedCharacterIds(board));
+  const roster = buildRoster(heroes, committedCharacterIds(board), favoritedCharacterIds, antiFavoritedCharacterIds);
   const built = buildModel(openBoards, roster, priorityOrder);
   const variableCount = Object.keys(built.model.variables).length;
   const constraintCount = Object.keys(built.model.constraints).length;
