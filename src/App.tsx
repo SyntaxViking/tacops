@@ -72,6 +72,12 @@ export function App() {
   const [sectorMap, setSectorMap] = useState<CrusadeSectorMap>({ planets: [], connections: [] });
   const [rawPlayerData, setRawPlayerData] = useState<unknown>(null);
   const [crusadeData, setCrusadeData] = useState<CrusadeData | null>(null);
+  // Bumped only in go() - unlike crusadeData itself, this changes exactly once per GO click, never
+  // on the background per-planet score refresh inside fetchOnePlanet (which also calls
+  // setCrusadeData to keep planet scores fresh - see below). The rolling-refresh scheduler effect
+  // keys off this instead of crusadeData so a routine planet-score update can't tear down and
+  // restart every worker mid-flight.
+  const [crusadeSessionId, setCrusadeSessionId] = useState(0);
   const [planetRefreshState, setPlanetRefreshState] = useState<Map<string, PlanetRefreshEntry>>(new Map());
   const [crusadeError, setCrusadeError] = useState<string | null>(null);
   // Mirrors planetRefreshState for the scheduler's long-lived async worker loops (see the effect
@@ -309,6 +315,9 @@ export function App() {
       planetRefreshStateRef.current = new Map();
       setPlanetRefreshState(new Map());
       setCrusadeError(`GET_CRUSADE failed: ${error}`);
+      // Also stops any scheduler still running from a previous successful session - otherwise it
+      // would keep polling planets for a crusade the UI no longer shows.
+      setCrusadeSessionId((id) => id + 1);
       return;
     }
 
@@ -323,6 +332,7 @@ export function App() {
     );
     planetRefreshStateRef.current = seeded;
     setPlanetRefreshState(seeded);
+    setCrusadeSessionId((id) => id + 1);
     sessionParamsRef.current = {
       environment,
       crusadeId: crusade.crusadeId,
@@ -381,6 +391,22 @@ export function App() {
     }
   }
 
+  // GET_CRUSADE has no per-planet variant - it always returns every planet's own score/ownership
+  // data (pointsFor/pointsAgainst/sideOwner/struggleData) in one shot, unlike the per-planet
+  // leaderboard fetch above. Decoupled onto its own cadence (see crusadeScoreRefreshLoop) rather
+  // than piggybacking on every leaderboard tick, since it's a much heavier call - manual refresh
+  // still always fires it too, see refreshPlanetNow.
+  async function refreshCrusadeScores(): Promise<void> {
+    const session = sessionParamsRef.current;
+    if (!session) return;
+    try {
+      const crusade = await fetchCrusadeData(session.environment, { userId: session.userId, clientSecret: session.clientSecret });
+      setCrusadeData(crusade);
+    } catch (error) {
+      console.error("[App] refreshCrusadeScores() failed", error);
+    }
+  }
+
   // Auto-refresh cadence: 5 minutes normally, backing off to 1 hour once the user's been away
   // from the Crusades tab for more than 10 continuous minutes - see the activeTab effect below,
   // which tracks awayFromCrusadeSinceRef.
@@ -389,6 +415,12 @@ export function App() {
   const AWAY_REFRESH_MS = 60 * 60 * 1000;
   const AWAY_TRIGGER_MS = 10 * 60 * 1000;
   const IDLE_POLL_MS = 5_000;
+
+  // Separate, much slower cadence for refreshCrusadeScores (see currentCrusadeScoreRefreshMs) -
+  // deliberately not tied to NORMAL_REFRESH_MS/AWAY_REFRESH_MS above, since GET_CRUSADE is a much
+  // heavier call than a single planet's leaderboard.
+  const CRUSADE_SCORE_ACTIVE_REFRESH_MS = 60 * 1000;
+  const CRUSADE_SCORE_AWAY_REFRESH_MS = 5 * 60 * 1000;
 
   // Claims the most-overdue eligible planet (not currently loading, past its cadence threshold)
   // by marking it isLoading synchronously - contains no `await`, so with up to 4 workers calling
@@ -420,9 +452,14 @@ export function App() {
     return awaySince !== null && Date.now() - awaySince > AWAY_TRIGGER_MS ? AWAY_REFRESH_MS : NORMAL_REFRESH_MS;
   }
 
+  function currentCrusadeScoreRefreshMs(): number {
+    const awaySince = awayFromCrusadeSinceRef.current;
+    return awaySince !== null && Date.now() - awaySince > AWAY_TRIGGER_MS ? CRUSADE_SCORE_AWAY_REFRESH_MS : CRUSADE_SCORE_ACTIVE_REFRESH_MS;
+  }
+
   // Rolling auto-refresh: a fixed pool of workers continuously cycles through planets, always
   // picking whichever is most overdue, never touching one currently loading or under its
-  // cadence's threshold. Restarts (new generation) on every fresh crusadeData (a new GO).
+  // cadence's threshold. Restarts (new generation) on every new GO - see crusadeSessionId.
   useEffect(() => {
     if (!crusadeData) return;
     const myGeneration = ++generationRef.current;
@@ -439,12 +476,23 @@ export function App() {
       }
     }
 
-    const workers = Array.from({ length: AUTO_REFRESH_WORKERS }, () => worker());
+    // Separate loop, same generation lifecycle as the per-planet workers above - go() already
+    // fetched crusade scores once, so this waits a full interval before its first refresh rather
+    // than immediately re-fetching.
+    async function crusadeScoreRefreshLoop() {
+      while (generationRef.current === myGeneration) {
+        await new Promise((resolve) => setTimeout(resolve, currentCrusadeScoreRefreshMs()));
+        if (generationRef.current !== myGeneration) return;
+        await refreshCrusadeScores();
+      }
+    }
+
+    const workers = [...Array.from({ length: AUTO_REFRESH_WORKERS }, () => worker()), crusadeScoreRefreshLoop()];
     return () => {
       generationRef.current++;
       void workers;
     };
-  }, [crusadeData]);
+  }, [crusadeSessionId]);
 
   // Tracks how long the user has been away from the Crusades tab - reset to null the instant
   // they return (snapping the auto-refresh cadence back to 5 minutes immediately), started the
@@ -465,6 +513,9 @@ export function App() {
     if (!entry || entry.isLoading) return;
     commitPlanetRefresh(planetId, { ...entry, isLoading: true });
     void fetchOnePlanet(planetId);
+    // Manual refresh always also refreshes planet scores, independent of the slower background
+    // cadence in crusadeScoreRefreshLoop.
+    void refreshCrusadeScores();
   }
 
   // Optimistically updates local state, then fires the full replacement list to the backend -
