@@ -10,6 +10,13 @@ binding = "DB"
 database_name = "tacops-analytics"
 database_id = "d5bea7cc-5bf3-461b-a056-97e1a3b1eaa2"
 
+# Enables the dashboard's persisted/queryable Logs tab (distinct from `wrangler tail`'s live-only
+# stream) - turned on while debugging why the poller's scheduled invocations weren't leaving any
+# trace in D1.
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 # Refreshes the public crusade/leaderboard cache (worker/poller.ts) - every minute is required to
 # approximate a ~5 minute rotation across all 146 planets under the Workers Free plan's
 # 50-subrequests-per-invocation cap; see the implementation plan for the full arithmetic.
