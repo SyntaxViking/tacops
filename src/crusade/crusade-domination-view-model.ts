@@ -107,13 +107,14 @@ function compareBySortMode(mode: DominationSortMode, a: CrusadePlanet, b: Crusad
   }
 }
 
-// Four-bucket partition shared by both Crusade phases, in priority order: sunk planets (caller's
-// isSunk - e.g. Domination's already-captured-or-cooldown check) always go last, checked first so
-// they can't hide in a group above; starred planets come next (outranks being ranked - a planet
-// the player deliberately flagged is a stronger signal than an incidental leaderboard rank);
-// then ranked (a faction rank always implies a side rank too, for the same planet); everything
-// else follows. Each bucket is ordered by the caller's compare, so none of this grouping disturbs
-// whatever sort is currently selected.
+// Five-bucket partition shared by both Crusade phases, in priority order: live starred planets
+// come first (outranks being ranked - a planet the player deliberately flagged is a stronger
+// signal than an incidental leaderboard rank); then starred planets that are sunk (caller's isSunk
+// - e.g. Domination's already-captured-or-cooldown check) - a star keeps a planet near the top even
+// once it's no longer a live opportunity, it just falls behind other active stars; then ranked
+// (a faction rank always implies a side rank too, for the same planet); then unranked; non-starred
+// sunk planets go last. Each bucket is ordered by the caller's compare, so none of this grouping
+// disturbs whatever sort is currently selected.
 export function sortPlanetsRankedFirst(
   planets: CrusadePlanet[],
   leaderboardByPlanet: Map<string, PlanetLeaderboard>,
@@ -122,14 +123,15 @@ export function sortPlanetsRankedFirst(
   isSunk: (planet: CrusadePlanet) => boolean = () => false,
 ): CrusadePlanet[] {
   const starred: CrusadePlanet[] = [];
+  const starredSunk: CrusadePlanet[] = [];
   const ranked: CrusadePlanet[] = [];
   const unranked: CrusadePlanet[] = [];
   const sunk: CrusadePlanet[] = [];
   for (const planet of planets) {
-    if (isSunk(planet)) {
+    if (starredPlanetIds.has(planet.planetId)) {
+      (isSunk(planet) ? starredSunk : starred).push(planet);
+    } else if (isSunk(planet)) {
       sunk.push(planet);
-    } else if (starredPlanetIds.has(planet.planetId)) {
-      starred.push(planet);
     } else if (leaderboardByPlanet.get(planet.planetId)?.faction?.myRank != null) {
       ranked.push(planet);
     } else {
@@ -138,11 +140,12 @@ export function sortPlanetsRankedFirst(
   }
 
   starred.sort(compare);
+  starredSunk.sort(compare);
   ranked.sort(compare);
   unranked.sort(compare);
   sunk.sort(compare);
 
-  return [...starred, ...ranked, ...unranked, ...sunk];
+  return [...starred, ...starredSunk, ...ranked, ...unranked, ...sunk];
 }
 
 // The rank each filter checks - side against the #25 row, faction against the #10 row (both are

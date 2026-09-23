@@ -275,17 +275,28 @@ describe("sortDominationPlanets", () => {
     expect(sortDominationPlanets(planets, byPlanet, starred).map((p) => p.planetId)).toEqual(["starred-close", "starred-far", "ranked-only"]);
   });
 
-  it("sinks a starred planet in cooldown (0 points both sides) to the bottom, overriding star", () => {
+  it("keeps a starred planet in cooldown (0 points both sides) near the top, behind other starred planets but ahead of ranked/unranked", () => {
     const planets = [
+      planet({ planetId: "unranked-only" }),
+      planet({
+        planetId: "ranked-only",
+      }),
       planet({
         planetId: "starred-cooldown",
         struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
       }),
       planet({ planetId: "starred-live" }),
     ];
-    const byPlanet = new Map<string, PlanetLeaderboard>();
+    const byPlanet = new Map<string, PlanetLeaderboard>([
+      ["ranked-only", leaderboard({ planetId: "ranked-only", faction: { numParticipants: 100, myRank: 1, myPoints: 1, benchmarks: [], referenceScore: null } })],
+    ]);
     const starred = new Set(["starred-cooldown", "starred-live"]);
-    expect(sortDominationPlanets(planets, byPlanet, starred).map((p) => p.planetId)).toEqual(["starred-live", "starred-cooldown"]);
+    expect(sortDominationPlanets(planets, byPlanet, starred).map((p) => p.planetId)).toEqual([
+      "starred-live",
+      "starred-cooldown",
+      "ranked-only",
+      "unranked-only",
+    ]);
   });
 
   it("does not treat a planet with 0/0 points but no struggleData as cooldown (never fetched yet, not Domination-active)", () => {
