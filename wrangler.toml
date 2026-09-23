@@ -9,3 +9,9 @@ directory = "./dist"
 binding = "DB"
 database_name = "tacops-analytics"
 database_id = "d5bea7cc-5bf3-461b-a056-97e1a3b1eaa2"
+
+# Refreshes the public crusade/leaderboard cache (worker/poller.ts) - every minute is required to
+# approximate a ~5 minute rotation across all 146 planets under the Workers Free plan's
+# 50-subrequests-per-invocation cap; see the implementation plan for the full arithmetic.
+[triggers]
+crons = ["* * * * *"]

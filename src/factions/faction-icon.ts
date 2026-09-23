@@ -1,4 +1,4 @@
-const FACTION_ICON_FILE: Record<string, string> = {
+export const FACTION_ICON_FILE: Record<string, string> = {
   AdeptusAstartes: "Adeptus Astartes.png",
   AdeptusMechanicus: "Adeptus Mechanicus.png",
   Aeldari: "Aeldari.png",

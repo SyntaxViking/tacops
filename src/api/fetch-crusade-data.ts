@@ -16,22 +16,12 @@ import type {
 const planetNameById = new Map((planetData as { planetId: string; name: string }[]).map((p) => [p.planetId, p.name]));
 const planetZoneById = new Map((planetData as { planetId: string; zone: number }[]).map((p) => [p.planetId, p.zone]));
 
-// Both transports replay APP_START -> CONNECT -> GET_CRUSADE server-side, each individually
-// bounded at 20s - same reasoning as fetchPlayerData's timeout.
-export async function fetchCrusadeData(
-  environment: Environment,
-  webCredentials?: { userId: string; clientSecret: string },
-): Promise<CrusadeData> {
-  const response = isTauri()
-    ? await (async () => {
-        const credentials = await invokeWithTimeout<Credentials>("find_credentials", { environment }, 20_000);
-        return invokeWithTimeout<any>("fetch_crusade_data", { environment, ...credentials }, 60_000);
-      })()
-    : await fetchWithTimeout<any>("/api/fetch-crusade-data", { environment, ...webCredentials, snowId: "" }, 60_000);
-
-  const data = response?.eventResults?.[0]?.eventResponseData;
+// Turns a raw GET_CRUSADE eventResponseData object into a CrusadeData - factored out so
+// crusade-cache-seed.ts can reuse it against a cached/replayed response (from
+// /api/crusade-cache, see worker/crusade-cache.ts) exactly as this module's own live fetch below
+// does, with no second implementation.
+export function mapCrusadeResponseData(data: any): CrusadeData {
   const { phase, activeZone } = findActivePhase(data?.downtimePhase, data?.crusadePhases ?? [], data?.strugglePhase);
-
   return {
     crusadeId: data?.crusadeId ?? "",
     seasonNumber: data?.seasonNumber ?? 0,
@@ -53,6 +43,22 @@ export async function fetchCrusadeData(
       zone: planetZoneById.get(p.planetId) ?? null,
     })),
   };
+}
+
+// Both transports replay APP_START -> CONNECT -> GET_CRUSADE server-side, each individually
+// bounded at 20s - same reasoning as fetchPlayerData's timeout.
+export async function fetchCrusadeData(
+  environment: Environment,
+  webCredentials?: { userId: string; clientSecret: string },
+): Promise<CrusadeData> {
+  const response = isTauri()
+    ? await (async () => {
+        const credentials = await invokeWithTimeout<Credentials>("find_credentials", { environment }, 20_000);
+        return invokeWithTimeout<any>("fetch_crusade_data", { environment, ...credentials }, 60_000);
+      })()
+    : await fetchWithTimeout<any>("/api/fetch-crusade-data", { environment, ...webCredentials, snowId: "" }, 60_000);
+
+  return mapCrusadeResponseData(response?.eventResults?.[0]?.eventResponseData);
 }
 
 interface RawCrusadePhase {
@@ -102,7 +108,11 @@ export function resolveMyFactionId(crusadeData: Pick<CrusadeData, "chosenSide" |
   return crusadeData.chosenSide.toLowerCase() === "for" ? crusadeData.forFactionId : crusadeData.againstFactionId;
 }
 
-function leaderboardIdsForPlanet(crusadeId: string, seasonNumber: number, planetId: string) {
+// Exported so crusade-cache-seed.ts can build the same factionFor/factionAgainst ids to read back
+// out of the cache's stored `leaderboards` blob (see worker/crusade-cache.ts) - the poller
+// (worker/poller.ts) builds its own copy of just this half, since it can't import this
+// Tauri-coupled module directly.
+export function leaderboardIdsForPlanet(crusadeId: string, seasonNumber: number, planetId: string) {
   const base = `${crusadeId}_${seasonNumber}_${planetId}`;
   return {
     factionFor: `crusadeFaction:crusade_leaderboard_planet_side_factions_${base}_for`,
@@ -161,7 +171,9 @@ export function readLeaderboard(leaderboards: any, leaderboardId: string, myUser
   };
 }
 
-function topFactionStandings(entry: RawLeaderboardEntry | null): CrusadeFactionStanding[] {
+// Exported for reuse by crusade-cache-seed.ts, which calls this against a leaderboard entry read
+// back out of the cache (via readLeaderboard, also exported below) instead of a live fetch.
+export function topFactionStandings(entry: RawLeaderboardEntry | null): CrusadeFactionStanding[] {
   return (entry?.topEntries ?? []).filter((e) => e.factionId).map((e) => ({ factionId: e.factionId!, points: e.points }));
 }
 

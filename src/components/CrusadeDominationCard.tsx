@@ -12,9 +12,9 @@ interface CrusadeDominationCardProps {
   planet: CrusadePlanet;
   refreshEntry: PlanetRefreshEntry;
   onSelectPlanet: (planetId: string) => void;
-  onRefresh: () => void;
+  onRefresh?: () => void;
   isFavorited: boolean;
-  onToggleFavorite: () => void;
+  onToggleFavorite?: () => void;
 }
 
 export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, onRefresh, isFavorited, onToggleFavorite }: CrusadeDominationCardProps) {
@@ -38,7 +38,7 @@ export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, on
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
-            <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} />
+            {onToggleFavorite && <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} />}
             <span className="font-medium">{planet.name}</span>
           </div>
           {planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}
@@ -47,7 +47,7 @@ export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, on
           <span className="text-xs opacity-70">Sector {(planet.zone ?? 0) + 1}</span>
           <div className="flex items-center gap-1">
             <PlanetFetchTimestamp entry={refreshEntry} />
-            <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />
+            {onRefresh && <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />}
           </div>
         </div>
         {progress && (

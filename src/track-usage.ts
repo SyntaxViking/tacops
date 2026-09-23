@@ -17,3 +17,19 @@ export async function trackUsage(userId: string, environment: Environment): Prom
     // best-effort, see above
   }
 }
+
+// Same shape as trackUsage above, for a visitor who hasn't logged in - anonymousId comes from
+// getOrCreateAnonymousId() (../api/anonymous-id.ts), never a real userId/IP. No environment gate:
+// the anonymous path only exists on the web (AnonymousCrusadeSection), so it's implicitly prod-only.
+export async function trackAnonymousUsage(anonymousId: string): Promise<void> {
+  try {
+    const userHash = await sha256Hex(anonymousId);
+    await fetch("/api/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userHash }),
+    });
+  } catch {
+    // best-effort, see trackUsage above
+  }
+}

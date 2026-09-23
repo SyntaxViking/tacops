@@ -13,9 +13,9 @@ interface CrusadeDominationTableProps {
   planets: CrusadePlanet[];
   planetRefreshState: Map<string, PlanetRefreshEntry>;
   onSelectPlanet: (planetId: string) => void;
-  onRefreshPlanet: (planetId: string) => void;
+  onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
-  onToggleFavoritePlanet: (planetId: string) => void;
+  onToggleFavoritePlanet?: (planetId: string) => void;
 }
 
 export function CrusadeDominationTable({
@@ -57,7 +57,9 @@ export function CrusadeDominationTable({
               }`}
             >
               <td className={cellClass}>
-                <StarIconButton isFavorited={favoritedPlanetIds.has(planet.planetId)} onToggle={() => onToggleFavoritePlanet(planet.planetId)} />
+                {onToggleFavoritePlanet && (
+                  <StarIconButton isFavorited={favoritedPlanetIds.has(planet.planetId)} onToggle={() => onToggleFavoritePlanet(planet.planetId)} />
+                )}
               </td>
               <td className={cellClass}>{planet.name}</td>
               <td className={cellClass}>{(planet.zone ?? 0) + 1}</td>
@@ -95,7 +97,7 @@ export function CrusadeDominationTable({
               <td className={cellClass}>
                 <div className="flex items-center gap-1">
                   {refreshEntry.isLoading ? <Spinner size={20} /> : <PlanetFetchTimestamp entry={refreshEntry} />}
-                  <RefreshIconButton onRefresh={() => onRefreshPlanet(planet.planetId)} isLoading={refreshEntry.isLoading} />
+                  {onRefreshPlanet && <RefreshIconButton onRefresh={() => onRefreshPlanet(planet.planetId)} isLoading={refreshEntry.isLoading} />}
                 </div>
               </td>
             </tr>

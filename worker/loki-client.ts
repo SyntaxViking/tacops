@@ -1,6 +1,9 @@
 // Ported 1:1 from src-tauri/src/loki.rs (and src-tauri/src/crusades.rs) - keep them in sync.
 // This is the CORS-workaround proxy the web build needs in place of that Rust code (a browser
-// can't call Snowprint directly).
+// can't call Snowprint directly). The *WithSession exports (fetchCrusadeDataWithSession,
+// fetchLeaderboardDataWithSession) and the exported bootstrapSession/Session/environmentConfig are
+// TypeScript-only, used by worker/poller.ts to reuse one session across many calls - no Rust
+// equivalent needed since Tauri never runs the poller.
 import md5 from "js-md5";
 
 // Confirmed via real Proxyman captures: the actual game client reuses this exact trio unchanged
@@ -48,7 +51,7 @@ const QA_CONFIG: EnvironmentConfig = {
   builtInMultiConfigVersion: "34c80d71f65bd74deb6ba74f01d1c725",
 };
 
-function environmentConfig(environment: string): EnvironmentConfig {
+export function environmentConfig(environment: string): EnvironmentConfig {
   if (environment === "prod") return PROD_CONFIG;
   if (environment === "qa") return QA_CONFIG;
   throw new Error(`Unknown environment: ${environment}`);
@@ -100,7 +103,7 @@ async function post(url: string, body: unknown): Promise<any> {
   return parsed;
 }
 
-interface Session {
+export interface Session {
   config: EnvironmentConfig;
   baseUrl: string;
   sessionId: string;
@@ -110,8 +113,11 @@ interface Session {
 // capture). CONNECT exchanges the account's clientSecret/snowId for a sessionId; every call
 // after that uses the sessionId-suffixed URL. Shared by every function that needs a session
 // (GET_PLAYER, GET_CRUSADE, GET_LEADERBOARD_2, ...) since the sessionId is valid across both the
-// player/player2 and game-event/game3 URL trees, not just the one it was minted under.
-async function bootstrapSession(environment: string, userId: string, clientSecret: string, snowId: string): Promise<Session> {
+// player/player2 and game-event/game3 URL trees, not just the one it was minted under. Exported so
+// worker/poller.ts (the scheduled background poller) can bootstrap once and reuse the same Session
+// across many calls, both within and across cron ticks - every other caller here still gets a
+// fresh session per call via the *FromLoki wrappers below.
+export async function bootstrapSession(environment: string, userId: string, clientSecret: string, snowId: string): Promise<Session> {
   const config = environmentConfig(environment);
   const baseUrl = `${config.baseUrl}/${userId}`;
 
@@ -280,6 +286,15 @@ async function postGameEvent(url: string, body: unknown): Promise<any> {
   return parsed;
 }
 
+// Session-accepting variant of fetchCrusadeDataFromLoki below, for a caller that already has a
+// bootstrapped Session and wants to reuse it (worker/poller.ts, across many calls/ticks) instead
+// of paying for a fresh APP_START+CONNECT every time.
+export async function fetchCrusadeDataWithSession(session: Session, userId: string): Promise<unknown> {
+  const gameEventUrl = `${session.config.gameEventBaseUrl}/${userId}/sessionId/${session.sessionId}`;
+  const body = gameEventEnvelope("GET_CRUSADE", {});
+  return postGameEvent(gameEventUrl, body);
+}
+
 // GET_CRUSADE returns the current crusade season's phase schedule and per-planet faction
 // ownership/points - not anything specific to a single planet.
 export async function fetchCrusadeDataFromLoki(
@@ -288,10 +303,8 @@ export async function fetchCrusadeDataFromLoki(
   clientSecret: string,
   snowId: string,
 ): Promise<unknown> {
-  const { config, sessionId } = await bootstrapSession(environment, userId, clientSecret, snowId);
-  const gameEventUrl = `${config.gameEventBaseUrl}/${userId}/sessionId/${sessionId}`;
-  const body = gameEventEnvelope("GET_CRUSADE", {});
-  return postGameEvent(gameEventUrl, body);
+  const session = await bootstrapSession(environment, userId, clientSecret, snowId);
+  return fetchCrusadeDataWithSession(session, userId);
 }
 
 // GET_LEADERBOARD_2 reuses the ordinary playerEvent envelope (no "d" signature needed - only
@@ -306,9 +319,14 @@ export async function fetchLeaderboardDataFromLoki(
   snowId: string,
   leaderboardIds: string[],
 ): Promise<unknown> {
-  const { config, baseUrl, sessionId } = await bootstrapSession(environment, userId, clientSecret, snowId);
-  const sessionUrl = `${baseUrl}/sessionId/${sessionId}`;
+  const session = await bootstrapSession(environment, userId, clientSecret, snowId);
+  return fetchLeaderboardDataWithSession(session, userId, leaderboardIds);
+}
+
+// Session-accepting variant, same reasoning as fetchCrusadeDataWithSession above.
+export async function fetchLeaderboardDataWithSession(session: Session, userId: string, leaderboardIds: string[]): Promise<unknown> {
+  const sessionUrl = `${session.baseUrl}/sessionId/${session.sessionId}`;
   const leaderboards = leaderboardIds.map((leaderboardId) => ({ leaderboardId, participantId: userId }));
-  const body = envelope("GET_LEADERBOARD_2", { leaderboards }, config);
+  const body = envelope("GET_LEADERBOARD_2", { leaderboards }, session.config);
   return post(sessionUrl, body);
 }

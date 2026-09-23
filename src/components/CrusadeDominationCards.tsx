@@ -6,9 +6,9 @@ interface CrusadeDominationCardsProps {
   planets: CrusadePlanet[];
   planetRefreshState: Map<string, PlanetRefreshEntry>;
   onSelectPlanet: (planetId: string) => void;
-  onRefreshPlanet: (planetId: string) => void;
+  onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
-  onToggleFavoritePlanet: (planetId: string) => void;
+  onToggleFavoritePlanet?: (planetId: string) => void;
 }
 
 export function CrusadeDominationCards({
@@ -27,9 +27,9 @@ export function CrusadeDominationCards({
           planet={planet}
           refreshEntry={planetRefreshState.get(planet.planetId) ?? EMPTY_REFRESH_ENTRY}
           onSelectPlanet={onSelectPlanet}
-          onRefresh={() => onRefreshPlanet(planet.planetId)}
+          onRefresh={onRefreshPlanet ? () => onRefreshPlanet(planet.planetId) : undefined}
           isFavorited={favoritedPlanetIds.has(planet.planetId)}
-          onToggleFavorite={() => onToggleFavoritePlanet(planet.planetId)}
+          onToggleFavorite={onToggleFavoritePlanet ? () => onToggleFavoritePlanet(planet.planetId) : undefined}
         />
       ))}
     </div>

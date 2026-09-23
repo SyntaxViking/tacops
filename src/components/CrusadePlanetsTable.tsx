@@ -11,9 +11,9 @@ const cellClass = "border-b border-black/10 px-3 py-2 align-top dark:border-whit
 interface CrusadePlanetsTableProps {
   planets: CrusadePlanet[];
   planetRefreshState: Map<string, PlanetRefreshEntry>;
-  onRefreshPlanet: (planetId: string) => void;
+  onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
-  onToggleFavoritePlanet: (planetId: string) => void;
+  onToggleFavoritePlanet?: (planetId: string) => void;
 }
 
 export function CrusadePlanetsTable({
@@ -44,7 +44,9 @@ export function CrusadePlanetsTable({
           return (
             <tr key={planet.planetId} className={refreshEntry.isLoading ? "pointer-events-none opacity-60" : ""}>
               <td className={cellClass}>
-                <StarIconButton isFavorited={favoritedPlanetIds.has(planet.planetId)} onToggle={() => onToggleFavoritePlanet(planet.planetId)} />
+                {onToggleFavoritePlanet && (
+                  <StarIconButton isFavorited={favoritedPlanetIds.has(planet.planetId)} onToggle={() => onToggleFavoritePlanet(planet.planetId)} />
+                )}
               </td>
               <td className={cellClass}>{planet.name}</td>
               <td className={cellClass}>
@@ -75,7 +77,7 @@ export function CrusadePlanetsTable({
               <td className={cellClass}>
                 <div className="flex items-center gap-1">
                   {refreshEntry.isLoading ? <Spinner size={20} /> : <PlanetFetchTimestamp entry={refreshEntry} />}
-                  <RefreshIconButton onRefresh={() => onRefreshPlanet(planet.planetId)} isLoading={refreshEntry.isLoading} />
+                  {onRefreshPlanet && <RefreshIconButton onRefresh={() => onRefreshPlanet(planet.planetId)} isLoading={refreshEntry.isLoading} />}
                 </div>
               </td>
             </tr>

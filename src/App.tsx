@@ -22,8 +22,10 @@ import { fetchPlayerData } from "./api/fetch-player-data";
 import { entryIsUnavailable } from "./board/board-view-model";
 import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
 import { storeWebCredential } from "./api/store-web-credential";
-import { fetchTakedownScreenEnabled } from "./api/fetch-app-config";
 import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
+import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
+import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
+import { AnonymousCrusadeSection } from "./components/AnonymousCrusadeSection";
 import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
 import type { SolveRequest, SolveResponse } from "./board/board-solver.worker";
@@ -180,14 +182,6 @@ export function App() {
     worker.postMessage(request);
   }, [board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds]);
 
-  // Env-controlled takedown gate: only ever flips devModeEnabled on early (skipping the screen),
-  // never back off - the 8x gesture still works as a manual fallback either way.
-  useEffect(() => {
-    fetchTakedownScreenEnabled().then((enabled) => {
-      if (!enabled) setDevModeEnabled(true);
-    });
-  }, []);
-
   function toggleDevMode() {
     setDevModeEnabled((current) => {
       const next = !current;
@@ -260,6 +254,23 @@ export function App() {
     setFetchState("loading");
     setBoard([]);
     setCrusadeError(null);
+
+    // Fast-paint bootstrap from the background poller's cache (see worker/poller.ts) while the
+    // real, per-account fetchCrusadeData() below is in flight. Guarded so a slow cache response
+    // can never clobber fresher real data: sessionParamsRef is only ever populated once the real
+    // fetch below succeeds, and the scheduler effect only starts once crusadeSessionId is bumped
+    // (also only after a real success) - so this seed can't race it either way.
+    fetchCrusadeCache()
+      .then((cache) => {
+        if (sessionParamsRef.current) return;
+        const { crusadeData: seededCrusadeData, planetRefreshState: seeded } = seedPlanetRefreshStateFromCache(cache);
+        if (!seededCrusadeData) return;
+        setCrusadeData(seededCrusadeData);
+        planetRefreshStateRef.current = seeded;
+        setPlanetRefreshState(seeded);
+      })
+      .catch((error) => console.error("[App] go(): fetchCrusadeCache seed failed", error));
+
     try {
       setStatus("Reading local credentials...");
       setStatus("Fetching player data...");
@@ -605,15 +616,11 @@ export function App() {
         TacOps
       </h1>
       {!devModeEnabled ? (
-        // Taken down at the developer's own discretion, not a legal order - the code stays as-is
-        // and the tool itself is still fully reachable, just gated behind the same "tap the title
-        // 8 times" / press "8" trigger that already existed for dev-mode extras (see
-        // toggleDevMode/handleKeyDown/handleTitleTap above). Nothing removed, just hidden by
-        // default.
-        <p className="max-w-md">
-          TacOps has been taken down. I decided handling players' Tacticus login credentials
-          (client secrets) directly was too risky to keep distributing this tool publicly.
-        </p>
+        // No credentials, no login form - just a read-only crusade view sourced from the
+        // background poller's cache (see AnonymousCrusadeSection/worker/poller.ts). The full app
+        // (credential form/GO/Tabs) stays behind the same "tap the title 8 times" / press "8"
+        // trigger it always has (see toggleDevMode/handleKeyDown/handleTitleTap above).
+        <AnonymousCrusadeSection />
       ) : (
         <>
           <p>
