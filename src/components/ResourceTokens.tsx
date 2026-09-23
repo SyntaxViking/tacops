@@ -88,14 +88,14 @@ export function ResourceTokens({ resources, adViewsRemaining }: ResourceTokensPr
     { key: "adViews", label: "Ad views remaining", icon: watchAdIconUrl(), value: adViewsRemaining === null ? "null" : adViewsRemaining },
     {
       key: "treasureBeach",
-      label: "Treasure Beach",
+      label: "Salvage Run",
       icon: treasureBeachIconUrl(),
       value: resources.treasureBeach,
       subtext: regenSubtext(resources.treasureBeachNextTokenAt, resources.treasureBeachCapAt),
     },
     {
       key: "waves",
-      label: "Waves",
+      label: "Onslaught",
       icon: wavesIconUrl(),
       value: resources.waves,
       subtext: regenSubtext(resources.wavesNextTokenAt, resources.wavesCapAt),
@@ -103,14 +103,14 @@ export function ResourceTokens({ resources, adViewsRemaining }: ResourceTokensPr
     { key: "pvp", label: "PVP", icon: pvpIconUrl(), value: resources.pvp, subtext: pvpSubtext },
     {
       key: "guildBoss",
-      label: "Guild Boss",
+      label: "Guild Raids",
       icon: guildBossIconUrl(),
       value: resources.guildBoss,
       subtext: guildBossSubtext,
     },
     {
       key: "guildBossBomb",
-      label: "Guild Boss Bomb",
+      label: "Guild Raid Bomb",
       icon: guildBossBombIconUrl(),
       value: resources.guildBossBomb,
       subtext: regenSubtext(resources.guildBossBombNextTokenAt, resources.guildBossBombCapAt),

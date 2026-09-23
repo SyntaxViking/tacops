@@ -27,10 +27,10 @@ const TREASURE_BEACH_MAX = 2;
 const TREASURE_BEACH_REGEN_MS = 43_200_000; // 12 h/point
 
 const GUILD_BOSS_MAX = 3; // "raid tokens" - see computeGuildBossTimings for their burn-at-cap quirk
-const GUILD_BOSS_REGEN_MS = 64_800_000; // 18 h/point
+const GUILD_BOSS_REGEN_MS = 43_200_000; // 12 h/point
 
 const GUILD_BOSS_BOMB_MAX = 1;
-const GUILD_BOSS_BOMB_REGEN_MS = 43_200_000; // 12 h/point
+const GUILD_BOSS_BOMB_REGEN_MS = 64_800_000; // 18 h/point
 
 export const PVP_MAX = 15; // exported so ResourceTokens.tsx can label the "no more regen" state
 const PVP_REGEN_MS = 9_600_000; // 2h40m/point (normal ticking rate; see computePvpTimings for the pause)
