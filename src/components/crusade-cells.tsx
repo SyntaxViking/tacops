@@ -49,15 +49,26 @@ export function LeaderboardBreakdownCell({ result }: { result: SideLeaderboardRe
   const referenceScore = result.referenceScore;
   const showReference = referenceScore !== null && !result.benchmarks.some((b) => b.rank === referenceScore.rank);
 
+  const baseRows: { rank: number; points: number; kind: RowKind }[] = [
+    ...result.benchmarks.map((b) => ({ rank: b.rank, points: b.points, kind: "benchmark" as const })),
+    ...(showReference ? [{ rank: referenceScore.rank, points: referenceScore.points, kind: "reference" as const }] : []),
+  ];
+
+  // When the player's own rank lands exactly on a benchmark/reference rank (most commonly #1),
+  // that row is relabeled as "me" in place rather than getting a separate, duplicate-valued "You"
+  // row alongside it - a plain "#1: X" row otherwise gives no indication that X is the player.
+  const { myRank, myPoints } = result;
+  const hasOwnRow = myRank !== null && myPoints !== null;
+  const myRowAlreadyShown = hasOwnRow && baseRows.some((r) => r.rank === myRank);
+
   // Rank-ascending (#1 first, #25 last) - the "You" row's sort key is the player's actual rank,
   // so it lands in its correct numeric position among the benchmarks (e.g. between #10 and #25).
-  const rows: { label: string; rank: number; points: number; kind: RowKind }[] = [
-    ...result.benchmarks.map((b) => ({ label: `#${b.rank}`, rank: b.rank, points: b.points, kind: "benchmark" as const })),
-    ...(showReference ? [{ label: `#${referenceScore.rank} (top 10%)`, rank: referenceScore.rank, points: referenceScore.points, kind: "reference" as const }] : []),
-    ...(result.myRank !== null && result.myPoints !== null
-      ? [{ label: `You (#${result.myRank})`, rank: result.myRank, points: result.myPoints, kind: "me" as const }]
-      : []),
-  ].sort((a, b) => a.rank - b.rank);
+  const rows = [
+    ...baseRows.map((r) => (hasOwnRow && r.rank === myRank ? { ...r, kind: "me" as const } : r)),
+    ...(hasOwnRow && !myRowAlreadyShown ? [{ rank: myRank, points: myPoints, kind: "me" as const }] : []),
+  ]
+    .map((r) => ({ ...r, label: r.kind === "me" ? `You (#${r.rank})` : r.kind === "reference" ? `#${r.rank} (top 10%)` : `#${r.rank}` }))
+    .sort((a, b) => a.rank - b.rank);
 
   return (
     <div className="flex flex-col gap-0.5">

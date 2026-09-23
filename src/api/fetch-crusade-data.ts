@@ -137,19 +137,27 @@ function parseRows(rows: any): LeaderboardRow[] {
 // no numParticipants/topEntries, indistinguishable at a glance from a genuinely empty
 // leaderboard. Requiring numParticipants here is what actually distinguishes "no entry" (a typo)
 // from "entry exists, player just isn't on it" (a real absence).
-export function readLeaderboard(leaderboards: any, leaderboardId: string): RawLeaderboardEntry | null {
+export function readLeaderboard(leaderboards: any, leaderboardId: string, myUserId: string): RawLeaderboardEntry | null {
   const entry = leaderboards?.[leaderboardId];
   if (!entry || typeof entry.numParticipants !== "number") return null;
+  const topEntries = parseRows(entry.topEntries);
+  const localEntries = parseRows(entry.localEntries);
+  // Confirmed by the user: the server only sends myRank/myPoints at all when the player's own
+  // rank falls outside topEntries - if they're already visible there (e.g. sitting at #1), those
+  // fields are omitted entirely rather than sent as null, so the player has to be found by
+  // matching their own participantId (== the userId the request was made with) within topEntries
+  // (or localEntries, on the off chance it's populated without myRank) instead.
+  const myRow = entry.myRank == null ? (topEntries.find((e) => e.participantId === myUserId) ?? localEntries.find((e) => e.participantId === myUserId)) : undefined;
   return {
     numParticipants: entry.numParticipants,
-    // Confirmed by the user: myRank comes back 0-based from the API (unlike topEntries[].position,
-    // which is also 0-based but already handled correctly via `position === rank - 1` in
-    // buildBenchmarks) - +1 here so the displayed rank matches the #1/#10/#25 benchmarks it's
-    // compared against.
-    myRank: entry.myRank != null ? entry.myRank + 1 : null,
-    myPoints: entry.myPoints ?? null,
-    topEntries: parseRows(entry.topEntries),
-    localEntries: parseRows(entry.localEntries),
+    // myRank comes back 0-based from the API (unlike topEntries[].position, which is also 0-based
+    // but already handled correctly via `position === rank - 1` in buildBenchmarks) - +1 here so
+    // the displayed rank matches the #1/#10/#25 benchmarks it's compared against. myRow's position
+    // is already 0-based the same way, so it gets the same +1.
+    myRank: entry.myRank != null ? entry.myRank + 1 : myRow ? myRow.position + 1 : null,
+    myPoints: entry.myPoints ?? myRow?.points ?? null,
+    topEntries,
+    localEntries,
   };
 }
 
@@ -278,10 +286,10 @@ export async function fetchPlanetLeaderboard(
   const ids = leaderboardIdsForPlanet(crusadeId, seasonNumber, planetId);
   const sideLeaderboards = await fetchLeaderboards(environment, credentials, [ids.factionFor, ids.factionAgainst, ids.playerFor, ids.playerAgainst]);
 
-  const factionFor = readLeaderboard(sideLeaderboards, ids.factionFor);
-  const factionAgainst = readLeaderboard(sideLeaderboards, ids.factionAgainst);
-  const playerFor = readLeaderboard(sideLeaderboards, ids.playerFor);
-  const playerAgainst = readLeaderboard(sideLeaderboards, ids.playerAgainst);
+  const factionFor = readLeaderboard(sideLeaderboards, ids.factionFor, credentials.userId);
+  const factionAgainst = readLeaderboard(sideLeaderboards, ids.factionAgainst, credentials.userId);
+  const playerFor = readLeaderboard(sideLeaderboards, ids.playerFor, credentials.userId);
+  const playerAgainst = readLeaderboard(sideLeaderboards, ids.playerAgainst, credentials.userId);
 
   // myFactionId comes from resolveMyFactionId (GET_CRUSADE's chosenSide/forFactionId/
   // againstFactionId) - always known up front, so this only skips as a defensive no-op if
@@ -291,7 +299,7 @@ export async function fetchPlanetLeaderboard(
     const base = `${crusadeId}_${seasonNumber}_${planetId}`;
     const factionLeaderboardId = `crusadePlayer:crusade_leaderboard_planet_faction_players_${base}_${myFactionId}`;
     const factionLeaderboards = await fetchLeaderboards(environment, credentials, [factionLeaderboardId]);
-    faction = buildFactionLeaderboard(readLeaderboard(factionLeaderboards, factionLeaderboardId));
+    faction = buildFactionLeaderboard(readLeaderboard(factionLeaderboards, factionLeaderboardId, credentials.userId));
   }
 
   return {
