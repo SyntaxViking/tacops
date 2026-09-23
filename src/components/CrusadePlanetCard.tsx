@@ -10,9 +10,9 @@ const labelClass = "text-xs font-medium opacity-70";
 interface CrusadePlanetCardProps {
   planet: CrusadePlanet;
   refreshEntry: PlanetRefreshEntry;
-  onRefresh: () => void;
+  onRefresh?: () => void;
   isFavorited: boolean;
-  onToggleFavorite: () => void;
+  onToggleFavorite?: () => void;
 }
 
 export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited, onToggleFavorite }: CrusadePlanetCardProps) {
@@ -31,14 +31,14 @@ export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
-            <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} />
+            {onToggleFavorite && <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} />}
             <span className="font-medium">{planet.name}</span>
           </div>
           <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />
         </div>
         <div className="flex items-center justify-end gap-1">
           <PlanetFetchTimestamp entry={refreshEntry} />
-          <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />
+          {onRefresh && <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />}
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-1">

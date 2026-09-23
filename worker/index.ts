@@ -2,10 +2,13 @@ import { fetchCrusadeDataFromLoki, fetchLeaderboardDataFromLoki, fetchPlayerData
 import { recordSighting } from "./track";
 import { renderInsightsPage } from "./insights";
 import { getUserPreferences, setUserPreferenceColumn } from "./user-preferences";
+import { getCrusadeCache } from "./crusade-cache";
+import { runPollerTick } from "./poller";
 
 interface Env {
   DB: D1Database;
-  SHOW_TAKEDOWN_SCREEN?: string;
+  POLLER_USER_ID: string;
+  POLLER_CLIENT_SECRET: string;
 }
 
 interface RequestBody {
@@ -81,8 +84,8 @@ export default {
       }
     }
 
-    if (url.pathname === "/api/config" && request.method === "GET") {
-      return Response.json({ showTakedownScreen: env.SHOW_TAKEDOWN_SCREEN === "true" });
+    if (url.pathname === "/api/crusade-cache" && request.method === "GET") {
+      return Response.json(await getCrusadeCache(env.DB));
     }
 
     if (url.pathname === "/api/track" && request.method === "POST") {
@@ -120,5 +123,9 @@ export default {
     }
 
     return new Response("Not found", { status: 404 });
+  },
+
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runPollerTick(env.DB, env.POLLER_USER_ID, env.POLLER_CLIENT_SECRET));
   },
 };

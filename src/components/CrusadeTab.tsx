@@ -23,9 +23,17 @@ interface CrusadeTabProps {
   sectorMap: CrusadeSectorMap;
   error: string | null;
   viewMode: ViewMode;
-  onRefreshPlanet: (planetId: string) => void;
+  // Omitted entirely (rather than a separate readOnly flag) suppresses the star/refresh icons in
+  // every child - see CrusadePlanetsTable/CrusadePlanetsCards/CrusadeDominationTable/
+  // CrusadeDominationCards/CrusadePlanetCard/CrusadeDominationCard. Used by
+  // AnonymousCrusadeSection, which has no account to refresh or favorite planets against.
+  onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
-  onToggleFavoritePlanet: (planetId: string) => void;
+  onToggleFavoritePlanet?: (planetId: string) => void;
+  // Lets a caller (the faction picker in AnonymousCrusadeSection) bias initial Domination sort
+  // order toward the visitor's chosen side, without touching how each planet's own for/against
+  // numbers are displayed (both sides always show, per-planet, regardless of this).
+  defaultDominationSortMode?: DominationSortMode;
 }
 
 export function CrusadeTab({
@@ -37,9 +45,10 @@ export function CrusadeTab({
   onRefreshPlanet,
   favoritedPlanetIds,
   onToggleFavoritePlanet,
+  defaultDominationSortMode,
 }: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
-  const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>("closestToCapture");
+  const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>(defaultDominationSortMode ?? "closestToCapture");
   const [maxSideInput, setMaxSideInput] = useState("");
   const [maxFactionInput, setMaxFactionInput] = useState("");
 

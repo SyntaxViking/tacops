@@ -158,8 +158,16 @@ runtime:
   so the frontend's calls to its own proxy are same-origin and need no CORS configuration of their
   own. The Cloudflare dashboard's own GitHub integration (Workers & Pages → Create application →
   connect the repo) auto-deploys on every push to `master`, so there's no separate GitHub Actions
-  workflow for this - build command `npm run build`, deploy command `npx wrangler deploy`. No
-  environment variables or secrets need to be configured - the proxy is stateless.
+  workflow for this - build command `npm run build`, deploy command `npx wrangler deploy`.
+- **Background crusade poller**: a 1-minute Cron Trigger (`[triggers]` in `wrangler.toml`) runs
+  `worker/poller.ts`'s `scheduled()` handler, which polls the game on its own service account
+  (`POLLER_USER_ID`/`POLLER_CLIENT_SECRET`) and caches the results in D1 (`worker/crusade-cache.ts`
+  serves that cache at `/api/crusade-cache`) - this is what powers the read-only crusade view
+  anonymous visitors see. Those two secrets need to be set once against the deployed Worker with
+  `wrangler secret put POLLER_USER_ID`/`wrangler secret put POLLER_CLIENT_SECRET` - the dashboard's
+  Git-integration auto-deploy doesn't run this for you, but secrets persist across later
+  auto-deploys once set. For local dev, copy `.dev.vars.example` to `.dev.vars` (gitignored) and
+  fill in the same two values.
 - **Local dev**: `npm run worker:dev` builds the frontend and runs `wrangler dev`, serving the
   built assets and `/api/fetch-player-data` together locally (no Vite hot-reload in this mode -
   use plain `npm run dev` for frontend-only iteration).
