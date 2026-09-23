@@ -71,29 +71,29 @@ describe("computeGuildBossTimings", () => {
   });
 
   it("finds the burn checkpoint after the projected cap time, not after 'now'", () => {
-    // currentAmount 2, missing 1 -> capAt = lastUpdated + 18h = 03:00 UTC Jan 2
+    // currentAmount 2, missing 1 -> capAt = lastUpdated + 12h = 21:00 UTC Jan 1
     const lastUpdated = Date.UTC(2026, 0, 1, 9, 0, 0);
     const now = lastUpdated; // far before capAt
 
     const result = computeGuildBossTimings({ currentAmount: 2, lastUpdatedThreshold: lastUpdated }, now);
 
-    expect(result.capAt).toBe(Date.UTC(2026, 0, 2, 3, 0, 0));
-    expect(result.burnAt).toBe(Date.UTC(2026, 0, 2, 9, 45, 0)); // next checkpoint after 03:00 UTC Jan 2
+    expect(result.capAt).toBe(Date.UTC(2026, 0, 1, 21, 0, 0));
+    expect(result.burnAt).toBe(Date.UTC(2026, 0, 1, 22, 45, 0)); // next checkpoint after 21:00 UTC Jan 1
   });
 
-  it("picks the 22:45 UTC checkpoint when the cap time falls between 09:45 and 22:45", () => {
-    // currentAmount 1, missing 2 -> capAt = lastUpdated + 36h = 21:00 UTC Jan 2
+  it("picks the 09:45 UTC checkpoint when the cap time falls between 22:45 and the next day's 09:45", () => {
+    // currentAmount 1, missing 2 -> capAt = lastUpdated + 24h = 09:00 UTC Jan 2
     const lastUpdated = Date.UTC(2026, 0, 1, 9, 0, 0);
 
     const result = computeGuildBossTimings({ currentAmount: 1, lastUpdatedThreshold: lastUpdated }, lastUpdated);
 
-    expect(result.capAt).toBe(Date.UTC(2026, 0, 2, 21, 0, 0));
-    expect(result.burnAt).toBe(Date.UTC(2026, 0, 2, 22, 45, 0));
+    expect(result.capAt).toBe(Date.UTC(2026, 0, 2, 9, 0, 0));
+    expect(result.burnAt).toBe(Date.UTC(2026, 0, 2, 9, 45, 0));
   });
 
   it("rolls over to the next day's 09:45 UTC checkpoint when the cap time is after 22:45", () => {
     // currentAmount 2, missing 1, lastUpdated chosen so capAt lands at 23:30 UTC Jan 1
-    const lastUpdated = Date.UTC(2026, 0, 1, 5, 30, 0);
+    const lastUpdated = Date.UTC(2026, 0, 1, 11, 30, 0);
 
     const result = computeGuildBossTimings({ currentAmount: 2, lastUpdatedThreshold: lastUpdated }, lastUpdated);
 
