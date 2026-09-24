@@ -8,7 +8,7 @@ directory = "./dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "tacops-analytics"
-database_id = "d5bea7cc-5bf3-461b-a056-97e1a3b1eaa2"
+database_id = "ea154efc-5a0c-4e18-9119-6cbad3b8a61d"
 
 # Enables the dashboard's persisted/queryable Logs tab (distinct from `wrangler tail`'s live-only
 # stream) - turned on while debugging why the poller's scheduled invocations weren't leaving any
