@@ -218,7 +218,7 @@ export function App() {
     const TITLE_TAP_WINDOW_MS = 600;
     titleTapCountRef.current = now - lastTitleTapRef.current > TITLE_TAP_WINDOW_MS ? 1 : titleTapCountRef.current + 1;
     lastTitleTapRef.current = now;
-    if (titleTapCountRef.current >= 8) {
+    if (titleTapCountRef.current >= 1) {
       titleTapCountRef.current = 0;
       toggleDevMode();
     }
