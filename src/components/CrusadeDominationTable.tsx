@@ -1,4 +1,4 @@
-import { FactionBadge, LeaderboardBreakdownCell } from "./crusade-cells";
+import { FactionBadge, LeaderboardBreakdownCell, LeadingFactionsCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
@@ -16,6 +16,10 @@ interface CrusadeDominationTableProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
+  // Set only by the anonymous home-page view - see CrusadePlanetCard's identical prop. Adds a
+  // "Leading Factions" column that doesn't otherwise exist in this table at all (logged-in users
+  // rely on the Side/Faction rank columns instead).
+  factionSideFilter?: "for" | "against";
 }
 
 export function CrusadeDominationTable({
@@ -25,6 +29,7 @@ export function CrusadeDominationTable({
   onRefreshPlanet,
   favoritedPlanetIds,
   onToggleFavoritePlanet,
+  factionSideFilter,
 }: CrusadeDominationTableProps) {
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
@@ -36,6 +41,7 @@ export function CrusadeDominationTable({
           <th className={cellClass}>Owner</th>
           <th className={cellClass}>Imperial</th>
           <th className={cellClass}>Devastation</th>
+          {factionSideFilter && <th className={cellClass}>Leading Factions</th>}
           <th className={cellClass}>Side Leaderboard</th>
           <th className={cellClass}>Faction Leaderboard</th>
           <th className={cellClass}>Fetched</th>
@@ -88,6 +94,14 @@ export function CrusadeDominationTable({
                   </div>
                 )}
               </td>
+              {factionSideFilter && (
+                <td className={cellClass}>
+                  <LeadingFactionsCell
+                    label=""
+                    standings={(factionSideFilter === "for" ? leaderboard?.topFactionsFor : leaderboard?.topFactionsAgainst) ?? []}
+                  />
+                </td>
+              )}
               <td className={cellClass}>
                 <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
               </td>

@@ -9,6 +9,7 @@ interface CrusadeDominationCardsProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
+  factionSideFilter?: "for" | "against";
 }
 
 export function CrusadeDominationCards({
@@ -18,6 +19,7 @@ export function CrusadeDominationCards({
   onRefreshPlanet,
   favoritedPlanetIds,
   onToggleFavoritePlanet,
+  factionSideFilter,
 }: CrusadeDominationCardsProps) {
   return (
     <div className="mt-4 grid w-full grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
@@ -30,6 +32,7 @@ export function CrusadeDominationCards({
           onRefresh={onRefreshPlanet ? () => onRefreshPlanet(planet.planetId) : undefined}
           isFavorited={favoritedPlanetIds.has(planet.planetId)}
           onToggleFavorite={onToggleFavoritePlanet ? () => onToggleFavoritePlanet(planet.planetId) : undefined}
+          factionSideFilter={factionSideFilter}
         />
       ))}
     </div>

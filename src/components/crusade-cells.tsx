@@ -1,6 +1,6 @@
 import { Icon } from "./Icon";
 import { factionIconUrl } from "../factions/faction-icon";
-import type { FactionLeaderboardResult, SideLeaderboardResult } from "../api/types";
+import type { CrusadeFactionStanding, FactionLeaderboardResult, SideLeaderboardResult } from "../api/types";
 
 // Shared by the Crusade tab's table and card views - same underlying data, same rendering rules,
 // just different layout containers around them.
@@ -8,6 +8,22 @@ import type { FactionLeaderboardResult, SideLeaderboardResult } from "../api/typ
 export function FactionBadge({ factionId }: { factionId: string }) {
   const url = factionIconUrl(factionId);
   return url ? <Icon src={url} title={factionId} /> : <span>{factionId}</span>;
+}
+
+// Top-3 faction-vs-faction standings for one side of one planet - shared by the card views'
+// unfiltered (both sides, logged-in) and filtered (one side, anonymous faction picker) rendering.
+export function LeadingFactionsCell({ label, standings }: { label: string; standings: CrusadeFactionStanding[] }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium opacity-70">{label}</span>
+      {standings.slice(0, 3).map((f) => (
+        <div key={f.factionId} className="flex items-center gap-1">
+          <FactionBadge factionId={f.factionId} />
+          <span>{f.points.toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // Whole-number percent split, Imperium (for) always first - it's the number that matters when

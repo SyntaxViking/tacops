@@ -1,4 +1,4 @@
-import { FactionBadge, LeaderboardBreakdownCell, SidePercentCell } from "./crusade-cells";
+import { LeaderboardBreakdownCell, LeadingFactionsCell, SidePercentCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
@@ -13,9 +13,13 @@ interface CrusadePlanetCardProps {
   onRefresh?: () => void;
   isFavorited: boolean;
   onToggleFavorite?: () => void;
+  // Set only by the anonymous home-page view (AnonymousCrusadeSection, via its faction picker) -
+  // shows just the picked faction's side instead of both. Never set for logged-in usage, which
+  // always sees both sides exactly as before.
+  factionSideFilter?: "for" | "against";
 }
 
-export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited, onToggleFavorite }: CrusadePlanetCardProps) {
+export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited, onToggleFavorite, factionSideFilter }: CrusadePlanetCardProps) {
   const leaderboard = refreshEntry.leaderboard;
   return (
     <div className="relative">
@@ -40,26 +44,17 @@ export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited
           <PlanetFetchTimestamp entry={refreshEntry} />
           {onRefresh && <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />}
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex flex-col gap-1">
-            <span className={labelClass}>Leading Factions (Imperium)</span>
-            {(leaderboard?.topFactionsFor ?? []).slice(0, 3).map((f) => (
-              <div key={f.factionId} className="flex items-center gap-1">
-                <FactionBadge factionId={f.factionId} />
-                <span>{f.points.toLocaleString()}</span>
-              </div>
-            ))}
+        {factionSideFilter ? (
+          <LeadingFactionsCell
+            label={factionSideFilter === "for" ? "Leading Factions (Imperium)" : "Leading Factions (Devastation)"}
+            standings={(factionSideFilter === "for" ? leaderboard?.topFactionsFor : leaderboard?.topFactionsAgainst) ?? []}
+          />
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <LeadingFactionsCell label="Leading Factions (Imperium)" standings={leaderboard?.topFactionsFor ?? []} />
+            <LeadingFactionsCell label="Leading Factions (Devastation)" standings={leaderboard?.topFactionsAgainst ?? []} />
           </div>
-          <div className="flex flex-col gap-1">
-            <span className={labelClass}>Leading Factions (Devastation)</span>
-            {(leaderboard?.topFactionsAgainst ?? []).slice(0, 3).map((f) => (
-              <div key={f.factionId} className="flex items-center gap-1">
-                <FactionBadge factionId={f.factionId} />
-                <span>{f.points.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-1">
             <span className={labelClass}>Side Leaderboard</span>

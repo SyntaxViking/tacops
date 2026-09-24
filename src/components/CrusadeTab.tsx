@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CrusadePlanetsTable } from "./CrusadePlanetsTable";
 import { CrusadePlanetsCards } from "./CrusadePlanetsCards";
 import { CrusadeDominationCards } from "./CrusadeDominationCards";
@@ -30,10 +30,13 @@ interface CrusadeTabProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
-  // Lets a caller (the faction picker in AnonymousCrusadeSection) bias initial Domination sort
-  // order toward the visitor's chosen side, without touching how each planet's own for/against
-  // numbers are displayed (both sides always show, per-planet, regardless of this).
+  // Lets a caller (the faction picker in AnonymousCrusadeSection) bias Domination sort order
+  // toward the visitor's chosen side - re-synced whenever it changes (see the effect below), not
+  // just on first mount, so picking a different faction mid-session actually re-sorts.
   defaultDominationSortMode?: DominationSortMode;
+  // Set only by AnonymousCrusadeSection - shows just the picked faction's side of each planet's
+  // faction-vs-faction standings instead of both. Never set for logged-in usage.
+  factionSideFilter?: "for" | "against";
 }
 
 export function CrusadeTab({
@@ -46,11 +49,18 @@ export function CrusadeTab({
   favoritedPlanetIds,
   onToggleFavoritePlanet,
   defaultDominationSortMode,
+  factionSideFilter,
 }: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>(defaultDominationSortMode ?? "closestToCapture");
   const [maxSideInput, setMaxSideInput] = useState("");
   const [maxFactionInput, setMaxFactionInput] = useState("");
+
+  // defaultDominationSortMode's initial value (above) only ever applies on first mount - without
+  // this, picking a different faction after the initial load wouldn't actually change sort order.
+  useEffect(() => {
+    if (defaultDominationSortMode) setDominationSortMode(defaultDominationSortMode);
+  }, [defaultDominationSortMode]);
 
   if (!crusadeData) {
     return error ? (
@@ -122,6 +132,7 @@ export function CrusadeTab({
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
+            factionSideFilter={factionSideFilter}
           />
         ) : (
           <CrusadeDominationCards
@@ -131,6 +142,7 @@ export function CrusadeTab({
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
+            factionSideFilter={factionSideFilter}
           />
         )}
         {sectorMapModal}
@@ -169,6 +181,7 @@ export function CrusadeTab({
       onRefreshPlanet={onRefreshPlanet}
       favoritedPlanetIds={favoritedPlanetIds}
       onToggleFavoritePlanet={onToggleFavoritePlanet}
+      factionSideFilter={factionSideFilter}
     />
   ) : (
     <CrusadePlanetsCards
@@ -177,6 +190,7 @@ export function CrusadeTab({
       onRefreshPlanet={onRefreshPlanet}
       favoritedPlanetIds={favoritedPlanetIds}
       onToggleFavoritePlanet={onToggleFavoritePlanet}
+      factionSideFilter={factionSideFilter}
     />
   );
 }

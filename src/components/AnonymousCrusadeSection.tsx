@@ -61,15 +61,17 @@ export function AnonymousCrusadeSection() {
     }
   }
 
-  const defaultDominationSortMode: DominationSortMode | undefined = selectedFactionId
-    ? factionSide(selectedFactionId) === "against"
-      ? "devastationFirst"
-      : "imperialFirst"
-    : undefined;
+  // "for" = Imperial factions, "against" = Xenos/Chaos (Devastation) - see factionSide. Drives
+  // both which side's faction standings CrusadeTab shows on every planet (factionSideFilter) and
+  // the initial Domination sort order (defaultDominationSortMode).
+  const selectedSide = selectedFactionId ? factionSide(selectedFactionId) : undefined;
+  const defaultDominationSortMode: DominationSortMode | undefined =
+    selectedSide === "against" ? "devastationFirst" : selectedSide === "for" ? "imperialFirst" : undefined;
 
   return (
     <div className="w-full max-w-4xl">
       <FactionPicker selectedFactionId={selectedFactionId} onSelect={selectFaction} />
+      {!selectedFactionId && <p className="mt-2 text-sm opacity-70">Pick a faction above to see its leaderboard standings on every planet.</p>}
       <CrusadeTab
         crusadeData={crusadeData}
         planetRefreshState={planetRefreshState}
@@ -78,6 +80,7 @@ export function AnonymousCrusadeSection() {
         viewMode="cards"
         favoritedPlanetIds={EMPTY_FAVORITED_PLANET_IDS}
         defaultDominationSortMode={defaultDominationSortMode}
+        factionSideFilter={selectedSide}
         // onRefreshPlanet / onToggleFavoritePlanet intentionally omitted - suppresses those icons
         // (see CrusadeTab's props), since anonymous visitors can't star or refresh planets.
       />
