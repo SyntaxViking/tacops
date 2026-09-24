@@ -46,17 +46,37 @@ const TABS = [
 const FETCH_COUNTDOWN_SECONDS = 60;
 const SOLVER_COUNTDOWN_SECONDS = 70; // 7 lexicographic passes x the 10s-per-pass solver timeout
 
+const LOCAL_STORAGE_USER_ID_KEY = "tacops:userId";
+const LOCAL_STORAGE_CLIENT_SECRET_KEY = "tacops:clientSecret";
+
 export function App() {
   const [environment, setEnvironment] = useState<Environment>("prod");
   const [activeTab, setActiveTab] = useState(TABS[0].id);
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [selectedExpeditionId, setSelectedExpeditionId] = useState<string | null>(null);
-  const [devModeEnabled, setDevModeEnabled] = useState(false);
+  // Defaults to true so the full app is shown on load (no anonymous-crusade gate, no title tap
+  // needed). The title tap / "8" key still toggles it, but the default state is the app itself.
+  const [devModeEnabled, setDevModeEnabled] = useState(true);
   const lastEightPressRef = useRef(0);
   const titleTapCountRef = useRef(0);
   const lastTitleTapRef = useRef(0);
-  const [userId, setUserId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
+  // Pre-populated from localStorage so a returning visitor doesn't have to re-enter credentials
+  // (or wait for the browser's own autofill to kick in on field interaction). Written on every
+  // go() - see below.
+  const [userId, setUserId] = useState(() => {
+    try {
+      return localStorage.getItem(LOCAL_STORAGE_USER_ID_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [clientSecret, setClientSecret] = useState(() => {
+    try {
+      return localStorage.getItem(LOCAL_STORAGE_CLIENT_SECRET_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [showClientSecret, setShowClientSecret] = useState(false);
   const [status, setStatus] = useState("");
   const [fetchState, setFetchState] = useState<"idle" | "loading" | "error" | "success">("idle");
@@ -209,10 +229,9 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Mobile has no "8" key, so tapping the title 8 times in a row (mirroring the desktop trigger's
-  // own number) does the same thing. Each tap must follow the last within TITLE_TAP_WINDOW_MS or
-  // the count resets to 1 - otherwise idle taps spread across a session would eventually add up
-  // to 8 by accident.
+  // Mobile has no "8" key, so tapping the title once toggles dev mode (mirroring the desktop
+  // shortcut). Kept as a toggle rather than a one-way switch so the anonymous crusade view is
+  // still reachable if wanted.
   function handleTitleTap() {
     const now = Date.now();
     const TITLE_TAP_WINDOW_MS = 600;
@@ -251,6 +270,20 @@ export function App() {
   }
 
   async function go() {
+    // Persist (or clear) credentials for the next visit. Wrapped in try/catch so a browser with
+    // localStorage blocked (private mode, quota, policy) doesn't break the actual fetch below.
+    try {
+      if (userId && clientSecret) {
+        localStorage.setItem(LOCAL_STORAGE_USER_ID_KEY, userId);
+        localStorage.setItem(LOCAL_STORAGE_CLIENT_SECRET_KEY, clientSecret);
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_USER_ID_KEY);
+        localStorage.removeItem(LOCAL_STORAGE_CLIENT_SECRET_KEY);
+      }
+    } catch {
+      // ignore - persistence is best-effort
+    }
+
     setFetchState("loading");
     setBoard([]);
     setCrusadeError(null);
@@ -585,26 +618,6 @@ export function App() {
       .catch((error) => console.error("[App] toggleFavoritePlanet(): setFavoritedPlanets failed", error));
   }
 
-  async function exportPlayerData() {
-    const contents = JSON.stringify(rawPlayerData, null, 2);
-    const defaultFileName = `tacops-${environment}-player-data.json`;
-    if (isTauri()) {
-      const { save } = await import("@tauri-apps/plugin-dialog");
-      const { invoke } = await import("@tauri-apps/api/core");
-      const path = await save({ defaultPath: defaultFileName, filters: [{ name: "JSON", extensions: ["json"] }] });
-      if (!path) return; // user cancelled the dialog
-      await invoke("write_text_file", { path, contents });
-    } else {
-      const blob = new Blob([contents], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = defaultFileName;
-      link.click();
-      URL.revokeObjectURL(url);
-    }
-  }
-
   return (
     <main
       onClick={() => setSelectedExpeditionId(null)}
@@ -680,16 +693,6 @@ export function App() {
                   >
                     GO
                   </button>
-                  {devModeEnabled && (
-                    <button
-                      type="button"
-                      disabled={rawPlayerData === null}
-                      onClick={exportPlayerData}
-                      className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm text-neutral-700 outline-none transition-colors hover:border-blue-500 active:bg-neutral-100 disabled:cursor-default disabled:opacity-60 dark:border-neutral-600 dark:text-neutral-300 dark:active:bg-neutral-900/40"
-                    >
-                      Export JSON
-                    </button>
-                  )}
                 </div>
               </form>
               {resources && <ResourceTokens resources={resources} adViewsRemaining={adViewsRemaining} />}
