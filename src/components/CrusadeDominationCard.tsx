@@ -1,4 +1,4 @@
-import { FactionBadge, LeaderboardBreakdownCell, LeadingFactionsCell } from "./crusade-cells";
+import { FactionBadge, LeaderboardBreakdownCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
@@ -15,21 +15,9 @@ interface CrusadeDominationCardProps {
   onRefresh?: () => void;
   isFavorited: boolean;
   onToggleFavorite?: () => void;
-  // Set only by the anonymous home-page view - see CrusadePlanetCard's identical prop. Logged-in
-  // users never had a "Leading Factions" block here at all (their Side/Faction rank breakdown
-  // below covers it); this only appears when a caller opts in by providing this.
-  factionSideFilter?: "for" | "against";
 }
 
-export function CrusadeDominationCard({
-  planet,
-  refreshEntry,
-  onSelectPlanet,
-  onRefresh,
-  isFavorited,
-  onToggleFavorite,
-  factionSideFilter,
-}: CrusadeDominationCardProps) {
+export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, onRefresh, isFavorited, onToggleFavorite }: CrusadeDominationCardProps) {
   const leaderboard = refreshEntry.leaderboard ?? undefined;
   const progress = computeConquestProgress(planet);
   const captureRace = computeCaptureRace(planet);
@@ -76,12 +64,6 @@ export function CrusadeDominationCard({
               </span>
             )}
           </div>
-        )}
-        {factionSideFilter && (
-          <LeadingFactionsCell
-            label={factionSideFilter === "for" ? "Leading Factions (Imperium)" : "Leading Factions (Devastation)"}
-            standings={(factionSideFilter === "for" ? leaderboard?.topFactionsFor : leaderboard?.topFactionsAgainst) ?? []}
-          />
         )}
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-1">

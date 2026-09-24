@@ -34,9 +34,6 @@ interface CrusadeTabProps {
   // toward the visitor's chosen side - re-synced whenever it changes (see the effect below), not
   // just on first mount, so picking a different faction mid-session actually re-sorts.
   defaultDominationSortMode?: DominationSortMode;
-  // Set only by AnonymousCrusadeSection - shows just the picked faction's side of each planet's
-  // faction-vs-faction standings instead of both. Never set for logged-in usage.
-  factionSideFilter?: "for" | "against";
 }
 
 export function CrusadeTab({
@@ -49,7 +46,6 @@ export function CrusadeTab({
   favoritedPlanetIds,
   onToggleFavoritePlanet,
   defaultDominationSortMode,
-  factionSideFilter,
 }: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>(defaultDominationSortMode ?? "closestToCapture");
@@ -132,7 +128,6 @@ export function CrusadeTab({
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
-            factionSideFilter={factionSideFilter}
           />
         ) : (
           <CrusadeDominationCards
@@ -142,7 +137,6 @@ export function CrusadeTab({
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
-            factionSideFilter={factionSideFilter}
           />
         )}
         {sectorMapModal}
@@ -181,7 +175,6 @@ export function CrusadeTab({
       onRefreshPlanet={onRefreshPlanet}
       favoritedPlanetIds={favoritedPlanetIds}
       onToggleFavoritePlanet={onToggleFavoritePlanet}
-      factionSideFilter={factionSideFilter}
     />
   ) : (
     <CrusadePlanetsCards
@@ -190,7 +183,6 @@ export function CrusadeTab({
       onRefreshPlanet={onRefreshPlanet}
       favoritedPlanetIds={favoritedPlanetIds}
       onToggleFavoritePlanet={onToggleFavoritePlanet}
-      factionSideFilter={factionSideFilter}
     />
   );
 }

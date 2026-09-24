@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { factionLeaderboardIds, findActivePhase, nextBatch, relevantPlanetIds } from "./poller";
+import { allLeaderboardIdsForPlanet, findActivePhase, nextBatch, relevantPlanetIds } from "./poller";
 
 describe("nextBatch", () => {
   it("takes the next batchSize ids starting at the cursor", () => {
@@ -78,12 +78,15 @@ describe("findActivePhase", () => {
   });
 });
 
-describe("factionLeaderboardIds", () => {
-  it("builds the _for/_against faction leaderboard ids, never the account-specific player ids", () => {
-    const ids = factionLeaderboardIds("crusade1", 3, "planet_042");
-    expect(ids).toEqual({
-      factionFor: "crusadeFaction:crusade_leaderboard_planet_side_factions_crusade1_3_planet_042_for",
-      factionAgainst: "crusadeFaction:crusade_leaderboard_planet_side_factions_crusade1_3_planet_042_against",
-    });
+describe("allLeaderboardIdsForPlanet", () => {
+  it("builds the side-player ids plus one per-faction player id for every faction, never the crusadeFaction aggregate ids", () => {
+    const ids = allLeaderboardIdsForPlanet("crusade1", 3, "planet_042");
+    expect(ids[0]).toBe("crusadePlayer:crusade_leaderboard_planet_side_players_crusade1_3_planet_042_for");
+    expect(ids[1]).toBe("crusadePlayer:crusade_leaderboard_planet_side_players_crusade1_3_planet_042_against");
+    expect(ids).toContain("crusadePlayer:crusade_leaderboard_planet_faction_players_crusade1_3_planet_042_Custodes");
+    expect(ids).toContain("crusadePlayer:crusade_leaderboard_planet_faction_players_crusade1_3_planet_042_Necrons");
+    expect(ids.some((id) => id.startsWith("crusadeFaction:"))).toBe(false);
+    // 2 side ids + one per faction (22 factions)
+    expect(ids).toHaveLength(24);
   });
 });

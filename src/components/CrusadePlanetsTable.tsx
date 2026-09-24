@@ -1,4 +1,4 @@
-import { LeaderboardBreakdownCell, LeadingFactionsCell, SidePercentCell } from "./crusade-cells";
+import { FactionBadge, LeaderboardBreakdownCell, SidePercentCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
@@ -14,7 +14,6 @@ interface CrusadePlanetsTableProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
-  factionSideFilter?: "for" | "against";
 }
 
 export function CrusadePlanetsTable({
@@ -23,7 +22,6 @@ export function CrusadePlanetsTable({
   onRefreshPlanet,
   favoritedPlanetIds,
   onToggleFavoritePlanet,
-  factionSideFilter,
 }: CrusadePlanetsTableProps) {
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
@@ -32,14 +30,8 @@ export function CrusadePlanetsTable({
           <th className={cellClass}>Favorite</th>
           <th className={cellClass}>Planet</th>
           <th className={cellClass}>Imperium % / Devastation %</th>
-          {factionSideFilter ? (
-            <th className={cellClass}>Leading Factions</th>
-          ) : (
-            <>
-              <th className={cellClass}>Leading Factions (Imperium)</th>
-              <th className={cellClass}>Leading Factions (Devastation)</th>
-            </>
-          )}
+          <th className={cellClass}>Leading Factions (Imperium)</th>
+          <th className={cellClass}>Leading Factions (Devastation)</th>
           <th className={cellClass}>Side Leaderboard</th>
           <th className={cellClass}>Faction Leaderboard</th>
           <th className={cellClass}>Fetched</th>
@@ -60,23 +52,22 @@ export function CrusadePlanetsTable({
               <td className={cellClass}>
                 <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />
               </td>
-              {factionSideFilter ? (
-                <td className={cellClass}>
-                  <LeadingFactionsCell
-                    label=""
-                    standings={(factionSideFilter === "for" ? lb?.topFactionsFor : lb?.topFactionsAgainst) ?? []}
-                  />
-                </td>
-              ) : (
-                <>
-                  <td className={cellClass}>
-                    <LeadingFactionsCell label="" standings={lb?.topFactionsFor ?? []} />
-                  </td>
-                  <td className={cellClass}>
-                    <LeadingFactionsCell label="" standings={lb?.topFactionsAgainst ?? []} />
-                  </td>
-                </>
-              )}
+              <td className={cellClass}>
+                {(lb?.topFactionsFor ?? []).slice(0, 3).map((f) => (
+                  <div key={f.factionId} className="flex items-center gap-1">
+                    <FactionBadge factionId={f.factionId} />
+                    <span>{f.points.toLocaleString()}</span>
+                  </div>
+                ))}
+              </td>
+              <td className={cellClass}>
+                {(lb?.topFactionsAgainst ?? []).slice(0, 3).map((f) => (
+                  <div key={f.factionId} className="flex items-center gap-1">
+                    <FactionBadge factionId={f.factionId} />
+                    <span>{f.points.toLocaleString()}</span>
+                  </div>
+                ))}
+              </td>
               <td className={cellClass}>
                 <LeaderboardBreakdownCell result={lb?.side ?? null} />
               </td>
