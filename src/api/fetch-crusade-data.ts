@@ -122,6 +122,14 @@ export function leaderboardIdsForPlanet(crusadeId: string, seasonNumber: number,
   };
 }
 
+// The per-faction player leaderboard (all players playing as one specific faction, ranked against
+// each other) - unlike the side leaderboard above, this isn't split _for/_against, one id per
+// faction. Exported so crusade-cache-seed.ts can build this for an arbitrary *picked* faction, not
+// just fetchPlanetLeaderboard's own myFactionId.
+export function factionPlayerLeaderboardId(crusadeId: string, seasonNumber: number, planetId: string, factionId: string): string {
+  return `crusadePlayer:crusade_leaderboard_planet_faction_players_${crusadeId}_${seasonNumber}_${planetId}_${factionId}`;
+}
+
 interface LeaderboardRow {
   position: number;
   points: number;
@@ -308,8 +316,7 @@ export async function fetchPlanetLeaderboard(
   // GET_CRUSADE ever omits those fields (fetchCrusadeData defaults them to "").
   let faction: FactionLeaderboardResult | null = null;
   if (myFactionId) {
-    const base = `${crusadeId}_${seasonNumber}_${planetId}`;
-    const factionLeaderboardId = `crusadePlayer:crusade_leaderboard_planet_faction_players_${base}_${myFactionId}`;
+    const factionLeaderboardId = factionPlayerLeaderboardId(crusadeId, seasonNumber, planetId, myFactionId);
     const factionLeaderboards = await fetchLeaderboards(environment, credentials, [factionLeaderboardId]);
     faction = buildFactionLeaderboard(readLeaderboard(factionLeaderboards, factionLeaderboardId, credentials.userId));
   }

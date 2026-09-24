@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CrusadeTab } from "./CrusadeTab";
 import { FactionPicker } from "./FactionPicker";
-import { fetchCrusadeCache } from "../api/fetch-crusade-cache";
+import { fetchCrusadeCache, type CrusadeCacheResponse } from "../api/fetch-crusade-cache";
 import { seedPlanetRefreshStateFromCache } from "../api/crusade-cache-seed";
 import { getOrCreateAnonymousId } from "../api/anonymous-id";
 import { trackAnonymousUsage } from "../track-usage";
 import { factionSide } from "../factions/faction-side";
 import type { DominationSortMode } from "../crusade/crusade-domination-view-model";
-import type { CrusadeData, CrusadeSectorMap, PlanetRefreshEntry } from "../api/types";
+import type { CrusadeSectorMap } from "../api/types";
 
 const SELECTED_FACTION_STORAGE_KEY = "tacops:selectedFactionId";
 const EMPTY_FAVORITED_PLANET_IDS = new Set<string>();
@@ -27,8 +27,10 @@ export function AnonymousCrusadeSection() {
       return null;
     }
   });
-  const [crusadeData, setCrusadeData] = useState<CrusadeData | null>(null);
-  const [planetRefreshState, setPlanetRefreshState] = useState<Map<string, PlanetRefreshEntry>>(new Map());
+  // Kept raw (not pre-seeded) because side/faction leaderboards depend on which faction is
+  // picked, and picking happens after this loads - see the useMemo below, which recomputes
+  // client-side (no new fetch) whenever selectedFactionId changes.
+  const [cache, setCache] = useState<CrusadeCacheResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,11 +43,7 @@ export function AnonymousCrusadeSection() {
 
   useEffect(() => {
     fetchCrusadeCache()
-      .then((cache) => {
-        const seeded = seedPlanetRefreshStateFromCache(cache);
-        setCrusadeData(seeded.crusadeData);
-        setPlanetRefreshState(seeded.planetRefreshState);
-      })
+      .then(setCache)
       .catch((err) => {
         console.error("[AnonymousCrusadeSection] fetchCrusadeCache failed", err);
         setError(`Failed to load cached crusade data: ${err}`);
@@ -61,15 +59,21 @@ export function AnonymousCrusadeSection() {
     }
   }
 
-  const defaultDominationSortMode: DominationSortMode | undefined = selectedFactionId
-    ? factionSide(selectedFactionId) === "against"
-      ? "devastationFirst"
-      : "imperialFirst"
-    : undefined;
+  const { crusadeData, planetRefreshState } = useMemo(
+    () => (cache ? seedPlanetRefreshStateFromCache(cache, selectedFactionId) : { crusadeData: null, planetRefreshState: new Map() }),
+    [cache, selectedFactionId],
+  );
+
+  // "for" = Imperial factions, "against" = Xenos/Chaos (Devastation) - see factionSide. Biases
+  // initial Domination sort order toward the visitor's chosen side.
+  const selectedSide = selectedFactionId ? factionSide(selectedFactionId) : undefined;
+  const defaultDominationSortMode: DominationSortMode | undefined =
+    selectedSide === "against" ? "devastationFirst" : selectedSide === "for" ? "imperialFirst" : undefined;
 
   return (
     <div className="w-full max-w-4xl">
       <FactionPicker selectedFactionId={selectedFactionId} onSelect={selectFaction} />
+      {!selectedFactionId && <p className="mt-2 text-sm opacity-70">Pick a faction above to see its leaderboard standings on every planet.</p>}
       <CrusadeTab
         crusadeData={crusadeData}
         planetRefreshState={planetRefreshState}

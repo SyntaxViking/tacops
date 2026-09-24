@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CrusadePlanetsTable } from "./CrusadePlanetsTable";
 import { CrusadePlanetsCards } from "./CrusadePlanetsCards";
 import { CrusadeDominationCards } from "./CrusadeDominationCards";
@@ -30,9 +30,9 @@ interface CrusadeTabProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
-  // Lets a caller (the faction picker in AnonymousCrusadeSection) bias initial Domination sort
-  // order toward the visitor's chosen side, without touching how each planet's own for/against
-  // numbers are displayed (both sides always show, per-planet, regardless of this).
+  // Lets a caller (the faction picker in AnonymousCrusadeSection) bias Domination sort order
+  // toward the visitor's chosen side - re-synced whenever it changes (see the effect below), not
+  // just on first mount, so picking a different faction mid-session actually re-sorts.
   defaultDominationSortMode?: DominationSortMode;
 }
 
@@ -51,6 +51,12 @@ export function CrusadeTab({
   const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>(defaultDominationSortMode ?? "closestToCapture");
   const [maxSideInput, setMaxSideInput] = useState("");
   const [maxFactionInput, setMaxFactionInput] = useState("");
+
+  // defaultDominationSortMode's initial value (above) only ever applies on first mount - without
+  // this, picking a different faction after the initial load wouldn't actually change sort order.
+  useEffect(() => {
+    if (defaultDominationSortMode) setDominationSortMode(defaultDominationSortMode);
+  }, [defaultDominationSortMode]);
 
   if (!crusadeData) {
     return error ? (

@@ -2,13 +2,21 @@
 // Trigger in wrangler.toml). Refreshes the public, account-agnostic crusade/leaderboard cache so
 // anonymous visitors (and logged-in users' first paint) never have to wait on a live Tacticus call.
 //
-// Deliberately does NOT reshape any Loki response - see the "no reshaping on the write path"
-// section of the implementation plan. Each tick stores the raw eventResponseData/`leaderboards`
-// blob it received, verbatim, as one TEXT column; the one place any of this gets walked into
-// CrusadePlanet[]/topFactionsFor-shaped data is client-side, in src/api/fetch-crusade-data.ts,
-// reused by src/api/crusade-cache-seed.ts - once per page load, not once per planet per minute.
+// Deliberately does NOT touch any Loki response before storing it - each tick stores the complete,
+// untouched object fetchCrusadeDataWithSession/fetchLeaderboardDataWithSession returned, as one
+// TEXT column each. Fields are read off that object in memory (phase/activeZone/crusadeId/
+// seasonNumber) only to decide what to fetch next - that's unavoidable control flow, never applied
+// to the stored copy. All interpretation (envelope-unwrapping, CrusadePlanet[] construction,
+// building SideLeaderboardResult/FactionLeaderboardResult from raw entries) happens client-side, in
+// src/api/fetch-crusade-data.ts, reused by src/api/crusade-cache-seed.ts - once per page load, not
+// once per planet per minute.
 import planetData from "../src/assets/planet-data.json";
+import { FACTION_SIDE } from "../src/factions/faction-side";
 import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, fetchLeaderboardDataWithSession, type Session } from "./loki-client";
+
+// The 22 faction ids, reused as-is (no Tauri/browser coupling in faction-side.ts, unlike
+// fetch-crusade-data.ts, so no need to duplicate this list).
+const ALL_FACTION_IDS = Object.keys(FACTION_SIDE);
 
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // no documented Loki session TTL - defensive reuse window
 const CRUSADE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -52,15 +60,19 @@ export function relevantPlanetIds(phase: string | null, activeZone: number | nul
   return [];
 }
 
-// Just the factionFor/factionAgainst half of src/api/fetch-crusade-data.ts's
-// leaderboardIdsForPlanet - the poller never requests the account-specific playerFor/
-// playerAgainst/myFaction ids, which would be meaningless in a shared public cache.
-export function factionLeaderboardIds(crusadeId: string, seasonNumber: number, planetId: string): { factionFor: string; factionAgainst: string } {
+// Player-level leaderboard ids for one planet: the side leaderboard (all players on a side - not
+// account-specific once stripped of myRank/myPoints, so unlike fetch-crusade-data.ts's
+// leaderboardIdsForPlanet this poller DOES fetch these) plus one per-faction leaderboard for every
+// possible faction, since a visitor's pick isn't known at poll time - any of the 22 could be
+// picked, so all 22 need to be cached. Never the crusadeFaction:... aggregate-standings ids (that
+// was the "Leading Factions" list, dropped per product decision).
+export function allLeaderboardIdsForPlanet(crusadeId: string, seasonNumber: number, planetId: string): string[] {
   const base = `${crusadeId}_${seasonNumber}_${planetId}`;
-  return {
-    factionFor: `crusadeFaction:crusade_leaderboard_planet_side_factions_${base}_for`,
-    factionAgainst: `crusadeFaction:crusade_leaderboard_planet_side_factions_${base}_against`,
-  };
+  const ids = [`crusadePlayer:crusade_leaderboard_planet_side_players_${base}_for`, `crusadePlayer:crusade_leaderboard_planet_side_players_${base}_against`];
+  for (const factionId of ALL_FACTION_IDS) {
+    ids.push(`crusadePlayer:crusade_leaderboard_planet_faction_players_${base}_${factionId}`);
+  }
+  return ids;
 }
 
 // Rolling-cursor math: takes the next `batchSize` ids starting at cursorIndex (wrapping around),
@@ -176,11 +188,13 @@ export async function runPollerTick(db: D1Database, userId: string, clientSecret
     const needsCrusadeRefresh = state.last_crusade_refresh_at === null || now - state.last_crusade_refresh_at >= CRUSADE_REFRESH_INTERVAL_MS;
 
     if (needsCrusadeRefresh) {
+      // raw is stored verbatim below (writeCrusadeSnapshot) - drilling into it here is only ever
+      // done to decide what to fetch next, never applied to the stored copy.
       const raw: any = await withSession((s) => fetchCrusadeDataWithSession(s, userId));
       const data = raw?.eventResults?.[0]?.eventResponseData;
       const active = findActivePhase(data?.downtimePhase, data?.crusadePhases ?? [], data?.strugglePhase);
       meta = { crusadeId: data?.crusadeId ?? "", seasonNumber: data?.seasonNumber ?? 0, phase: active.phase, activeZone: active.activeZone };
-      await writeCrusadeSnapshot(db, meta, data, now);
+      await writeCrusadeSnapshot(db, meta, raw, now);
     } else {
       meta = await readSnapshotMeta(db);
     }
@@ -190,10 +204,9 @@ export async function runPollerTick(db: D1Database, userId: string, clientSecret
 
     for (const planetId of batch) {
       try {
-        const ids = factionLeaderboardIds(meta.crusadeId, meta.seasonNumber, planetId);
-        const raw: any = await withSession((s) => fetchLeaderboardDataWithSession(s, userId, [ids.factionFor, ids.factionAgainst]));
-        const leaderboards = raw?.eventResult?.eventResponseData?.leaderboards;
-        await upsertPlanetLeaderboard(db, planetId, leaderboards, now);
+        const ids = allLeaderboardIdsForPlanet(meta.crusadeId, meta.seasonNumber, planetId);
+        const raw = await withSession((s) => fetchLeaderboardDataWithSession(s, userId, ids));
+        await upsertPlanetLeaderboard(db, planetId, raw, now);
       } catch (error) {
         console.error(`[poller] planet ${planetId} failed`, error); // isolated - one bad planet doesn't abort the tick
       }
