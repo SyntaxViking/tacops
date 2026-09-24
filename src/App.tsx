@@ -92,7 +92,6 @@ export function App() {
   const [resources, setResources] = useState<PlayerResources | null>(null);
   const [heroQuestJars, setHeroQuestJars] = useState<HeroQuestJar[]>([]);
   const [sectorMap, setSectorMap] = useState<CrusadeSectorMap>({ planets: [], connections: [] });
-  const [rawPlayerData, setRawPlayerData] = useState<unknown>(null);
   const [crusadeData, setCrusadeData] = useState<CrusadeData | null>(null);
   // Bumped only in go() - unlike crusadeData itself, this changes exactly once per GO click, never
   // on the background per-planet score refresh inside fetchOnePlanet (which also calls
@@ -320,7 +319,6 @@ export function App() {
       setResources(data.resources);
       setHeroQuestJars(data.heroQuestJars);
       setSectorMap(data.sectorMap);
-      setRawPlayerData(data.raw);
       setFetchState("success");
       if (!isTauri()) {
         void storeWebCredential(userId, clientSecret);
