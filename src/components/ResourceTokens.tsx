@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Icon } from "./Icon";
 import { watchAdIconUrl } from "../watch-ad-icon";
 import { PVP_MAX } from "../api/resource-regen";
@@ -25,6 +26,8 @@ interface SubtextLine {
   className: string;
 }
 
+const MOBILE_TOKENS_OPEN_KEY = "tacops:mobileTokensOpen";
+
 // "Next token" is never urgency-colored (there's nothing to warn about), but "Cap"/"Burn" lines
 // are deadlines worth calling out as they approach - see urgencyColorClass.
 function regenSubtext(nextTokenAt: number | null, capAt: number | null): SubtextLine[] {
@@ -35,6 +38,29 @@ function regenSubtext(nextTokenAt: number | null, capAt: number | null): Subtext
 }
 
 export function ResourceTokens({ resources, adViewsRemaining }: ResourceTokensProps) {
+  // Remembered across visits on mobile only - desktop always shows the full row and never
+  // consults this. Read lazily via the initializer so a stale/blocked localStorage doesn't
+  // throw during render.
+  const [mobileOpen, setMobileOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(MOBILE_TOKENS_OPEN_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleMobileOpen() {
+    setMobileOpen((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(MOBILE_TOKENS_OPEN_KEY, String(next));
+      } catch {
+        // localStorage unavailable (private mode, quota, etc.) - toggle still works, just won't persist.
+      }
+      return next;
+    });
+  }
+
   // Absent between PVP seasons - just omit the line rather than showing a misleading "0 / 0".
   const pvpPositionLine =
     resources.pvpPosition !== null && resources.pvpGroupSize !== null
@@ -141,7 +167,7 @@ export function ResourceTokens({ resources, adViewsRemaining }: ResourceTokensPr
       : []),
   ];
 
-  return (
+  const tokensRow = (
     <div className="flex flex-wrap items-start justify-center gap-3">
       {entries.map((entry) => (
         <div
@@ -160,5 +186,22 @@ export function ResourceTokens({ resources, adViewsRemaining }: ResourceTokensPr
         </div>
       ))}
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop: unchanged, always visible. Mobile: collapsed behind a toggle. */}
+      <div className="hidden md:block">{tokensRow}</div>
+      <div className="w-full md:hidden">
+        <button
+          type="button"
+          onClick={toggleMobileOpen}
+          className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm text-neutral-700 outline-none transition-colors hover:border-blue-500 active:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:active:bg-neutral-900/40"
+        >
+          {mobileOpen ? "Hide tokens" : "Show tokens"}
+        </button>
+        {mobileOpen && <div className="pt-2">{tokensRow}</div>}
+      </div>
+    </>
   );
 }
