@@ -208,6 +208,28 @@ describe("sortDominationPlanets", () => {
     }
   });
 
+  it("sinks a planet that exactly hit its conquest threshold (zero points remaining), not just ones that overshot it", () => {
+    const planets = [
+      // Devastation exactly reached its threshold - captured, should sink to the bottom, same as overshooting it.
+      planet({
+        planetId: "exactly-captured",
+        sideOwner: "For",
+        pointsFor: 10,
+        pointsAgainst: 9000,
+        struggleData: { conquestThresholdPointsAttacker: 9000, conquestThresholdPointsDefender: 10000 },
+      }),
+      planet({
+        planetId: "still-contested",
+        sideOwner: "For",
+        pointsFor: 10,
+        pointsAgainst: 100,
+        struggleData: { conquestThresholdPointsAttacker: 9000, conquestThresholdPointsDefender: 10000 },
+      }),
+    ];
+    const byPlanet = new Map<string, PlanetLeaderboard>();
+    expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["still-contested", "exactly-captured"]);
+  });
+
   it("imperialFirst mode sorts by imperial points remaining first, devastation as tiebreak", () => {
     const planets = [
       planet({

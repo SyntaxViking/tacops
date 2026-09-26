@@ -79,7 +79,7 @@ export function OperationsTable({
           const solution = assignment.get(entry.expeditionId);
           const dimmed = selectedExpeditionId !== null && selectedExpeditionId !== entry.expeditionId;
           const name = operationName(entry.id);
-          const fulfillment = unavailable || solverReady ? getEntryFulfillment(entry, assignment) : null;
+          const fulfillment = unavailable || solverReady ? getEntryFulfillment(entry, assignment, heroes) : null;
 
           return (
             <tr

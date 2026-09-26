@@ -2,17 +2,18 @@
 // Trigger in wrangler.toml). Refreshes the public, account-agnostic crusade/leaderboard cache so
 // anonymous visitors (and logged-in users' first paint) never have to wait on a live Tacticus call.
 //
-// Deliberately does NOT touch any Loki response before storing it - each tick stores the complete,
-// untouched object fetchCrusadeDataWithSession/fetchLeaderboardDataWithSession returned, as one
-// TEXT column each. Fields are read off that object in memory (phase/activeZone/crusadeId/
-// seasonNumber) only to decide what to fetch next - that's unavoidable control flow, never applied
-// to the stored copy. All interpretation (envelope-unwrapping, CrusadePlanet[] construction,
-// building SideLeaderboardResult/FactionLeaderboardResult from raw entries) happens client-side, in
-// src/api/fetch-crusade-data.ts, reused by src/api/crusade-cache-seed.ts - once per page load, not
-// once per planet per minute.
+// Deliberately does NOT touch any Loki response before storing it - each tick stores the exact
+// response bytes fetchCrusadeDataWithSession/fetchLeaderboardDataWithSession received (their
+// `.text`), verbatim, as one TEXT column each - no JSON.stringify(parsed) re-serialization, which
+// would just redo (at real CPU cost) work fetch() already did once. Their `.parsed` twin is read
+// off in memory (phase/activeZone/crusadeId/seasonNumber) only to decide what to fetch next -
+// that's unavoidable control flow, never applied to the stored copy. All interpretation
+// (envelope-unwrapping, CrusadePlanet[] construction, building SideLeaderboardResult/
+// FactionLeaderboardResult from raw entries) happens client-side, in src/api/fetch-crusade-data.ts,
+// reused by src/api/crusade-cache-seed.ts - once per page load, not once per planet per minute.
 import planetData from "../src/assets/planet-data.json";
 import { FACTION_SIDE } from "../src/factions/faction-side";
-import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, fetchLeaderboardDataWithSession, type Session } from "./loki-client";
+import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, fetchLeaderboardTextWithSession, type Session } from "./loki-client";
 
 // The 22 faction ids, reused as-is (no Tauri/browser coupling in faction-side.ts, unlike
 // fetch-crusade-data.ts, so no need to duplicate this list).
@@ -20,7 +21,14 @@ const ALL_FACTION_IDS = Object.keys(FACTION_SIDE);
 
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // no documented Loki session TTL - defensive reuse window
 const CRUSADE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-const PLANETS_PER_TICK = 20; // see subrequest-budget arithmetic in the implementation plan
+// Real production data showed ~65% of ticks hitting the Workers Free plan's 10ms CPU cap
+// ("exceededResources") at 20 planets/tick, from JSON.parse-ing some planets' combined
+// 24-leaderboard-id response (seen up to 175KB). Per-planet fetches now use
+// fetchLeaderboardTextWithSession (loki-client.ts), which skips JSON.parse entirely on the common
+// success path (a cheap bounded prefix scan instead) - since that removes the dominant cost, back
+// to 20 rather than the smaller value tried while diagnosing this; re-check the real
+// exceededResources rate after deploying and adjust down again if it's still meaningful.
+const PLANETS_PER_TICK = 20;
 
 interface RawCrusadePhase {
   phase: string;
@@ -128,24 +136,28 @@ async function readSnapshotMeta(db: D1Database): Promise<SnapshotMeta> {
     : { crusadeId: "", seasonNumber: 0, phase: null, activeZone: null };
 }
 
-async function writeCrusadeSnapshot(db: D1Database, meta: SnapshotMeta, rawResponse: unknown, fetchedAt: number): Promise<void> {
+// rawResponseText is the exact response body already received (PostResult.text from
+// loki-client.ts) - bound directly, never JSON.stringify'd. Re-serializing an already-parsed
+// object back into a string just to store it would redo (at real CPU cost) work already done once
+// by fetch(); storing the original bytes verbatim avoids that entirely.
+async function writeCrusadeSnapshot(db: D1Database, meta: SnapshotMeta, rawResponseText: string, fetchedAt: number): Promise<void> {
   await db
     .prepare(
       "INSERT INTO crusade_snapshot_cache (id, crusade_id, season_number, phase, active_zone, raw_response, fetched_at) VALUES (1, ?, ?, ?, ?, ?, ?) " +
         "ON CONFLICT(id) DO UPDATE SET crusade_id = excluded.crusade_id, season_number = excluded.season_number, phase = excluded.phase, " +
         "active_zone = excluded.active_zone, raw_response = excluded.raw_response, fetched_at = excluded.fetched_at",
     )
-    .bind(meta.crusadeId, meta.seasonNumber, meta.phase, meta.activeZone, JSON.stringify(rawResponse), fetchedAt)
+    .bind(meta.crusadeId, meta.seasonNumber, meta.phase, meta.activeZone, rawResponseText, fetchedAt)
     .run();
 }
 
-async function upsertPlanetLeaderboard(db: D1Database, planetId: string, rawLeaderboards: unknown, fetchedAt: number): Promise<void> {
+async function upsertPlanetLeaderboard(db: D1Database, planetId: string, rawLeaderboardsText: string, fetchedAt: number): Promise<void> {
   await db
     .prepare(
       "INSERT INTO planet_leaderboard_cache (planet_id, raw_leaderboards, fetched_at) VALUES (?, ?, ?) " +
         "ON CONFLICT(planet_id) DO UPDATE SET raw_leaderboards = excluded.raw_leaderboards, fetched_at = excluded.fetched_at",
     )
-    .bind(planetId, JSON.stringify(rawLeaderboards), fetchedAt)
+    .bind(planetId, rawLeaderboardsText, fetchedAt)
     .run();
 }
 
@@ -188,13 +200,13 @@ export async function runPollerTick(db: D1Database, userId: string, clientSecret
     const needsCrusadeRefresh = state.last_crusade_refresh_at === null || now - state.last_crusade_refresh_at >= CRUSADE_REFRESH_INTERVAL_MS;
 
     if (needsCrusadeRefresh) {
-      // raw is stored verbatim below (writeCrusadeSnapshot) - drilling into it here is only ever
-      // done to decide what to fetch next, never applied to the stored copy.
-      const raw: any = await withSession((s) => fetchCrusadeDataWithSession(s, userId));
-      const data = raw?.eventResults?.[0]?.eventResponseData;
+      // `text` is stored verbatim below (writeCrusadeSnapshot); `parsed` is only ever read in
+      // memory here to decide what to fetch next, never applied to the stored copy.
+      const { parsed, text } = await withSession((s) => fetchCrusadeDataWithSession(s, userId));
+      const data = parsed?.eventResults?.[0]?.eventResponseData;
       const active = findActivePhase(data?.downtimePhase, data?.crusadePhases ?? [], data?.strugglePhase);
       meta = { crusadeId: data?.crusadeId ?? "", seasonNumber: data?.seasonNumber ?? 0, phase: active.phase, activeZone: active.activeZone };
-      await writeCrusadeSnapshot(db, meta, raw, now);
+      await writeCrusadeSnapshot(db, meta, text, now);
     } else {
       meta = await readSnapshotMeta(db);
     }
@@ -205,8 +217,8 @@ export async function runPollerTick(db: D1Database, userId: string, clientSecret
     for (const planetId of batch) {
       try {
         const ids = allLeaderboardIdsForPlanet(meta.crusadeId, meta.seasonNumber, planetId);
-        const raw = await withSession((s) => fetchLeaderboardDataWithSession(s, userId, ids));
-        await upsertPlanetLeaderboard(db, planetId, raw, now);
+        const text = await withSession((s) => fetchLeaderboardTextWithSession(s, userId, ids));
+        await upsertPlanetLeaderboard(db, planetId, text, now);
       } catch (error) {
         console.error(`[poller] planet ${planetId} failed`, error); // isolated - one bad planet doesn't abort the tick
       }

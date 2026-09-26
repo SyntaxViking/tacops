@@ -32,6 +32,9 @@ export type RawUnit = {
   progressionIndex?: number;
   xpLevel?: number;
   power?: number;
+  // Damage profiles this specific player's equipped relics add on top of the character's own (see
+  // equippedRelicDamageProfiles) - stamped at fetch time, like power.
+  extraDamageProfiles?: string[];
 } & Record<string, unknown>;
 
 export interface CrusadePhase {
