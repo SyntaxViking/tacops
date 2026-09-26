@@ -49,7 +49,7 @@ export function getCharacterRow(hero: RawUnit): CharacterRow {
   const rank = intToRank(hero.rank);
   const rarity = ProgressionIndexMapper.toRarity(hero.progressionIndex);
   const stars = ProgressionIndexMapper.toStars(hero.progressionIndex);
-  const profile = getCharacterProfile(hero.id);
+  const profile = getCharacterProfile(hero.id, hero.extraDamageProfiles);
 
   return {
     id: hero.id,

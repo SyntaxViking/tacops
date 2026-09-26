@@ -313,4 +313,26 @@ describe("solveBoardAssignment", () => {
 
     expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
   });
+
+  it("counts a relic-added damage profile toward a bonus objective the character can't otherwise satisfy", () => {
+    // deathRotbone's own kit is Power-only; his Orbs of Decay relic adds Toxic (see
+    // equippedRelicDamageProfiles), which is what makes him eligible for a Toxic-damage bonus.
+    // A bonus reward is needed so the LP has a reason to complete the bonus at all (it only
+    // weights the bonus variable by reward amount).
+    const toxicBoard = board({
+      bonusObjectives: [{ objectiveType: "DamageType", objectiveTarget: "Toxic" }],
+      bonusRewards: ["intel:100"],
+    });
+    const priority: Parameters<typeof solveBoardAssignment>[2] = ["rarity", "intel", "crusadeBomb", "crusadeNpc"];
+
+    const withRelic: RawUnit = { id: "deathRotbone", power: 100, extraDamageProfiles: ["Toxic"] };
+    const withoutRelic: RawUnit = { id: "deathRotbone", power: 100 };
+
+    const relicResult = solveBoardAssignment([toxicBoard], [withRelic], priority).assignment.get("exp")!;
+    expect(relicResult.bonusCompleted).toBe(true);
+    expect(relicResult.requiredCharacterIds).toEqual(["deathRotbone"]);
+
+    const plainResult = solveBoardAssignment([toxicBoard], [withoutRelic], priority).assignment.get("exp")!;
+    expect(plainResult.bonusCompleted).toBe(false);
+  });
 });

@@ -58,7 +58,7 @@ function buildRoster(
       rarity: ProgressionIndexMapper.toRarity(hero.progressionIndex),
       xpLevel: hero.xpLevel ?? 0,
       power: hero.power ?? null,
-      profile: getCharacterProfile(hero.id),
+      profile: getCharacterProfile(hero.id, hero.extraDamageProfiles),
       isFavorited: favoritedCharacterIds.has(hero.id),
       isAntiFavorited: antiFavoritedCharacterIds.has(hero.id),
     }));

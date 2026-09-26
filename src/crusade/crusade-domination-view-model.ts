@@ -1,4 +1,4 @@
-import type { CrusadePlanet, PlanetLeaderboard } from "../api/types";
+import type { CrusadePlanet, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
 
 export interface ConquestProgress {
   imperialCurrent: number;
@@ -37,6 +37,15 @@ export function isPlanetRanked(leaderboard: PlanetLeaderboard | undefined): bool
   return leaderboard?.side?.myRank != null || leaderboard?.faction?.myRank != null;
 }
 
+// Background polling is reserved for planets the user cares about: starred or ranked ones. Any
+// other planet still gets loaded once (that first fetch is also how a rank is discovered) - i.e.
+// until it has a successful fetch, it stays eligible (still subject to the caller's cadence
+// threshold, so a failing load retries at the normal pace rather than hot-looping) - and after that
+// only updates via its manual refresh button.
+export function isPlanetAutoRefreshable(entry: PlanetRefreshEntry, isStarred: boolean): boolean {
+  return isStarred || entry.lastSuccessAt === null || isPlanetRanked(entry.leaderboard ?? undefined);
+}
+
 export interface CaptureRace {
   leadingSide: "Imperial" | "Devastation";
   pointsRemaining: number;
@@ -60,12 +69,13 @@ function factionParticipants(leaderboard: PlanetLeaderboard | undefined): number
 
 export type DominationSortMode = "closestToCapture" | "imperialFirst" | "devastationFirst";
 
-// A negative pointsRemaining means a side has already crossed its conquest threshold - the planet
+// pointsRemaining <= 0 means a side has reached (or overshot) its conquest threshold - the planet
 // was just captured and hasn't dropped out of the active list yet, so it's no longer a live
-// opportunity worth surfacing near the top.
+// opportunity worth surfacing near the top. <= (not <) since exactly hitting the threshold is
+// still a capture, not "one point to go".
 function isJustCaptured(planet: CrusadePlanet): boolean {
   const race = computeCaptureRace(planet);
-  return race !== null && race.pointsRemaining < 0;
+  return race !== null && race.pointsRemaining <= 0;
 }
 
 // Struggle-gated so an Expansion planet (never has struggleData, and can legitimately show 0/0

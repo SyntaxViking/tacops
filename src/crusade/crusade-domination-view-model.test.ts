@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   computeCaptureRace,
   computeConquestProgress,
+  isPlanetAutoRefreshable,
   isPlanetRanked,
   parsePositiveIntFilter,
   passesDominationFilters,
   sortDominationPlanets,
 } from "./crusade-domination-view-model";
-import type { CrusadePlanet, FactionLeaderboardResult, PlanetLeaderboard, SideLeaderboardResult } from "../api/types";
+import type { CrusadePlanet, FactionLeaderboardResult, PlanetLeaderboard, PlanetRefreshEntry, SideLeaderboardResult } from "../api/types";
 
 function planet(overrides: Partial<CrusadePlanet> = {}): CrusadePlanet {
   return { planetId: "planet_001", name: "Test Planet", zone: null, ...overrides };
@@ -121,6 +122,33 @@ describe("isPlanetRanked", () => {
   });
 });
 
+describe("isPlanetAutoRefreshable", () => {
+  const ranked = leaderboard({ faction: { numParticipants: 10, myRank: 3, myPoints: 100, benchmarks: [], referenceScore: null } });
+  function entry(overrides: Partial<PlanetRefreshEntry> = {}): PlanetRefreshEntry {
+    return { leaderboard: leaderboard(), lastSuccessAt: 1000, lastAttemptAt: 1000, lastAttemptFailed: false, isLoading: false, ...overrides };
+  }
+
+  it("is true for a starred planet even when it's already loaded and unranked", () => {
+    expect(isPlanetAutoRefreshable(entry(), true)).toBe(true);
+  });
+
+  it("is true for a ranked planet that isn't starred", () => {
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: ranked }), false)).toBe(true);
+  });
+
+  it("is false for a loaded, unranked, unstarred planet - it only updates via manual refresh", () => {
+    expect(isPlanetAutoRefreshable(entry(), false)).toBe(false);
+  });
+
+  it("is true until the first successful load, so every planet gets loaded once (and a rank can be discovered)", () => {
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptAt: null }), false)).toBe(true);
+  });
+
+  it("keeps retrying an unstarred planet whose only attempts so far failed", () => {
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptFailed: true }), false)).toBe(true);
+  });
+});
+
 describe("sortDominationPlanets", () => {
   it("puts faction-ranked planets first, ordered by the selected sort mode rather than leaderboard percentile", () => {
     // "far" has a much better (lower) faction rank/percentile than "close", but "close" is nearer
@@ -206,6 +234,28 @@ describe("sortDominationPlanets", () => {
     for (const mode of ["closestToCapture", "imperialFirst", "devastationFirst"] as const) {
       expect(sortDominationPlanets(planets, byPlanet, noStars, mode).map((p) => p.planetId)).toEqual(["still-contested", "just-captured"]);
     }
+  });
+
+  it("sinks a planet that exactly hit its conquest threshold (zero points remaining), not just ones that overshot it", () => {
+    const planets = [
+      // Devastation exactly reached its threshold - captured, should sink to the bottom, same as overshooting it.
+      planet({
+        planetId: "exactly-captured",
+        sideOwner: "For",
+        pointsFor: 10,
+        pointsAgainst: 9000,
+        struggleData: { conquestThresholdPointsAttacker: 9000, conquestThresholdPointsDefender: 10000 },
+      }),
+      planet({
+        planetId: "still-contested",
+        sideOwner: "For",
+        pointsFor: 10,
+        pointsAgainst: 100,
+        struggleData: { conquestThresholdPointsAttacker: 9000, conquestThresholdPointsDefender: 10000 },
+      }),
+    ];
+    const byPlanet = new Map<string, PlanetLeaderboard>();
+    expect(sortDominationPlanets(planets, byPlanet, noStars).map((p) => p.planetId)).toEqual(["still-contested", "exactly-captured"]);
   });
 
   it("imperialFirst mode sorts by imperial points remaining first, devastation as tiebreak", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gameEventChecksum } from "./loki-client";
+import { gameEventChecksum, looksLikeSuccess } from "./loki-client";
 
 // Pinned against 5 real captures (2 different gameEventTypes) gathered this session - if these
 // ever fail, GAME_EVENT_GAME_CONFIG_VERSION in loki-client.ts has almost certainly rotated (the
@@ -15,5 +15,23 @@ describe("gameEventChecksum", () => {
       guildWarId: "cc144330-7be6-4a47-8f67-087ce739c82b",
     });
     expect(d).toBe("7E3E6C3B4E3095EF932200EFDA5961DA");
+  });
+});
+
+describe("looksLikeSuccess", () => {
+  it("detects the success marker near the start of a real-shaped GET_LEADERBOARD_2 response, even a huge one", () => {
+    const hugeTrailer = "x".repeat(200_000); // simulates a planet with a very large leaderboards payload
+    const text = `{"eventResult":{"eventId":"","eventResultType":"SUCCESS","eventResponseData":{"leaderboards":{"${hugeTrailer}":1}}}}`;
+    expect(looksLikeSuccess(text)).toBe(true);
+  });
+
+  it("returns false for an application-level error response", () => {
+    const text = `{"eventResult":{"eventId":"","eventResultType":"FAILURE","errorMessage":"nope"}}`;
+    expect(looksLikeSuccess(text)).toBe(false);
+  });
+
+  it("returns false for garbage/empty input rather than throwing", () => {
+    expect(looksLikeSuccess("")).toBe(false);
+    expect(looksLikeSuccess("not json at all")).toBe(false);
   });
 });
