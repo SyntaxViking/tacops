@@ -1,4 +1,4 @@
-import type { CrusadePlanet, PlanetLeaderboard } from "../api/types";
+import type { CrusadePlanet, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
 
 export interface ConquestProgress {
   imperialCurrent: number;
@@ -35,6 +35,15 @@ export function computeConquestProgress(planet: CrusadePlanet): ConquestProgress
 
 export function isPlanetRanked(leaderboard: PlanetLeaderboard | undefined): boolean {
   return leaderboard?.side?.myRank != null || leaderboard?.faction?.myRank != null;
+}
+
+// Background polling is reserved for planets the user cares about: starred or ranked ones. Any
+// other planet still gets loaded once (that first fetch is also how a rank is discovered) - i.e.
+// until it has a successful fetch, it stays eligible (still subject to the caller's cadence
+// threshold, so a failing load retries at the normal pace rather than hot-looping) - and after that
+// only updates via its manual refresh button.
+export function isPlanetAutoRefreshable(entry: PlanetRefreshEntry, isStarred: boolean): boolean {
+  return isStarred || entry.lastSuccessAt === null || isPlanetRanked(entry.leaderboard ?? undefined);
 }
 
 export interface CaptureRace {

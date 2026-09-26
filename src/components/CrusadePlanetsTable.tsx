@@ -1,3 +1,4 @@
+import { isStarDisabled } from "../crusade/starred-planets";
 import { FactionBadge, LeaderboardBreakdownCell, SidePercentCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
@@ -45,7 +46,11 @@ export function CrusadePlanetsTable({
             <tr key={planet.planetId} className={refreshEntry.isLoading ? "pointer-events-none opacity-60" : ""}>
               <td className={cellClass}>
                 {onToggleFavoritePlanet && (
-                  <StarIconButton isFavorited={favoritedPlanetIds.has(planet.planetId)} onToggle={() => onToggleFavoritePlanet(planet.planetId)} />
+                  <StarIconButton
+                    isFavorited={favoritedPlanetIds.has(planet.planetId)}
+                    onToggle={() => onToggleFavoritePlanet(planet.planetId)}
+                    disabled={isStarDisabled(favoritedPlanetIds, planet.planetId)}
+                  />
                 )}
               </td>
               <td className={cellClass}>{planet.name}</td>

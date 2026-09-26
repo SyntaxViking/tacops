@@ -1,3 +1,4 @@
+import { isStarDisabled } from "../crusade/starred-planets";
 import { CrusadePlanetCard } from "./CrusadePlanetCard";
 import { EMPTY_REFRESH_ENTRY } from "./planet-refresh-defaults";
 import type { CrusadePlanet, PlanetRefreshEntry } from "../api/types";
@@ -27,6 +28,7 @@ export function CrusadePlanetsCards({
           onRefresh={onRefreshPlanet ? () => onRefreshPlanet(planet.planetId) : undefined}
           isFavorited={favoritedPlanetIds.has(planet.planetId)}
           onToggleFavorite={onToggleFavoritePlanet ? () => onToggleFavoritePlanet(planet.planetId) : undefined}
+          starDisabled={isStarDisabled(favoritedPlanetIds, planet.planetId)}
         />
       ))}
     </div>

@@ -13,9 +13,10 @@ interface CrusadePlanetCardProps {
   onRefresh?: () => void;
   isFavorited: boolean;
   onToggleFavorite?: () => void;
+  starDisabled?: boolean;
 }
 
-export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited, onToggleFavorite }: CrusadePlanetCardProps) {
+export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited, onToggleFavorite, starDisabled }: CrusadePlanetCardProps) {
   const leaderboard = refreshEntry.leaderboard;
   return (
     <div className="relative">
@@ -31,7 +32,7 @@ export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
-            {onToggleFavorite && <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} />}
+            {onToggleFavorite && <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} disabled={starDisabled} />}
             <span className="font-medium">{planet.name}</span>
           </div>
           <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />

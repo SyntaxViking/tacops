@@ -1,22 +1,34 @@
+import { MAX_STARRED_PLANETS } from "../crusade/starred-planets";
+
 interface StarIconButtonProps {
   isFavorited: boolean;
   onToggle: () => void;
+  // Set when the starred-planet cap is reached and this one isn't starred (see isStarDisabled) -
+  // an already-starred button is never disabled, so it can always be un-starred.
+  disabled?: boolean;
   size?: number;
 }
 
 // Same inline-SVG-button approach as RefreshIconButton, including the stopPropagation - this sits
 // inside rows/cards that have their own onClick (e.g. to open the sector map modal).
-export function StarIconButton({ isFavorited, onToggle, size = 18 }: StarIconButtonProps) {
+export function StarIconButton({ isFavorited, onToggle, disabled = false, size = 18 }: StarIconButtonProps) {
   return (
     <button
       type="button"
+      // aria-disabled (not the native attribute): a natively disabled button can let the click fall
+      // through to the enclosing card's own onClick in some browsers; this always swallows it.
+      aria-disabled={disabled}
       onClick={(e) => {
         e.stopPropagation();
-        onToggle();
+        if (!disabled) onToggle();
       }}
-      title={isFavorited ? "Remove from favorites" : "Add to favorites"}
+      title={disabled ? `You can star at most ${MAX_STARRED_PLANETS} planets - un-star one first` : isFavorited ? "Remove from favorites" : "Add to favorites"}
       className={`inline-flex shrink-0 items-center justify-center outline-none transition-colors ${
-        isFavorited ? "text-amber-400 hover:text-amber-500" : "text-neutral-400 hover:text-amber-400 dark:text-neutral-500 dark:hover:text-amber-400"
+        disabled
+          ? "cursor-not-allowed text-neutral-300 dark:text-neutral-600"
+          : isFavorited
+            ? "text-amber-400 hover:text-amber-500"
+            : "text-neutral-400 hover:text-amber-400 dark:text-neutral-500 dark:hover:text-amber-400"
       }`}
       style={{ height: size, width: size }}
     >
