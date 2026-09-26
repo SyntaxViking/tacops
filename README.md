@@ -122,6 +122,17 @@ players. Using an embargoed or otherwise-ahead-of-release config here would both
 content into a checked-in file and quietly compute the wrong power for players still on the live
 build.
 
+### Updating the bundled sector map
+
+The crusade sector map layout (planet positions and adjacency) only appears in a logged-in
+`GET_PLAYER` response, so the logged-out home page uses a snapshot bundled at
+`src/assets/sector-map.json` instead. If the layout ever changes (e.g. a new crusade season adds or
+moves planets), regenerate it from the "Export JSON" file of a logged-in session:
+
+```sh
+npx vite-node scripts/extract-sector-map.ts "<path-to-tacops-prod-player-data.json>"
+```
+
 ### Credentials
 
 TacOps doesn't manage login — it reads the credentials the actual Tacticus game client already

@@ -1,0 +1,1747 @@
+{
+ "planets": [
+  {
+   "planetId": "notplayable_001",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3897,
+   "positionY": 476
+  },
+  {
+   "planetId": "notplayable_002",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -2796,
+   "positionY": -508
+  },
+  {
+   "planetId": "notplayable_003",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3018,
+   "positionY": -469
+  },
+  {
+   "planetId": "notplayable_004",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -2814,
+   "positionY": -408
+  },
+  {
+   "planetId": "notplayable_006",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3318,
+   "positionY": 63
+  },
+  {
+   "planetId": "notplayable_008",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -2855,
+   "positionY": 271
+  },
+  {
+   "planetId": "notplayable_009",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -2838,
+   "positionY": 448
+  },
+  {
+   "planetId": "notplayable_010",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -2815,
+   "positionY": 47
+  },
+  {
+   "planetId": "notplayable_011",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2601,
+   "positionY": -496
+  },
+  {
+   "planetId": "notplayable_012",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2528,
+   "positionY": -515
+  },
+  {
+   "planetId": "notplayable_013",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2349,
+   "positionY": -599
+  },
+  {
+   "planetId": "notplayable_014",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2278,
+   "positionY": 552
+  },
+  {
+   "planetId": "notplayable_015",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -903,
+   "positionY": 124
+  },
+  {
+   "planetId": "notplayable_016",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -331,
+   "positionY": -502
+  },
+  {
+   "planetId": "notplayable_017",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -317,
+   "positionY": -421
+  },
+  {
+   "planetId": "notplayable_018",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -127,
+   "positionY": -458
+  },
+  {
+   "planetId": "notplayable_019",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -966,
+   "positionY": 599
+  },
+  {
+   "planetId": "notplayable_020",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 903,
+   "positionY": -508
+  },
+  {
+   "planetId": "notplayable_021",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 720,
+   "positionY": -360
+  },
+  {
+   "planetId": "notplayable_022",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 1118,
+   "positionY": 233
+  },
+  {
+   "planetId": "notplayable_023",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 1216,
+   "positionY": 465
+  },
+  {
+   "planetId": "notplayable_024",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 1035,
+   "positionY": 415
+  },
+  {
+   "planetId": "notplayable_025",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 113,
+   "positionY": -591
+  },
+  {
+   "planetId": "notplayable_026",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 2496,
+   "positionY": -9
+  },
+  {
+   "planetId": "notplayable_027",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 2357,
+   "positionY": 84
+  },
+  {
+   "planetId": "notplayable_028",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 2583,
+   "positionY": 0
+  },
+  {
+   "planetId": "notplayable_029",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1539,
+   "positionY": 526
+  },
+  {
+   "planetId": "notplayable_030",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1446,
+   "positionY": 477
+  },
+  {
+   "planetId": "notplayable_031",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1551,
+   "positionY": 346
+  },
+  {
+   "planetId": "notplayable_032",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1978,
+   "positionY": -191
+  },
+  {
+   "planetId": "notplayable_033",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 2802,
+   "positionY": -614
+  },
+  {
+   "planetId": "notplayable_034",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3872,
+   "positionY": -271
+  },
+  {
+   "planetId": "notplayable_035",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 4012,
+   "positionY": -428
+  },
+  {
+   "planetId": "notplayable_036",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3364,
+   "positionY": -531
+  },
+  {
+   "planetId": "notplayable_037",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3733,
+   "positionY": -585
+  },
+  {
+   "planetId": "notplayable_038",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3780,
+   "positionY": -425
+  },
+  {
+   "planetId": "notplayable_039",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3636,
+   "positionY": -389
+  },
+  {
+   "planetId": "notplayable_040",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3395,
+   "positionY": 546
+  },
+  {
+   "planetId": "notplayable_041",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3189,
+   "positionY": 512
+  },
+  {
+   "planetId": "notplayable_042",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1883,
+   "positionY": 125
+  },
+  {
+   "planetId": "notplayable_043",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1959,
+   "positionY": 203
+  },
+  {
+   "planetId": "notplayable_044",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2148,
+   "positionY": -14
+  },
+  {
+   "planetId": "notplayable_045",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2350,
+   "positionY": -147
+  },
+  {
+   "planetId": "notplayable_046",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2570,
+   "positionY": 35
+  },
+  {
+   "planetId": "notplayable_047",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2021,
+   "positionY": -539
+  },
+  {
+   "planetId": "notplayable_048",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1983,
+   "positionY": -362
+  },
+  {
+   "planetId": "notplayable_049",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -107,
+   "positionY": -71
+  },
+  {
+   "planetId": "notplayable_050",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1568,
+   "positionY": 208
+  },
+  {
+   "planetId": "notplayable_051",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -900,
+   "positionY": -253
+  },
+  {
+   "planetId": "notplayable_052",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1616,
+   "positionY": 107
+  },
+  {
+   "planetId": "notplayable_053",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1700,
+   "positionY": 0
+  },
+  {
+   "planetId": "notplayable_054",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1499,
+   "positionY": -55
+  },
+  {
+   "planetId": "notplayable_055",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 2399,
+   "positionY": -364
+  },
+  {
+   "planetId": "notplayable_056",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 2451,
+   "positionY": -481
+  },
+  {
+   "planetId": "notplayable_057",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1931,
+   "positionY": 464
+  },
+  {
+   "planetId": "notplayable_058",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 2771,
+   "positionY": 598
+  },
+  {
+   "planetId": "notplayable_059",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3892,
+   "positionY": 179
+  },
+  {
+   "planetId": "notplayable_060",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3748,
+   "positionY": 54
+  },
+  {
+   "planetId": "notplayable_061",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3914,
+   "positionY": 103
+  },
+  {
+   "planetId": "notplayable_062",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 2815,
+   "positionY": -165
+  },
+  {
+   "planetId": "notplayable_063",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 2960,
+   "positionY": 18
+  },
+  {
+   "planetId": "notplayable_064",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 2863,
+   "positionY": 170
+  },
+  {
+   "planetId": "notplayable_065",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3475,
+   "positionY": 133
+  },
+  {
+   "planetId": "planet_001",
+   "zone": 0,
+   "type": "Fortress",
+   "positionX": -3602,
+   "positionY": -523
+  },
+  {
+   "planetId": "planet_002",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -2743,
+   "positionY": 491
+  },
+  {
+   "planetId": "planet_003",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3871,
+   "positionY": 393
+  },
+  {
+   "planetId": "planet_004",
+   "zone": 0,
+   "type": "Fortress",
+   "positionX": -3526,
+   "positionY": 3
+  },
+  {
+   "planetId": "planet_005",
+   "zone": 0,
+   "type": "Dead",
+   "positionX": -3272,
+   "positionY": -87
+  },
+  {
+   "planetId": "planet_006",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3100,
+   "positionY": -500
+  },
+  {
+   "planetId": "planet_007",
+   "zone": 0,
+   "type": "Hive",
+   "positionX": -3633,
+   "positionY": 475
+  },
+  {
+   "planetId": "planet_008",
+   "zone": 0,
+   "type": "Dead",
+   "positionX": -2947,
+   "positionY": 125
+  },
+  {
+   "planetId": "planet_009",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3832,
+   "positionY": 75
+  },
+  {
+   "planetId": "planet_010",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -2930,
+   "positionY": -329
+  },
+  {
+   "planetId": "planet_011",
+   "zone": 0,
+   "type": "Feral",
+   "positionX": -2879,
+   "positionY": -77
+  },
+  {
+   "planetId": "planet_012",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3244,
+   "positionY": 441
+  },
+  {
+   "planetId": "planet_013",
+   "zone": 0,
+   "type": "Feral",
+   "positionX": -3866,
+   "positionY": -482
+  },
+  {
+   "planetId": "planet_014",
+   "zone": 0,
+   "type": "Dead",
+   "positionX": -3456,
+   "positionY": -196
+  },
+  {
+   "planetId": "planet_015",
+   "zone": 5,
+   "type": "Hive",
+   "positionX": 3251,
+   "positionY": 176
+  },
+  {
+   "planetId": "planet_017",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3416,
+   "positionY": 424
+  },
+  {
+   "planetId": "planet_018",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -2944,
+   "positionY": 386
+  },
+  {
+   "planetId": "planet_021",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -720,
+   "positionY": -318
+  },
+  {
+   "planetId": "planet_022",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -2354,
+   "positionY": -535
+  },
+  {
+   "planetId": "planet_024",
+   "zone": 1,
+   "type": "Dead",
+   "positionX": -2456,
+   "positionY": 563
+  },
+  {
+   "planetId": "planet_025",
+   "zone": 1,
+   "type": "Dead",
+   "positionX": -1938,
+   "positionY": -41
+  },
+  {
+   "planetId": "planet_026",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -2082,
+   "positionY": 146
+  },
+  {
+   "planetId": "planet_027",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -2542,
+   "positionY": -135
+  },
+  {
+   "planetId": "planet_028",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -1812,
+   "positionY": 547
+  },
+  {
+   "planetId": "planet_029",
+   "zone": 1,
+   "type": "Fortress",
+   "positionX": -1552,
+   "positionY": 571
+  },
+  {
+   "planetId": "planet_030",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -1684,
+   "positionY": 440
+  },
+  {
+   "planetId": "planet_031",
+   "zone": 1,
+   "type": "Fortress",
+   "positionX": -1894,
+   "positionY": -374
+  },
+  {
+   "planetId": "planet_032",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -2481,
+   "positionY": -462
+  },
+  {
+   "planetId": "planet_033",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -1095,
+   "positionY": 76
+  },
+  {
+   "planetId": "planet_034",
+   "zone": 1,
+   "type": "Hive",
+   "positionX": -2366,
+   "positionY": -2
+  },
+  {
+   "planetId": "planet_035",
+   "zone": 1,
+   "type": "Feral",
+   "positionX": -1437,
+   "positionY": -306
+  },
+  {
+   "planetId": "planet_036",
+   "zone": 1,
+   "type": "Feral",
+   "positionX": -1652,
+   "positionY": -371
+  },
+  {
+   "planetId": "planet_037",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -2247,
+   "positionY": 436
+  },
+  {
+   "planetId": "planet_041",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -1171,
+   "positionY": -448
+  },
+  {
+   "planetId": "planet_042",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -355,
+   "positionY": 592
+  },
+  {
+   "planetId": "planet_043",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 908,
+   "positionY": -411
+  },
+  {
+   "planetId": "planet_044",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -254,
+   "positionY": 411
+  },
+  {
+   "planetId": "planet_045",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -1535,
+   "positionY": 32
+  },
+  {
+   "planetId": "planet_046",
+   "zone": 2,
+   "type": "Hive",
+   "positionX": -454,
+   "positionY": 354
+  },
+  {
+   "planetId": "planet_047",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 193,
+   "positionY": -346
+  },
+  {
+   "planetId": "planet_048",
+   "zone": 2,
+   "type": "Fortress",
+   "positionX": -976,
+   "positionY": 506
+  },
+  {
+   "planetId": "planet_049",
+   "zone": 2,
+   "type": "Dead",
+   "positionX": -976,
+   "positionY": -601
+  },
+  {
+   "planetId": "planet_050",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -1160,
+   "positionY": 494
+  },
+  {
+   "planetId": "planet_051",
+   "zone": 2,
+   "type": "Feral",
+   "positionX": -394,
+   "positionY": -593
+  },
+  {
+   "planetId": "planet_052",
+   "zone": 1,
+   "type": "Fortress",
+   "positionX": -1838,
+   "positionY": -533
+  },
+  {
+   "planetId": "planet_054",
+   "zone": 2,
+   "type": "Fortress",
+   "positionX": -691,
+   "positionY": -172
+  },
+  {
+   "planetId": "planet_055",
+   "zone": 2,
+   "type": "Feral",
+   "positionX": -261,
+   "positionY": -140
+  },
+  {
+   "planetId": "planet_058",
+   "zone": 2,
+   "type": "Dead",
+   "positionX": -207,
+   "positionY": 98
+  },
+  {
+   "planetId": "planet_060",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 736,
+   "positionY": -557
+  },
+  {
+   "planetId": "planet_063",
+   "zone": 4,
+   "type": "Fortress",
+   "positionX": 2547,
+   "positionY": -284
+  },
+  {
+   "planetId": "planet_064",
+   "zone": 3,
+   "type": "Dead",
+   "positionX": 673,
+   "positionY": 486
+  },
+  {
+   "planetId": "planet_066",
+   "zone": 3,
+   "type": "Hive",
+   "positionX": 173,
+   "positionY": 510
+  },
+  {
+   "planetId": "planet_067",
+   "zone": 3,
+   "type": "Feral",
+   "positionX": 252,
+   "positionY": -498
+  },
+  {
+   "planetId": "planet_068",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 1227,
+   "positionY": -69
+  },
+  {
+   "planetId": "planet_069",
+   "zone": 4,
+   "type": "Feral",
+   "positionX": 2559,
+   "positionY": 549
+  },
+  {
+   "planetId": "planet_070",
+   "zone": 3,
+   "type": "Dead",
+   "positionX": 448,
+   "positionY": -22
+  },
+  {
+   "planetId": "planet_071",
+   "zone": 3,
+   "type": "Feral",
+   "positionX": 309,
+   "positionY": 106
+  },
+  {
+   "planetId": "planet_073",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 1049,
+   "positionY": -129
+  },
+  {
+   "planetId": "planet_074",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 1119,
+   "positionY": 527
+  },
+  {
+   "planetId": "planet_075",
+   "zone": 4,
+   "type": "Hive",
+   "positionX": 2534,
+   "positionY": -525
+  },
+  {
+   "planetId": "planet_076",
+   "zone": 3,
+   "type": "Fortress",
+   "positionX": 838,
+   "positionY": 84
+  },
+  {
+   "planetId": "planet_077",
+   "zone": 3,
+   "type": "Fortress",
+   "positionX": 1230,
+   "positionY": -280
+  },
+  {
+   "planetId": "planet_078",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 1031,
+   "positionY": 327
+  },
+  {
+   "planetId": "planet_079",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 233,
+   "positionY": 380
+  },
+  {
+   "planetId": "planet_080",
+   "zone": 4,
+   "type": "Fortress",
+   "positionX": 2410,
+   "positionY": -41
+  },
+  {
+   "planetId": "planet_081",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 2133,
+   "positionY": -275
+  },
+  {
+   "planetId": "planet_082",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 2393,
+   "positionY": 149
+  },
+  {
+   "planetId": "planet_083",
+   "zone": 4,
+   "type": "Feral",
+   "positionX": 1620,
+   "positionY": 493
+  },
+  {
+   "planetId": "planet_084",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 1904,
+   "positionY": -250
+  },
+  {
+   "planetId": "planet_085",
+   "zone": 4,
+   "type": "Feral",
+   "positionX": 1877,
+   "positionY": 131
+  },
+  {
+   "planetId": "planet_086",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3736,
+   "positionY": 450
+  },
+  {
+   "planetId": "planet_087",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 1886,
+   "positionY": 580
+  },
+  {
+   "planetId": "planet_088",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 1473,
+   "positionY": -457
+  },
+  {
+   "planetId": "planet_090",
+   "zone": 4,
+   "type": "Feral",
+   "positionX": 2100,
+   "positionY": 234
+  },
+  {
+   "planetId": "planet_091",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3780,
+   "positionY": 599
+  },
+  {
+   "planetId": "planet_092",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 2125,
+   "positionY": 514
+  },
+  {
+   "planetId": "planet_093",
+   "zone": 4,
+   "type": "Dead",
+   "positionX": 1502,
+   "positionY": 284
+  },
+  {
+   "planetId": "planet_094",
+   "zone": 4,
+   "type": "Fortress",
+   "positionX": 1642,
+   "positionY": -91
+  },
+  {
+   "planetId": "planet_095",
+   "zone": 4,
+   "type": "Dead",
+   "positionX": 2404,
+   "positionY": 476
+  },
+  {
+   "planetId": "planet_096",
+   "zone": 5,
+   "type": "Fortress",
+   "positionX": 3807,
+   "positionY": 0
+  },
+  {
+   "planetId": "planet_098",
+   "zone": 4,
+   "type": "Dead",
+   "positionX": 1964,
+   "positionY": -375
+  },
+  {
+   "planetId": "planet_103",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 2826,
+   "positionY": -450
+  },
+  {
+   "planetId": "planet_104",
+   "zone": 5,
+   "type": "Fortress",
+   "positionX": 3286,
+   "positionY": -501
+  },
+  {
+   "planetId": "planet_105",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3832,
+   "positionY": -451
+  },
+  {
+   "planetId": "planet_106",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 2952,
+   "positionY": -551
+  },
+  {
+   "planetId": "planet_107",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 2739,
+   "positionY": 147
+  },
+  {
+   "planetId": "planet_108",
+   "zone": 5,
+   "type": "Dead",
+   "positionX": 3343,
+   "positionY": -302
+  },
+  {
+   "planetId": "planet_110",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3796,
+   "positionY": -322
+  },
+  {
+   "planetId": "planet_111",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3325,
+   "positionY": 425
+  },
+  {
+   "planetId": "planet_113",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 2885,
+   "positionY": 283
+  },
+  {
+   "planetId": "planet_114",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 2873,
+   "positionY": 467
+  },
+  {
+   "planetId": "planet_115",
+   "zone": 5,
+   "type": "Feral",
+   "positionX": 2915,
+   "positionY": -224
+  },
+  {
+   "planetId": "planet_116",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3707,
+   "positionY": 185
+  },
+  {
+   "planetId": "planet_117",
+   "zone": 5,
+   "type": "Feral",
+   "positionX": 3087,
+   "positionY": -101
+  },
+  {
+   "planetId": "planet_119",
+   "zone": 5,
+   "type": "Dead",
+   "positionX": 3514,
+   "positionY": -497
+  },
+  {
+   "planetId": "planet_120",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3008,
+   "positionY": 550
+  }
+ ],
+ "connections": [
+  {
+   "planet1": "planet_001",
+   "planet2": "planet_006"
+  },
+  {
+   "planet1": "planet_001",
+   "planet2": "planet_014"
+  },
+  {
+   "planet1": "planet_001",
+   "planet2": "planet_013"
+  },
+  {
+   "planet1": "planet_002",
+   "planet2": "planet_018"
+  },
+  {
+   "planet1": "planet_002",
+   "planet2": "planet_024"
+  },
+  {
+   "planet1": "planet_002",
+   "planet2": "planet_011"
+  },
+  {
+   "planet1": "planet_003",
+   "planet2": "planet_007"
+  },
+  {
+   "planet1": "planet_003",
+   "planet2": "planet_009"
+  },
+  {
+   "planet1": "planet_004",
+   "planet2": "planet_014"
+  },
+  {
+   "planet1": "planet_004",
+   "planet2": "planet_005"
+  },
+  {
+   "planet1": "planet_004",
+   "planet2": "planet_009"
+  },
+  {
+   "planet1": "planet_004",
+   "planet2": "planet_017"
+  },
+  {
+   "planet1": "planet_005",
+   "planet2": "planet_010"
+  },
+  {
+   "planet1": "planet_005",
+   "planet2": "planet_014"
+  },
+  {
+   "planet1": "planet_005",
+   "planet2": "planet_008"
+  },
+  {
+   "planet1": "planet_006",
+   "planet2": "planet_010"
+  },
+  {
+   "planet1": "planet_006",
+   "planet2": "planet_014"
+  },
+  {
+   "planet1": "planet_007",
+   "planet2": "planet_017"
+  },
+  {
+   "planet1": "planet_007",
+   "planet2": "planet_009"
+  },
+  {
+   "planet1": "planet_008",
+   "planet2": "planet_018"
+  },
+  {
+   "planet1": "planet_008",
+   "planet2": "planet_011"
+  },
+  {
+   "planet1": "planet_008",
+   "planet2": "planet_012"
+  },
+  {
+   "planet1": "planet_009",
+   "planet2": "planet_013"
+  },
+  {
+   "planet1": "planet_010",
+   "planet2": "planet_011"
+  },
+  {
+   "planet1": "planet_010",
+   "planet2": "planet_032"
+  },
+  {
+   "planet1": "planet_011",
+   "planet2": "planet_027"
+  },
+  {
+   "planet1": "planet_012",
+   "planet2": "planet_018"
+  },
+  {
+   "planet1": "planet_012",
+   "planet2": "planet_017"
+  },
+  {
+   "planet1": "planet_013",
+   "planet2": "planet_014"
+  },
+  {
+   "planet1": "planet_015",
+   "planet2": "planet_116"
+  },
+  {
+   "planet1": "planet_015",
+   "planet2": "planet_113"
+  },
+  {
+   "planet1": "planet_015",
+   "planet2": "planet_111"
+  },
+  {
+   "planet1": "planet_015",
+   "planet2": "planet_120"
+  },
+  {
+   "planet1": "planet_021",
+   "planet2": "planet_051"
+  },
+  {
+   "planet1": "planet_021",
+   "planet2": "planet_049"
+  },
+  {
+   "planet1": "planet_021",
+   "planet2": "planet_041"
+  },
+  {
+   "planet1": "planet_021",
+   "planet2": "planet_054"
+  },
+  {
+   "planet1": "planet_022",
+   "planet2": "planet_032"
+  },
+  {
+   "planet1": "planet_022",
+   "planet2": "planet_031"
+  },
+  {
+   "planet1": "planet_022",
+   "planet2": "planet_052"
+  },
+  {
+   "planet1": "planet_024",
+   "planet2": "planet_037"
+  },
+  {
+   "planet1": "planet_024",
+   "planet2": "planet_034"
+  },
+  {
+   "planet1": "planet_025",
+   "planet2": "planet_026"
+  },
+  {
+   "planet1": "planet_025",
+   "planet2": "planet_031"
+  },
+  {
+   "planet1": "planet_025",
+   "planet2": "planet_045"
+  },
+  {
+   "planet1": "planet_026",
+   "planet2": "planet_037"
+  },
+  {
+   "planet1": "planet_026",
+   "planet2": "planet_034"
+  },
+  {
+   "planet1": "planet_027",
+   "planet2": "planet_032"
+  },
+  {
+   "planet1": "planet_027",
+   "planet2": "planet_034"
+  },
+  {
+   "planet1": "planet_028",
+   "planet2": "planet_030"
+  },
+  {
+   "planet1": "planet_028",
+   "planet2": "planet_029"
+  },
+  {
+   "planet1": "planet_028",
+   "planet2": "planet_037"
+  },
+  {
+   "planet1": "planet_029",
+   "planet2": "planet_030"
+  },
+  {
+   "planet1": "planet_029",
+   "planet2": "planet_050"
+  },
+  {
+   "planet1": "planet_030",
+   "planet2": "planet_045"
+  },
+  {
+   "planet1": "planet_031",
+   "planet2": "planet_052"
+  },
+  {
+   "planet1": "planet_033",
+   "planet2": "planet_045"
+  },
+  {
+   "planet1": "planet_033",
+   "planet2": "planet_048"
+  },
+  {
+   "planet1": "planet_033",
+   "planet2": "planet_054"
+  },
+  {
+   "planet1": "planet_033",
+   "planet2": "planet_050"
+  },
+  {
+   "planet1": "planet_035",
+   "planet2": "planet_036"
+  },
+  {
+   "planet1": "planet_035",
+   "planet2": "planet_041"
+  },
+  {
+   "planet1": "planet_035",
+   "planet2": "planet_045"
+  },
+  {
+   "planet1": "planet_036",
+   "planet2": "planet_052"
+  },
+  {
+   "planet1": "planet_036",
+   "planet2": "planet_045"
+  },
+  {
+   "planet1": "planet_041",
+   "planet2": "planet_049"
+  },
+  {
+   "planet1": "planet_042",
+   "planet2": "planet_046"
+  },
+  {
+   "planet1": "planet_042",
+   "planet2": "planet_044"
+  },
+  {
+   "planet1": "planet_042",
+   "planet2": "planet_066"
+  },
+  {
+   "planet1": "planet_043",
+   "planet2": "planet_060"
+  },
+  {
+   "planet1": "planet_043",
+   "planet2": "planet_073"
+  },
+  {
+   "planet1": "planet_043",
+   "planet2": "planet_077"
+  },
+  {
+   "planet1": "planet_044",
+   "planet2": "planet_046"
+  },
+  {
+   "planet1": "planet_044",
+   "planet2": "planet_058"
+  },
+  {
+   "planet1": "planet_046",
+   "planet2": "planet_048"
+  },
+  {
+   "planet1": "planet_047",
+   "planet2": "planet_055"
+  },
+  {
+   "planet1": "planet_047",
+   "planet2": "planet_067"
+  },
+  {
+   "planet1": "planet_047",
+   "planet2": "planet_070"
+  },
+  {
+   "planet1": "planet_048",
+   "planet2": "planet_050"
+  },
+  {
+   "planet1": "planet_049",
+   "planet2": "planet_051"
+  },
+  {
+   "planet1": "planet_051",
+   "planet2": "planet_055"
+  },
+  {
+   "planet1": "planet_054",
+   "planet2": "planet_055"
+  },
+  {
+   "planet1": "planet_055",
+   "planet2": "planet_058"
+  },
+  {
+   "planet1": "planet_058",
+   "planet2": "planet_071"
+  },
+  {
+   "planet1": "planet_060",
+   "planet2": "planet_067"
+  },
+  {
+   "planet1": "planet_060",
+   "planet2": "planet_070"
+  },
+  {
+   "planet1": "planet_063",
+   "planet2": "planet_080"
+  },
+  {
+   "planet1": "planet_063",
+   "planet2": "planet_075"
+  },
+  {
+   "planet1": "planet_063",
+   "planet2": "planet_115"
+  },
+  {
+   "planet1": "planet_064",
+   "planet2": "planet_079"
+  },
+  {
+   "planet1": "planet_064",
+   "planet2": "planet_066"
+  },
+  {
+   "planet1": "planet_064",
+   "planet2": "planet_078"
+  },
+  {
+   "planet1": "planet_064",
+   "planet2": "planet_074"
+  },
+  {
+   "planet1": "planet_064",
+   "planet2": "planet_076"
+  },
+  {
+   "planet1": "planet_066",
+   "planet2": "planet_079"
+  },
+  {
+   "planet1": "planet_067",
+   "planet2": "planet_070"
+  },
+  {
+   "planet1": "planet_068",
+   "planet2": "planet_077"
+  },
+  {
+   "planet1": "planet_068",
+   "planet2": "planet_073"
+  },
+  {
+   "planet1": "planet_068",
+   "planet2": "planet_094"
+  },
+  {
+   "planet1": "planet_069",
+   "planet2": "planet_082"
+  },
+  {
+   "planet1": "planet_069",
+   "planet2": "planet_095"
+  },
+  {
+   "planet1": "planet_069",
+   "planet2": "planet_114"
+  },
+  {
+   "planet1": "planet_070",
+   "planet2": "planet_076"
+  },
+  {
+   "planet1": "planet_070",
+   "planet2": "planet_071"
+  },
+  {
+   "planet1": "planet_071",
+   "planet2": "planet_079"
+  },
+  {
+   "planet1": "planet_073",
+   "planet2": "planet_076"
+  },
+  {
+   "planet1": "planet_074",
+   "planet2": "planet_078"
+  },
+  {
+   "planet1": "planet_074",
+   "planet2": "planet_093"
+  },
+  {
+   "planet1": "planet_074",
+   "planet2": "planet_083"
+  },
+  {
+   "planet1": "planet_075",
+   "planet2": "planet_081"
+  },
+  {
+   "planet1": "planet_075",
+   "planet2": "planet_103"
+  },
+  {
+   "planet1": "planet_076",
+   "planet2": "planet_078"
+  },
+  {
+   "planet1": "planet_077",
+   "planet2": "planet_088"
+  },
+  {
+   "planet1": "planet_080",
+   "planet2": "planet_082"
+  },
+  {
+   "planet1": "planet_080",
+   "planet2": "planet_081"
+  },
+  {
+   "planet1": "planet_081",
+   "planet2": "planet_098"
+  },
+  {
+   "planet1": "planet_081",
+   "planet2": "planet_084"
+  },
+  {
+   "planet1": "planet_082",
+   "planet2": "planet_090"
+  },
+  {
+   "planet1": "planet_082",
+   "planet2": "planet_095"
+  },
+  {
+   "planet1": "planet_082",
+   "planet2": "planet_107"
+  },
+  {
+   "planet1": "planet_083",
+   "planet2": "planet_093"
+  },
+  {
+   "planet1": "planet_083",
+   "planet2": "planet_087"
+  },
+  {
+   "planet1": "planet_084",
+   "planet2": "planet_098"
+  },
+  {
+   "planet1": "planet_084",
+   "planet2": "planet_094"
+  },
+  {
+   "planet1": "planet_085",
+   "planet2": "planet_093"
+  },
+  {
+   "planet1": "planet_085",
+   "planet2": "planet_090"
+  },
+  {
+   "planet1": "planet_085",
+   "planet2": "planet_094"
+  },
+  {
+   "planet1": "planet_086",
+   "planet2": "planet_116"
+  },
+  {
+   "planet1": "planet_086",
+   "planet2": "planet_091"
+  },
+  {
+   "planet1": "planet_086",
+   "planet2": "planet_111"
+  },
+  {
+   "planet1": "planet_087",
+   "planet2": "planet_090"
+  },
+  {
+   "planet1": "planet_087",
+   "planet2": "planet_092"
+  },
+  {
+   "planet1": "planet_088",
+   "planet2": "planet_094"
+  },
+  {
+   "planet1": "planet_088",
+   "planet2": "planet_098"
+  },
+  {
+   "planet1": "planet_090",
+   "planet2": "planet_092"
+  },
+  {
+   "planet1": "planet_091",
+   "planet2": "planet_111"
+  },
+  {
+   "planet1": "planet_092",
+   "planet2": "planet_095"
+  },
+  {
+   "planet1": "planet_096",
+   "planet2": "planet_110"
+  },
+  {
+   "planet1": "planet_096",
+   "planet2": "planet_116"
+  },
+  {
+   "planet1": "planet_096",
+   "planet2": "planet_108"
+  },
+  {
+   "planet1": "planet_103",
+   "planet2": "planet_106"
+  },
+  {
+   "planet1": "planet_103",
+   "planet2": "planet_115"
+  },
+  {
+   "planet1": "planet_104",
+   "planet2": "planet_106"
+  },
+  {
+   "planet1": "planet_104",
+   "planet2": "planet_108"
+  },
+  {
+   "planet1": "planet_104",
+   "planet2": "planet_119"
+  },
+  {
+   "planet1": "planet_105",
+   "planet2": "planet_110"
+  },
+  {
+   "planet1": "planet_105",
+   "planet2": "planet_119"
+  },
+  {
+   "planet1": "planet_106",
+   "planet2": "planet_115"
+  },
+  {
+   "planet1": "planet_107",
+   "planet2": "planet_113"
+  },
+  {
+   "planet1": "planet_107",
+   "planet2": "planet_117"
+  },
+  {
+   "planet1": "planet_108",
+   "planet2": "planet_119"
+  },
+  {
+   "planet1": "planet_108",
+   "planet2": "planet_117"
+  },
+  {
+   "planet1": "planet_110",
+   "planet2": "planet_119"
+  },
+  {
+   "planet1": "planet_111",
+   "planet2": "planet_120"
+  },
+  {
+   "planet1": "planet_113",
+   "planet2": "planet_114"
+  },
+  {
+   "planet1": "planet_114",
+   "planet2": "planet_120"
+  },
+  {
+   "planet1": "planet_115",
+   "planet2": "planet_117"
+  }
+ ]
+}
