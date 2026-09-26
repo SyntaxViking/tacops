@@ -4,6 +4,7 @@ import { fetchWithTimeout } from "./fetch-with-timeout";
 import characterData from "../assets/character-data.json";
 import mowData from "../assets/mow-data.json";
 import { calculateBundledUnitPowers } from "../characters/character-power";
+import { equippedRelicDamageProfiles } from "../characters/character-profile";
 import { computeHeroQuestJars, type HeroQuestJar } from "../hero-quests/hero-quest-view-model";
 import {
   computeGuildBossBombTimings,
@@ -67,6 +68,11 @@ export async function fetchPlayerData(
     id,
     ...(data as object),
   }));
+
+  // Independent of the power calculation below (never throws) so neither can drop the other.
+  for (const unit of units) {
+    unit.extraDamageProfiles = equippedRelicDamageProfiles(unit.items, hero?.items?.items);
+  }
 
   // All-or-nothing: a single missing/stale unit definition (e.g. a unit added since the bundled
   // GameConfig extraction) throws for the whole batch rather than returning some units with power
