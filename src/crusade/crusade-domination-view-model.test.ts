@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   computeCaptureRace,
   computeConquestProgress,
+  isPlanetAutoRefreshable,
   isPlanetRanked,
   parsePositiveIntFilter,
   passesDominationFilters,
   sortDominationPlanets,
 } from "./crusade-domination-view-model";
-import type { CrusadePlanet, FactionLeaderboardResult, PlanetLeaderboard, SideLeaderboardResult } from "../api/types";
+import type { CrusadePlanet, FactionLeaderboardResult, PlanetLeaderboard, PlanetRefreshEntry, SideLeaderboardResult } from "../api/types";
 
 function planet(overrides: Partial<CrusadePlanet> = {}): CrusadePlanet {
   return { planetId: "planet_001", name: "Test Planet", zone: null, ...overrides };
@@ -118,6 +119,33 @@ describe("isPlanetRanked", () => {
 
   it("is false when there's no leaderboard data at all yet", () => {
     expect(isPlanetRanked(undefined)).toBe(false);
+  });
+});
+
+describe("isPlanetAutoRefreshable", () => {
+  const ranked = leaderboard({ faction: { numParticipants: 10, myRank: 3, myPoints: 100, benchmarks: [], referenceScore: null } });
+  function entry(overrides: Partial<PlanetRefreshEntry> = {}): PlanetRefreshEntry {
+    return { leaderboard: leaderboard(), lastSuccessAt: 1000, lastAttemptAt: 1000, lastAttemptFailed: false, isLoading: false, ...overrides };
+  }
+
+  it("is true for a starred planet even when it's already loaded and unranked", () => {
+    expect(isPlanetAutoRefreshable(entry(), true)).toBe(true);
+  });
+
+  it("is true for a ranked planet that isn't starred", () => {
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: ranked }), false)).toBe(true);
+  });
+
+  it("is false for a loaded, unranked, unstarred planet - it only updates via manual refresh", () => {
+    expect(isPlanetAutoRefreshable(entry(), false)).toBe(false);
+  });
+
+  it("is true until the first successful load, so every planet gets loaded once (and a rank can be discovered)", () => {
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptAt: null }), false)).toBe(true);
+  });
+
+  it("keeps retrying an unstarred planet whose only attempts so far failed", () => {
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptFailed: true }), false)).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
 import { sha256Hex } from "./sha256";
+import { capStarredPlanets } from "../crusade/starred-planets";
 
 export interface UserPreferences {
   favoritedCharacters: string[];
@@ -14,7 +15,9 @@ export async function fetchUserPreferences(userId: string): Promise<UserPreferen
     body: JSON.stringify({ userHash }),
   });
   if (!response.ok) throw new Error(`fetchUserPreferences failed: ${response.status}`);
-  return (await response.json()) as UserPreferences;
+  const preferences = (await response.json()) as UserPreferences;
+  // A saved list may predate the star cap - silently keep only the first ten as it's read.
+  return { ...preferences, favoritedPlanets: capStarredPlanets(preferences.favoritedPlanets) };
 }
 
 // Only the SHA-256 of userId and clientSecret ever leave the browser here, matching

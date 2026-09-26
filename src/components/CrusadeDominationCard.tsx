@@ -15,9 +15,10 @@ interface CrusadeDominationCardProps {
   onRefresh?: () => void;
   isFavorited: boolean;
   onToggleFavorite?: () => void;
+  starDisabled?: boolean;
 }
 
-export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, onRefresh, isFavorited, onToggleFavorite }: CrusadeDominationCardProps) {
+export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, onRefresh, isFavorited, onToggleFavorite, starDisabled }: CrusadeDominationCardProps) {
   const leaderboard = refreshEntry.leaderboard ?? undefined;
   const progress = computeConquestProgress(planet);
   const captureRace = computeCaptureRace(planet);
@@ -38,7 +39,7 @@ export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, on
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
-            {onToggleFavorite && <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} />}
+            {onToggleFavorite && <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} disabled={starDisabled} />}
             <span className="font-medium">{planet.name}</span>
           </div>
           {planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}

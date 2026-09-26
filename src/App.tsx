@@ -25,6 +25,8 @@ import { storeWebCredential } from "./api/store-web-credential";
 import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
 import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
+import { isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
+import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { AnonymousCrusadeSection } from "./components/AnonymousCrusadeSection";
 import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
@@ -87,6 +89,10 @@ export function App() {
   // every mutation of planet-refresh state writes here synchronously before mirroring into
   // planetRefreshState via setPlanetRefreshState. Nothing schedules off the state variable itself.
   const planetRefreshStateRef = useRef<Map<string, PlanetRefreshEntry>>(new Map());
+  // Same reason as planetRefreshStateRef: the scheduler's long-lived loops must see the latest
+  // starred set (it decides which planets keep auto-refreshing), not a stale closure.
+  const favoritedPlanetIdsRef = useRef<ReadonlySet<string>>(new Set());
+  favoritedPlanetIdsRef.current = favoritedPlanetIds;
   // Bumped on every scheduler effect setup/teardown so a stale in-flight fetch from a torn-down
   // session (a previous GO, unmount, or React StrictMode's dev-mode double-invoke) can never
   // commit into a newer session's state.
@@ -433,8 +439,9 @@ export function App() {
   const CRUSADE_SCORE_ACTIVE_REFRESH_MS = 60 * 1000;
   const CRUSADE_SCORE_AWAY_REFRESH_MS = 5 * 60 * 1000;
 
-  // Claims the most-overdue eligible planet (not currently loading, past its cadence threshold)
-  // by marking it isLoading synchronously - contains no `await`, so with up to 4 workers calling
+  // Claims the most-overdue eligible planet (not currently loading, auto-refreshable - starred,
+  // ranked, or not yet successfully loaded, see isPlanetAutoRefreshable - and past its cadence
+  // threshold) by marking it isLoading synchronously - contains no `await`, so with up to 4 workers calling
   // this "at once", each call fully completes (including the ref mutation) before the next one's
   // synchronous body can run, making the claim race-free without any extra locking.
   function claimEligiblePlanet(thresholdMs: number): string | null {
@@ -444,6 +451,7 @@ export function App() {
     let mostOverdueKey = Infinity;
     for (const [planetId, entry] of map) {
       if (entry.isLoading) continue;
+      if (!isPlanetAutoRefreshable(entry, favoritedPlanetIdsRef.current.has(planetId))) continue;
       if (entry.lastAttemptAt !== null && now - entry.lastAttemptAt < thresholdMs) continue;
       const overdueKey = entry.lastAttemptAt ?? -Infinity; // never-attempted sorts first
       if (overdueKey < mostOverdueKey) {
@@ -576,10 +584,9 @@ export function App() {
   }
 
   function toggleFavoritePlanet(planetId: string) {
-    const next = new Set(favoritedPlanetIds);
-    if (next.has(planetId)) next.delete(planetId);
-    else next.add(planetId);
-    setFavoritedPlanetIds(next);
+    const next = toggleStarredPlanet(favoritedPlanetIds, planetId);
+    if (next === favoritedPlanetIds) return; // at the star cap (the UI disables starring then; belt and braces)
+    setFavoritedPlanetIds(new Set(next));
     setFavoritedPlanets(userId, clientSecret, [...next])
       .then(() => setToastMessage("Favorite planets saved"))
       .catch((error) => console.error("[App] toggleFavoritePlanet(): setFavoritedPlanets failed", error));
