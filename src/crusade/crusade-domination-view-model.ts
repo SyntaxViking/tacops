@@ -60,12 +60,13 @@ function factionParticipants(leaderboard: PlanetLeaderboard | undefined): number
 
 export type DominationSortMode = "closestToCapture" | "imperialFirst" | "devastationFirst";
 
-// A negative pointsRemaining means a side has already crossed its conquest threshold - the planet
+// pointsRemaining <= 0 means a side has reached (or overshot) its conquest threshold - the planet
 // was just captured and hasn't dropped out of the active list yet, so it's no longer a live
-// opportunity worth surfacing near the top.
+// opportunity worth surfacing near the top. <= (not <) since exactly hitting the threshold is
+// still a capture, not "one point to go".
 function isJustCaptured(planet: CrusadePlanet): boolean {
   const race = computeCaptureRace(planet);
-  return race !== null && race.pointsRemaining < 0;
+  return race !== null && race.pointsRemaining <= 0;
 }
 
 // Struggle-gated so an Expansion planet (never has struggleData, and can legitimately show 0/0
