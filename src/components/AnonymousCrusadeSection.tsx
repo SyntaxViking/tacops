@@ -7,13 +7,15 @@ import { getOrCreateAnonymousId } from "../api/anonymous-id";
 import { trackAnonymousUsage } from "../track-usage";
 import { factionSide } from "../factions/faction-side";
 import type { DominationSortMode } from "../crusade/crusade-domination-view-model";
+import sectorMapData from "../assets/sector-map.json";
 import type { CrusadeSectorMap } from "../api/types";
 
 const SELECTED_FACTION_STORAGE_KEY = "tacops:selectedFactionId";
 const EMPTY_FAVORITED_PLANET_IDS = new Set<string>();
-// No sector map data exists for an anonymous visitor (it comes from a logged-in GET_PLAYER call) -
-// clicking a planet during Domination opens an empty modal, an accepted minor limitation.
-const EMPTY_SECTOR_MAP: CrusadeSectorMap = { planets: [], connections: [] };
+// The layout only ever appears in a logged-in GET_PLAYER response, which an anonymous visitor
+// doesn't have - but it's the same for every player, so a snapshot is bundled (rebuilt by
+// scripts/extract-sector-map.ts, see README.md) instead of being fetched.
+const SECTOR_MAP = sectorMapData as CrusadeSectorMap;
 
 // The home page's read-only crusade view for a visitor who hasn't pressed "8" (see App.tsx) - no
 // credentials, no login form, just whatever the background poller (worker/poller.ts) has cached.
@@ -77,7 +79,7 @@ export function AnonymousCrusadeSection() {
       <CrusadeTab
         crusadeData={crusadeData}
         planetRefreshState={planetRefreshState}
-        sectorMap={EMPTY_SECTOR_MAP}
+        sectorMap={SECTOR_MAP}
         error={error}
         viewMode="cards"
         favoritedPlanetIds={EMPTY_FAVORITED_PLANET_IDS}

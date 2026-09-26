@@ -13,7 +13,7 @@ import {
   sortPlanetsRankedFirst,
   type DominationSortMode,
 } from "../crusade/crusade-domination-view-model";
-import { computeSectorMap } from "../crusade/crusade-sector-map-view-model";
+import { adjacentZone, computeAllSectorsMap, computeSectorMap, sectorZones } from "../crusade/crusade-sector-map-view-model";
 import type { ViewMode } from "./ViewModeToggle";
 import type { CrusadeData, CrusadeSectorMap, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
 
@@ -48,6 +48,9 @@ export function CrusadeTab({
   defaultDominationSortMode,
 }: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
+  // The sector the map modal is showing - starts at the clicked planet's sector but can be stepped
+  // to others with the modal's arrows, so it's its own state rather than derived from the planet.
+  const [viewedZone, setViewedZone] = useState<number | null>(null);
   const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>(defaultDominationSortMode ?? "closestToCapture");
   const [maxSideInput, setMaxSideInput] = useState("");
   const [maxFactionInput, setMaxFactionInput] = useState("");
@@ -77,15 +80,25 @@ export function CrusadeTab({
     if (entry.leaderboard) leaderboardByPlanet.set(planetId, entry.leaderboard);
   }
 
-  const selectedPlanetZone = selectedPlanetId
-    ? (crusadeData.planets.find((p) => p.planetId === selectedPlanetId)?.zone ?? null)
-    : null;
+  const crusadePlanets = crusadeData.planets;
+  function openSectorMap(planetId: string) {
+    setSelectedPlanetId(planetId);
+    setViewedZone(crusadePlanets.find((p) => p.planetId === planetId)?.zone ?? null);
+  }
+  function closeSectorMap() {
+    setSelectedPlanetId(null);
+    setViewedZone(null);
+  }
+
+  const zones = sectorZones(sectorMap);
   const sectorMapModal =
-    selectedPlanetId !== null && selectedPlanetZone !== null ? (
+    selectedPlanetId !== null && viewedZone !== null ? (
       <PlanetSectorMapModal
-        sectorMapData={computeSectorMap(selectedPlanetZone, sectorMap, crusadeData.planets)}
+        sectorMapData={computeSectorMap(viewedZone, sectorMap, crusadePlanets)}
+        allSectorsMapData={computeAllSectorsMap(sectorMap, crusadePlanets)}
         highlightPlanetId={selectedPlanetId}
-        onClose={() => setSelectedPlanetId(null)}
+        onClose={closeSectorMap}
+        onChangeSector={zones.length > 1 ? (direction) => setViewedZone(adjacentZone(zones, viewedZone, direction)) : undefined}
       />
     ) : null;
 
@@ -124,7 +137,7 @@ export function CrusadeTab({
           <CrusadeDominationTable
             planets={visibleDominationPlanets}
             planetRefreshState={planetRefreshState}
-            onSelectPlanet={setSelectedPlanetId}
+            onSelectPlanet={openSectorMap}
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
@@ -133,7 +146,7 @@ export function CrusadeTab({
           <CrusadeDominationCards
             planets={visibleDominationPlanets}
             planetRefreshState={planetRefreshState}
-            onSelectPlanet={setSelectedPlanetId}
+            onSelectPlanet={openSectorMap}
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
