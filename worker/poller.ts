@@ -25,10 +25,13 @@ const CRUSADE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 // ("exceededResources") at 20 planets/tick, from JSON.parse-ing some planets' combined
 // 24-leaderboard-id response (seen up to 175KB). Per-planet fetches now use
 // fetchLeaderboardTextWithSession (loki-client.ts), which skips JSON.parse entirely on the common
-// success path (a cheap bounded prefix scan instead) - since that removes the dominant cost, back
-// to 20 rather than the smaller value tried while diagnosing this; re-check the real
-// exceededResources rate after deploying and adjust down again if it's still meaningful.
-const PLANETS_PER_TICK = 20;
+// success path (a cheap bounded prefix scan instead), but a live tail on 2026-09-27 showed ticks
+// still hitting "Exceeded CPU Limit" at 20/tick - and since that's a hard isolate kill (it never
+// reaches the catch block, let alone writePollerState), the cursor and last_crusade_refresh_at
+// were stuck for ~14 hours, with every tick redoing the same never-finished batch from scratch.
+// Back down to a smaller batch; re-check the real exceededResources rate after deploying and
+// adjust again if it's still meaningful.
+const PLANETS_PER_TICK = 5;
 
 interface RawCrusadePhase {
   phase: string;
