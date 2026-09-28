@@ -17,20 +17,32 @@ import {
 } from "./fetch-crusade-data";
 import { factionSide } from "../factions/faction-side";
 import type { CrusadeCacheResponse } from "./fetch-crusade-cache";
-import type { CrusadeData, PlanetLeaderboard, PlanetRefreshEntry } from "./types";
+import type { CrusadeData, FactionLeaderboardResult, PlanetLeaderboard, PlanetRefreshEntry, SideLeaderboardResult } from "./types";
 
 export interface SeededCrusadeState {
   crusadeData: CrusadeData | null;
   planetRefreshState: Map<string, PlanetRefreshEntry>;
 }
 
+// See the myRank/myPoints comment above - null out the poller's own personal placement so it never
+// reaches an anonymous visitor's screen or sort order.
+function stripMyRank<T extends SideLeaderboardResult | FactionLeaderboardResult>(result: T | null): T | null {
+  return result ? { ...result, myRank: null, myPoints: null } : null;
+}
+
 // selectedFactionId is null for the logged-in bootstrap seed (App.tsx's go()) - side/faction stay
 // null there, exactly as before, since the real live fetch takes over moments later. The anonymous
 // view (AnonymousCrusadeSection) passes the visitor's picked faction, populating both with real
-// benchmarks - side/faction leaderboards are public, per-planet data once stripped of
-// myRank/myPoints (no personal identity to match against a cached response), unlike topFactionsFor/
+// benchmarks - side/faction leaderboards are public, per-planet data, unlike topFactionsFor/
 // topFactionsAgainst which are no longer fetched at all (that was the "Leading Factions" list,
 // dropped per product decision - always [] here now).
+//
+// myRank/myPoints get stripped below (stripMyRank) rather than left as readLeaderboard returns
+// them: the poller authenticates as a real personal Tacticus account (see worker/poller.ts), so
+// those fields are that account's actual rank on the planet, not the anonymous visitor's - showing
+// them, or letting them drive "ranked planets first" sorting (isPlanetRanked, sortPlanetsRankedFirst
+// in crusade-domination-view-model.ts both key off myRank), would leak one person's placement onto
+// a page every visitor sees and bias its ordering around it.
 export function seedPlanetRefreshStateFromCache(cache: CrusadeCacheResponse, selectedFactionId: string | null = null): SeededCrusadeState {
   const planetRefreshState = new Map<string, PlanetRefreshEntry>();
 
@@ -52,12 +64,14 @@ export function seedPlanetRefreshStateFromCache(cache: CrusadeCacheResponse, sel
     const ids = leaderboardIdsForPlanet(crusadeData.crusadeId, crusadeData.seasonNumber, planetId);
     const side =
       selectedSide != null
-        ? mergeSideLeaderboard(readLeaderboard(leaderboards, ids.playerFor, ""), readLeaderboard(leaderboards, ids.playerAgainst, ""), selectedSide)
+        ? stripMyRank(mergeSideLeaderboard(readLeaderboard(leaderboards, ids.playerFor, ""), readLeaderboard(leaderboards, ids.playerAgainst, ""), selectedSide))
         : null;
     const faction =
       selectedFactionId != null
-        ? buildFactionLeaderboard(
-            readLeaderboard(leaderboards, factionPlayerLeaderboardId(crusadeData.crusadeId, crusadeData.seasonNumber, planetId, selectedFactionId), ""),
+        ? stripMyRank(
+            buildFactionLeaderboard(
+              readLeaderboard(leaderboards, factionPlayerLeaderboardId(crusadeData.crusadeId, crusadeData.seasonNumber, planetId, selectedFactionId), ""),
+            ),
           )
         : null;
 

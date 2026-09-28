@@ -49,6 +49,25 @@ function leaderboardsRawFor(planetId: string) {
   };
 }
 
+// Mirrors what the real server actually sends: since the poller authenticates as a real personal
+// Tacticus account (not a placeholder), myRank/myPoints on these raw entries are that account's own
+// placement - present regardless of the "" myUserId this module always reads with.
+function leaderboardsRawWithMyRank(planetId: string) {
+  const ids = leaderboardIdsForPlanet(CRUSADE_ID, SEASON, planetId);
+  const custodesId = factionPlayerLeaderboardId(CRUSADE_ID, SEASON, planetId, "Custodes");
+  return {
+    eventResult: {
+      eventResponseData: {
+        leaderboards: {
+          [ids.playerFor]: { numParticipants: 500, myRank: 41, myPoints: 4000, topEntries: [{ position: 0, points: 9000 }] },
+          [ids.playerAgainst]: { numParticipants: 400, topEntries: [{ position: 0, points: 8000 }] },
+          [custodesId]: { numParticipants: 50, myRank: 3, myPoints: 2500, topEntries: [{ position: 0, points: 3000 }] },
+        },
+      },
+    },
+  };
+}
+
 describe("seedPlanetRefreshStateFromCache", () => {
   it("returns an empty seed when there's no cached crusade snapshot yet", () => {
     const cache: CrusadeCacheResponse = { crusadeRaw: null, crusadeFetchedAt: null, leaderboards: {} };
@@ -90,6 +109,23 @@ describe("seedPlanetRefreshStateFromCache", () => {
     expect(entry?.leaderboard?.side?.benchmarks.length).toBeGreaterThan(0);
     expect(entry?.leaderboard?.faction?.numParticipants).toBe(50);
     expect(entry?.leaderboard?.faction?.benchmarks.length).toBeGreaterThan(0);
+  });
+
+  it("strips myRank/myPoints even when the raw response has them - that's the poller's own personal account, not the visitor's", () => {
+    const cache: CrusadeCacheResponse = {
+      crusadeRaw: crusadeRaw(),
+      crusadeFetchedAt: now,
+      leaderboards: { planet_001: { raw: leaderboardsRawWithMyRank("planet_001"), fetchedAt: now } },
+    };
+    const result = seedPlanetRefreshStateFromCache(cache, "Custodes");
+    const entry = result.planetRefreshState.get("planet_001");
+    expect(entry?.leaderboard?.side?.myRank).toBeNull();
+    expect(entry?.leaderboard?.side?.myPoints).toBeNull();
+    expect(entry?.leaderboard?.faction?.myRank).toBeNull();
+    expect(entry?.leaderboard?.faction?.myPoints).toBeNull();
+    // Benchmarks (the actual public leaderboard content) survive the stripping untouched.
+    expect(entry?.leaderboard?.side?.numParticipants).toBe(500);
+    expect(entry?.leaderboard?.faction?.numParticipants).toBe(50);
   });
 
   it("falls back to the 'against' side leaderboard when an against-side faction is picked", () => {
