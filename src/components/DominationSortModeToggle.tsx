@@ -4,6 +4,7 @@ const SORT_MODES: { value: DominationSortMode; label: string }[] = [
   { value: "closestToCapture", label: "Closest to Capture" },
   { value: "imperialFirst", label: "Imperial, then Devastation" },
   { value: "devastationFirst", label: "Devastation, then Imperial" },
+  { value: "highestPointsToCapture", label: "Highest Points to Capture" },
 ];
 
 interface DominationSortModeToggleProps {

@@ -162,17 +162,19 @@ export function CrusadeTab({
   }
 
   // Starred, then ranked, then everyone else (see sortPlanetsRankedFirst), each group ordered
-  // ascending by Faction Leaderboard reference score - a rough "how competitive is this planet"
-  // signal (see fetch-crusade-data.ts's pickReferenceScore). Planets with no score yet (still
-  // loading, or genuinely no faction leaderboard data) sort last within their group rather than
-  // being dropped.
+  // ascending by the deepest Faction Leaderboard rank actually returned - a rough "how
+  // competitive is this planet" signal (the more points it takes to reach whatever rank is
+  // visible, the tougher the planet). Planets with no score yet (still loading, or genuinely no
+  // faction leaderboard data) sort last within their group rather than being dropped.
   const activePlanets = sortPlanetsRankedFirst(
     crusadeData.planets.filter((p) => planetRefreshState.has(p.planetId)),
     leaderboardByPlanet,
     favoritedPlanetIds,
     (a, b) => {
-      const scoreA = leaderboardByPlanet.get(a.planetId)?.faction?.referenceScore?.points ?? Infinity;
-      const scoreB = leaderboardByPlanet.get(b.planetId)?.faction?.referenceScore?.points ?? Infinity;
+      const entriesA = leaderboardByPlanet.get(a.planetId)?.faction?.topEntries ?? [];
+      const entriesB = leaderboardByPlanet.get(b.planetId)?.faction?.topEntries ?? [];
+      const scoreA = entriesA.length > 0 ? entriesA[entriesA.length - 1].points : Infinity;
+      const scoreB = entriesB.length > 0 ? entriesB[entriesB.length - 1].points : Infinity;
       return scoreA - scoreB;
     },
   );

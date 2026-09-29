@@ -11,6 +11,12 @@ const NODE_COLOR: Record<SectorMapColor, string> = {
   neutral: "#9ca3af",
 };
 const HIGHLIGHT_COLOR = "#15803d";
+// Darker shades of the same two colors, for the progress arc's outline (blue-900/red-900 vs. the
+// blue-600/red-600 fill above).
+const ARC_OUTLINE_COLOR: Record<"imperial" | "devastation", string> = {
+  imperial: "#1e3a8a",
+  devastation: "#7f1d1d",
+};
 
 // A small inset so planets sitting right at a sector's edge (normalized 0 or 1) don't get their
 // circle, the progress bars above it, or the name below it clipped by the viewBox.
@@ -21,22 +27,66 @@ function toSvg(normalized: number): number {
   return MARGIN + normalized * SPAN;
 }
 
-// Geometry in viewBox units, relative to a planet's center: the pair of bars sits above the
-// highlight ring (radius 4), the name below it.
-const BAR_WIDTH = 8;
-const BAR_HEIGHT = 1;
-const IMPERIAL_BAR_TOP = -8.2;
-const DEVASTATION_BAR_TOP = -6.8;
+// Geometry in viewBox units, relative to a planet's center: the name sits below the highlight
+// ring (radius 4); the progress arcs (below) hug the dot itself instead of sitting above it.
 const NAME_BASELINE = 6.5;
 const TRACK_COLOR = "#9ca3af";
+// How far outside the dot's own radius the arc sits - just enough that it reads as a ring around
+// the planet rather than overlapping its fill.
+const ARC_GAP = 0.7;
+const ARC_STROKE_WIDTH = 0.8;
+// The filled bar's outline is drawn as a wider, darker copy of the same path directly behind it -
+// there's no SVG "stroke around a stroke", so this peeking out on both sides is what reads as a
+// border. The track (unfilled portion) doesn't get one, only the colored fill.
+const ARC_OUTLINE_STROKE_WIDTH = ARC_STROKE_WIDTH + 0.4;
 
-// A faint full-width track with the filled portion on top, so how far along it is reads at a glance.
-function ProgressBar({ cx, top, fraction, color, label }: { cx: number; top: number; fraction: number; color: string; label: string }) {
-  const x = cx - BAR_WIDTH / 2;
+// One side's half-circle arc, hugging the dot at radius r: `fraction` 1 traces the full track
+// from the top pole to the bottom pole (12 o'clock down to 6 o'clock); less than 1 traces only
+// the bottom portion of it, so progress reads as filling the ring from the bottom up, like a
+// gauge. "left"/"right" pick which half (Imperial hugs the left, Devastation the right).
+function sideArcPath(cx: number, cy: number, r: number, side: "left" | "right", fraction: number): string {
+  const sign = side === "left" ? -1 : 1;
+  const sweepFlag = side === "left" ? 0 : 1;
+  const theta = Math.PI * (1 - fraction); // 0 (top pole) when fraction=1, up to PI (bottom pole) when fraction=0
+  const startX = cx + sign * r * Math.sin(theta);
+  const startY = cy - r * Math.cos(theta);
+  return `M ${startX} ${startY} A ${r} ${r} 0 0 ${sweepFlag} ${cx} ${cy + r}`;
+}
+
+// The faint full track plus its filled portion, both hugging one side of the planet's dot -
+// rendered as part of the same per-node <g> as the dot itself, so it draws over the graph's
+// connection lines (rendered earlier in the SVG) the same way the dot already does.
+function SideArc({
+  cx,
+  cy,
+  r,
+  side,
+  fraction,
+  color,
+  outlineColor,
+  label,
+}: {
+  cx: number;
+  cy: number;
+  r: number;
+  side: "left" | "right";
+  fraction: number;
+  color: string;
+  outlineColor: string;
+  label: string;
+}) {
+  const fillPath = sideArcPath(cx, cy, r, side, fraction);
   return (
     <g>
-      <rect x={x} y={top} width={BAR_WIDTH} height={BAR_HEIGHT} rx={0.3} fill={TRACK_COLOR} fillOpacity={0.35} />
-      <rect x={x} y={top} width={BAR_WIDTH * fraction} height={BAR_HEIGHT} rx={0.3} fill={color} />
+      {/* butt (not round) caps - a rounded cap draws a little semicircular bump past the actual
+          endpoint, which reads as a soft/fuzzy edge instead of a clean cut where the fill stops. */}
+      <path d={sideArcPath(cx, cy, r, side, 1)} fill="none" stroke={TRACK_COLOR} strokeOpacity={0.35} strokeWidth={ARC_STROKE_WIDTH} strokeLinecap="butt" />
+      {fraction > 0 && (
+        <>
+          <path d={fillPath} fill="none" stroke={outlineColor} strokeWidth={ARC_OUTLINE_STROKE_WIDTH} strokeLinecap="butt" />
+          <path d={fillPath} fill="none" stroke={color} strokeWidth={ARC_STROKE_WIDTH} strokeLinecap="butt" />
+        </>
+      )}
       <title>{label}</title>
     </g>
   );
@@ -87,6 +137,7 @@ function SectorSvg({ sectorMapData, highlightPlanetId, className, style }: { sec
         const cx = toSvg(node.x);
         const cy = toSvg(node.y);
         const bars = planetProgressBars(node.progress);
+        const arcRadius = dotRadius(node.dotScale) + ARC_GAP;
         return (
           <g key={node.planetId}>
             {node.planetId === highlightPlanetId && <circle cx={cx} cy={cy} r={4} fill="none" stroke={HIGHLIGHT_COLOR} strokeWidth={0.7} />}
@@ -98,18 +149,24 @@ function SectorSvg({ sectorMapData, highlightPlanetId, className, style }: { sec
             </circle>
             {bars && node.progress && (
               <>
-                <ProgressBar
+                <SideArc
                   cx={cx}
-                  top={cy + IMPERIAL_BAR_TOP}
+                  cy={cy}
+                  r={arcRadius}
+                  side="left"
                   fraction={bars.imperial}
                   color={NODE_COLOR.imperial}
+                  outlineColor={ARC_OUTLINE_COLOR.imperial}
                   label={`Imperial ${node.progress.imperialCurrent.toLocaleString()} / ${node.progress.imperialThreshold.toLocaleString()} (${Math.round(bars.imperial * 100)}%)`}
                 />
-                <ProgressBar
+                <SideArc
                   cx={cx}
-                  top={cy + DEVASTATION_BAR_TOP}
+                  cy={cy}
+                  r={arcRadius}
+                  side="right"
                   fraction={bars.devastation}
                   color={NODE_COLOR.devastation}
+                  outlineColor={ARC_OUTLINE_COLOR.devastation}
                   label={`Devastation ${node.progress.devastationCurrent.toLocaleString()} / ${node.progress.devastationThreshold.toLocaleString()} (${Math.round(bars.devastation * 100)}%)`}
                 />
               </>

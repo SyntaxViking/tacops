@@ -67,7 +67,7 @@ function factionParticipants(leaderboard: PlanetLeaderboard | undefined): number
   return leaderboard?.faction?.numParticipants ?? Infinity;
 }
 
-export type DominationSortMode = "closestToCapture" | "imperialFirst" | "devastationFirst";
+export type DominationSortMode = "closestToCapture" | "imperialFirst" | "devastationFirst" | "highestPointsToCapture";
 
 // pointsRemaining <= 0 means a side has reached (or overshot) its conquest threshold - the planet
 // was just captured and hasn't dropped out of the active list yet, so it's no longer a live
@@ -104,6 +104,14 @@ function safeDiff(a: number, b: number): number {
   return a === b ? 0 : a - b;
 }
 
+// The larger of the two sides' total conquest thresholds - how many points it takes to flip the
+// planet at all, not how many are left. 0 (rather than Infinity) for a planet with no struggleData
+// yet, so it naturally sorts last under "highest first" without a separate NaN guard.
+function totalCaptureRequirement(planet: CrusadePlanet): number {
+  const progress = computeConquestProgress(planet);
+  return progress ? Math.max(progress.imperialThreshold, progress.devastationThreshold) : 0;
+}
+
 function compareBySortMode(mode: DominationSortMode, a: CrusadePlanet, b: CrusadePlanet): number {
   const remA = pointsRemaining(a);
   const remB = pointsRemaining(b);
@@ -114,6 +122,8 @@ function compareBySortMode(mode: DominationSortMode, a: CrusadePlanet, b: Crusad
       return safeDiff(remA.imperial, remB.imperial) || safeDiff(remA.devastation, remB.devastation);
     case "devastationFirst":
       return safeDiff(remA.devastation, remB.devastation) || safeDiff(remA.imperial, remB.imperial);
+    case "highestPointsToCapture":
+      return safeDiff(totalCaptureRequirement(b), totalCaptureRequirement(a)); // descending: biggest total first
   }
 }
 

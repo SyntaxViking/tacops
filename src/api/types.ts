@@ -111,7 +111,7 @@ export interface CrusadeFactionStanding {
 }
 
 export interface LeaderboardBenchmark {
-  rank: number; // 1, 5, 10, or 25
+  rank: number;
   points: number;
 }
 
@@ -122,10 +122,14 @@ export interface SideLeaderboardResult {
   // worth moving here, just without a rank/percentile/"You" line.
   myRank: number | null;
   myPoints: number | null;
+  // The default collapsed view: #1/#5/#10/#25, omitted individually if that rank doesn't exist
+  // (e.g. #25 on a leaderboard with under 25 participants) - no filling in from other ranks.
   benchmarks: LeaderboardBenchmark[];
-  // Same top-10%/#25 figure as FactionLeaderboardResult, shown for context - planet sort order
-  // is still driven by the Faction Leaderboard's referenceScore, not this one.
-  referenceScore: LeaderboardBenchmark | null;
+  // The expanded view (LeaderboardBreakdownCell's disclosure triangle): every row actually
+  // returned - topEntries is the real top 25 (as many as exist), nearMe is the player's own
+  // rank +/-2 (empty when myRank is null, or fully covered by topEntries already).
+  topEntries: LeaderboardBenchmark[];
+  nearMe: LeaderboardBenchmark[];
 }
 
 export interface FactionLeaderboardResult {
@@ -136,11 +140,8 @@ export interface FactionLeaderboardResult {
   myRank: number | null;
   myPoints: number | null;
   benchmarks: LeaderboardBenchmark[];
-  // The top-10% rank/score if it's within the visible top-25 window, else the #25 rank/score - a
-  // representative "how competitive is this planet" figure used to sort the planet list (and
-  // displayed alongside benchmarks when its rank isn't already one of them). Null only when
-  // there's no leaderboard entry at all to compute it from.
-  referenceScore: LeaderboardBenchmark | null;
+  topEntries: LeaderboardBenchmark[];
+  nearMe: LeaderboardBenchmark[];
 }
 
 export interface PlanetLeaderboard {

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -13,6 +14,22 @@ export default defineConfig(async () => ({
   // the page (see BuildTimestamp.tsx). Declared in src/vite-env.d.ts.
   define: {
     __BUILD_TIME__: Date.now(),
+  },
+
+  build: {
+    rollupOptions: {
+      // Multi-page build: the main app plus standalone reference pages under library/ (e.g.
+      // library/reanimator-incursion-mythic-2) that aren't part of the app's own tabs/nav - each
+      // is its own static page riding along on this same Worker + [assets] deploy (see
+      // wrangler.toml), at /library/<name>/ once built. Add a new entry here for each new
+      // library/<name>/index.html.
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        "library/reanimator-incursion-mythic-2": fileURLToPath(
+          new URL("./library/reanimator-incursion-mythic-2/index.html", import.meta.url),
+        ),
+      },
+    },
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

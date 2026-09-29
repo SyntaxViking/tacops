@@ -185,7 +185,8 @@ export function topFactionStandings(entry: RawLeaderboardEntry | null): CrusadeF
   return (entry?.topEntries ?? []).filter((e) => e.factionId).map((e) => ({ factionId: e.factionId!, points: e.points }));
 }
 
-// Ranks 1/5/10/25 are topEntries indices 0/4/9/24 (0-indexed position field).
+// The default collapsed view (LeaderboardBreakdownCell) - omitted individually (not filled in from
+// other ranks) when that exact rank doesn't exist, e.g. #25 on a leaderboard under 25 participants.
 const BENCHMARK_RANKS = [1, 5, 10, 25];
 
 // A player can "hop" planets and end up on a different side per-planet than their season-level
@@ -198,21 +199,33 @@ function pickMine(forEntry: RawLeaderboardEntry | null, againstEntry: RawLeaderb
   return null;
 }
 
-const MAX_FALLBACK_BENCHMARK_ROWS = 5;
-
 function buildBenchmarks(entry: RawLeaderboardEntry): LeaderboardBenchmark[] {
-  const benchmarkRows = BENCHMARK_RANKS.filter((rank) => entry.topEntries.some((e) => e.position === rank - 1)).map((rank) => ({
+  return BENCHMARK_RANKS.filter((rank) => entry.topEntries.some((e) => e.position === rank - 1)).map((rank) => ({
     rank,
     points: entry.topEntries.find((e) => e.position === rank - 1)!.points,
   }));
-  if (benchmarkRows.length > 1) return benchmarkRows;
+}
 
-  // Too few participants for #1/#5/#10/#25 to be meaningful (at most one matched) - show
-  // whatever top entries actually exist instead of an almost-empty (or entirely empty) list.
-  return [...entry.topEntries]
-    .sort((a, b) => a.position - b.position)
-    .slice(0, MAX_FALLBACK_BENCHMARK_ROWS)
-    .map((e) => ({ rank: e.position + 1, points: e.points }));
+// The expanded view's full top-25 list (as many of the real rows as exist), ascending by rank.
+function buildTopEntries(entry: RawLeaderboardEntry): LeaderboardBenchmark[] {
+  return [...entry.topEntries].sort((a, b) => a.position - b.position).map((e) => ({ rank: e.position + 1, points: e.points }));
+}
+
+// The expanded view's "your rank +/-2" window - empty when there's no personal rank to center it
+// on. localEntries only comes back populated when myRank doesn't land in topEntries (see
+// readLeaderboard) and may cover a wider window than +/-2, so both sources get pooled and clipped
+// to exactly that range; deduping by position covers the (normally impossible) case of the same
+// row appearing in both.
+function buildNearMe(entry: RawLeaderboardEntry): LeaderboardBenchmark[] {
+  if (entry.myRank == null) return [];
+  const byPosition = new Map<number, LeaderboardRow>();
+  for (const row of [...entry.topEntries, ...entry.localEntries]) {
+    const rank = row.position + 1;
+    if (rank >= entry.myRank - 2 && rank <= entry.myRank + 2) byPosition.set(row.position, row);
+  }
+  return [...byPosition.values()]
+    .map((row) => ({ rank: row.position + 1, points: row.points }))
+    .sort((a, b) => a.rank - b.rank);
 }
 
 // chosenSide is only consulted as a fallback - when the player has no personal rank on either
@@ -231,7 +244,8 @@ export function mergeSideLeaderboard(
       myRank: mine.myRank,
       myPoints: mine.myPoints,
       benchmarks: buildBenchmarks(mine),
-      referenceScore: pickReferenceScore(mine),
+      topEntries: buildTopEntries(mine),
+      nearMe: buildNearMe(mine),
     };
   }
   const fallback = chosenSide.toLowerCase() === "for" ? forEntry : againstEntry;
@@ -241,20 +255,9 @@ export function mergeSideLeaderboard(
     myRank: null,
     myPoints: null,
     benchmarks: buildBenchmarks(fallback),
-    referenceScore: pickReferenceScore(fallback),
+    topEntries: buildTopEntries(fallback),
+    nearMe: [],
   };
-}
-
-// A representative "how competitive is this planet" figure, used to sort the planet list: the
-// score at the top-10% rank if it's visible in topEntries (only the top 25 rows are ever
-// returned), else the deepest visible rank (#25) as a fallback. E.g. 130 participants -> rank 13
-// (ceil(130 * 0.1)), which is within the top-25 window, so that rank's score is used directly;
-// with, say, 1000 participants the top-10% rank (100) isn't visible at all, so #25 substitutes.
-export function pickReferenceScore(entry: RawLeaderboardEntry): LeaderboardBenchmark | null {
-  const top10Rank = Math.ceil(entry.numParticipants * 0.1);
-  const targetRank = Math.min(top10Rank, 25);
-  const points = entry.topEntries.find((e) => e.position === targetRank - 1)?.points;
-  return points === undefined ? null : { rank: targetRank, points };
 }
 
 // Unlike the side (_players) leaderboard, the per-faction leaderboard
@@ -271,7 +274,8 @@ export function buildFactionLeaderboard(entry: RawLeaderboardEntry | null): Fact
     myRank: entry.myRank,
     myPoints: entry.myPoints,
     benchmarks: buildBenchmarks(entry),
-    referenceScore: pickReferenceScore(entry),
+    topEntries: buildTopEntries(entry),
+    nearMe: buildNearMe(entry),
   };
 }
 

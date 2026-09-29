@@ -1,17 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildFactionLeaderboard,
-  findActivePhase,
-  mergeSideLeaderboard,
-  pickReferenceScore,
-  readLeaderboard,
-  resolveMyFactionId,
-} from "./fetch-crusade-data";
+import { buildFactionLeaderboard, findActivePhase, mergeSideLeaderboard, readLeaderboard, resolveMyFactionId } from "./fetch-crusade-data";
 
 // Points taken from a real captured GET_LEADERBOARD_2 response (planet_041, crusadePlayer
-// "_against" leaderboard) - the player (myRank 53) doesn't place in the top 25 shown here,
-// which is the interesting edge case: their score should still sort correctly below all four
-// benchmarks, not just get appended at the end.
+// "_against" leaderboard) - the player (myRank 53) doesn't place in the top 25 shown here, which
+// is the interesting edge case for the expanded view's "rank +/-2" window (localEntries is where
+// that comes from once the player falls outside topEntries). #13 (position 12) isn't one of the
+// #1/#5/#10/#25 benchmark ranks, but shows up in the expanded view's full topEntries list.
 const realAgainstEntry = {
   numParticipants: 1858,
   myRank: 53,
@@ -21,7 +15,7 @@ const realAgainstEntry = {
     { position: 4, points: 13946 },
     { position: 9, points: 13194 },
     { position: 24, points: 11487 },
-    { position: 12, points: 12475 }, // an in-between entry that isn't a benchmark rank
+    { position: 12, points: 12475 },
   ],
   localEntries: [
     { position: 51, points: 9446, participantId: "d1b3b23e-659f-4788-ba14-b39db596fe3f", factionId: "WorldEaters" },
@@ -46,7 +40,22 @@ describe("mergeSideLeaderboard", () => {
         { rank: 10, points: 13194 },
         { rank: 25, points: 11487 },
       ],
-      referenceScore: { rank: 25, points: 11487 }, // 1858 participants: top-10% rank (186) isn't visible, falls back to #25
+      // Expanded view: the full topEntries list (ascending by rank, #13 included even though it's
+      // not a benchmark rank) plus the rank+/-2 window pulled from localEntries (52-55; #51 isn't
+      // in the fixture so it's simply not there).
+      topEntries: [
+        { rank: 1, points: 18227 },
+        { rank: 5, points: 13946 },
+        { rank: 10, points: 13194 },
+        { rank: 13, points: 12475 },
+        { rank: 25, points: 11487 },
+      ],
+      nearMe: [
+        { rank: 52, points: 9446 },
+        { rank: 53, points: 9382 },
+        { rank: 54, points: 9319 },
+        { rank: 55, points: 9290 },
+      ],
     });
   });
 
@@ -77,7 +86,7 @@ describe("mergeSideLeaderboard", () => {
   describe("when the player has no personal rank on either side", () => {
     const noRank = { numParticipants: 100, myRank: null, myPoints: null, topEntries: [], localEntries: [] };
 
-    it("falls back to the chosenSide's breakpoints (myRank null, benchmarks still present)", () => {
+    it("falls back to the chosenSide's breakpoints (myRank null, benchmarks still present, no nearMe since there's no rank to center it on)", () => {
       const forSide = { ...noRank, numParticipants: 200, topEntries: [{ position: 0, points: 5000 }] };
       const result = mergeSideLeaderboard(forSide, noRank, "For");
       expect(result).toEqual({
@@ -85,7 +94,8 @@ describe("mergeSideLeaderboard", () => {
         myRank: null,
         myPoints: null,
         benchmarks: [{ rank: 1, points: 5000 }],
-        referenceScore: null, // top-10% rank (20) isn't in topEntries in this fixture
+        topEntries: [{ rank: 1, points: 5000 }],
+        nearMe: [],
       });
     });
 
@@ -128,11 +138,44 @@ describe("buildFactionLeaderboard", () => {
         { rank: 10, points: 13194 },
         { rank: 25, points: 11487 },
       ],
-      referenceScore: { rank: 25, points: 11487 }, // 1858 participants: top-10% rank (186) isn't visible, falls back to #25
+      topEntries: [
+        { rank: 1, points: 18227 },
+        { rank: 5, points: 13946 },
+        { rank: 10, points: 13194 },
+        { rank: 13, points: 12475 },
+        { rank: 25, points: 11487 },
+      ],
+      nearMe: [
+        { rank: 52, points: 9446 },
+        { rank: 53, points: 9382 },
+        { rank: 54, points: 9319 },
+        { rank: 55, points: 9290 },
+      ],
     });
   });
 
-  it("still returns benchmarks when there's no personal rank on this planet's faction leaderboard", () => {
+  it("nearMe stays within +/-2 of myRank even when localEntries covers a wider window", () => {
+    const wideWindow = {
+      numParticipants: 500,
+      myRank: 40,
+      myPoints: 1000,
+      topEntries: [],
+      localEntries: [
+        { position: 36, points: 1400 }, // rank 37 - outside the +/-2 window (38-42)
+        { position: 38, points: 1200 }, // rank 39
+        { position: 39, points: 1100 }, // rank 40 (me)
+        { position: 40, points: 1000 }, // rank 41
+        { position: 43, points: 800 }, // rank 44 - outside the window
+      ],
+    };
+    expect(buildFactionLeaderboard(wideWindow)?.nearMe).toEqual([
+      { rank: 39, points: 1200 },
+      { rank: 40, points: 1100 },
+      { rank: 41, points: 1000 },
+    ]);
+  });
+
+  it("still returns benchmarks (and no nearMe) when there's no personal rank on this planet's faction leaderboard", () => {
     const noRank = {
       numParticipants: 4197,
       myRank: null,
@@ -145,34 +188,13 @@ describe("buildFactionLeaderboard", () => {
       myRank: null,
       myPoints: null,
       benchmarks: [{ rank: 1, points: 58946 }],
-      referenceScore: null, // #25 isn't in topEntries in this fixture
+      topEntries: [{ rank: 1, points: 58946 }],
+      nearMe: [],
     });
   });
 
   it("returns null for a null entry", () => {
     expect(buildFactionLeaderboard(noEntry)).toBeNull();
-  });
-
-  it("falls back to raw top entries when too few participants exist for the standard benchmark ranks", () => {
-    // 3 participants - only rank 1 (position 0) would land on a standard benchmark rank, so
-    // showing just that one row would throw away positions 1 and 2 even though they're right
-    // there in topEntries. All three should show instead.
-    const tiny = {
-      numParticipants: 3,
-      myRank: null,
-      myPoints: null,
-      topEntries: [
-        { position: 0, points: 900 },
-        { position: 1, points: 700 },
-        { position: 2, points: 500 },
-      ],
-      localEntries: [],
-    };
-    expect(buildFactionLeaderboard(tiny)?.benchmarks).toEqual([
-      { rank: 1, points: 900 },
-      { rank: 2, points: 700 },
-      { rank: 3, points: 500 },
-    ]);
   });
 });
 
@@ -257,24 +279,5 @@ describe("findActivePhase", () => {
 
   it("returns null phase when nothing brackets now (all inputs undefined/empty)", () => {
     expect(findActivePhase(undefined, [], undefined)).toEqual({ phase: null, activeZone: null });
-  });
-});
-
-describe("pickReferenceScore", () => {
-  it("uses the top-10% rank's score when it's within the visible top-25 window", () => {
-    // 130 participants -> ceil(130 * 0.1) = rank 13 -> topEntries position 12 (0-indexed).
-    const entry = { ...realAgainstEntry, numParticipants: 130 };
-    expect(pickReferenceScore(entry)).toEqual({ rank: 13, points: 12475 });
-  });
-
-  it("falls back to the #25 score when the top-10% rank isn't visible (>250 participants)", () => {
-    // 1858 participants -> ceil(1858 * 0.1) = rank 186, far past the top-25 window, so #25
-    // (topEntries position 24) is used instead.
-    expect(pickReferenceScore(realAgainstEntry)).toEqual({ rank: 25, points: 11487 });
-  });
-
-  it("returns null when the target rank isn't present in topEntries", () => {
-    const sparse = { numParticipants: 4197, myRank: null, myPoints: null, topEntries: [{ position: 0, points: 58946 }], localEntries: [] };
-    expect(pickReferenceScore(sparse)).toBeNull();
   });
 });

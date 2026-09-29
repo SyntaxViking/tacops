@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Icon } from "./Icon";
 import { factionIconUrl } from "../factions/faction-icon";
-import type { FactionLeaderboardResult, SideLeaderboardResult } from "../api/types";
+import type { FactionLeaderboardResult, LeaderboardBenchmark, SideLeaderboardResult } from "../api/types";
 
 // Shared by the Crusade tab's table and card views - same underlying data, same rendering rules,
 // just different layout containers around them.
@@ -27,51 +28,52 @@ function percentileLabel(rank: number, numParticipants: number): string {
   return `top ${((rank / numParticipants) * 100).toFixed(1)}%`;
 }
 
-type RowKind = "benchmark" | "me" | "reference";
+type RowKind = "row" | "me";
 
 const ROW_CLASS: Record<RowKind, string> = {
-  benchmark: "text-neutral-500 dark:text-neutral-400",
+  row: "text-neutral-500 dark:text-neutral-400",
   me: "font-semibold text-blue-600 dark:text-blue-400",
-  reference: "font-semibold text-orange-600 dark:text-orange-400",
 };
 
-// Shared by both the Side and Faction Leaderboard columns - identical shape (numParticipants,
-// myRank, myPoints, benchmarks, referenceScore), identical rendering rules. Blank entirely when
-// there's no leaderboard entry at all for this planet (a missing/wrong-prefix response, or - for
-// the side leaderboard specifically - neither side having any entry) - not the same as "no
-// personal rank", which still renders benchmarks (myRank === null below).
-export function LeaderboardBreakdownCell({ result }: { result: SideLeaderboardResult | FactionLeaderboardResult | null }) {
-  if (!result) return null;
-  // The top-10%/#25 figure - shown on both Side and Faction (planet sort order is still driven
-  // by the Faction one specifically, see CrusadeTab's activePlanets sort). Skipped when its rank
-  // is already one of the standard benchmarks (e.g. the #25 fallback case) to avoid showing the
-  // same rank/score twice.
-  const referenceScore = result.referenceScore;
-  const showReference = referenceScore !== null && !result.benchmarks.some((b) => b.rank === referenceScore.rank);
+const TRIANGLE_BUTTON_CLASS =
+  "self-start text-[10px] leading-none text-neutral-400 outline-none transition-colors hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300";
 
-  const baseRows: { rank: number; points: number; kind: RowKind }[] = [
-    ...result.benchmarks.map((b) => ({ rank: b.rank, points: b.points, kind: "benchmark" as const })),
-    ...(showReference ? [{ rank: referenceScore.rank, points: referenceScore.points, kind: "reference" as const }] : []),
-  ];
-
-  // When the player's own rank lands exactly on a benchmark/reference rank (most commonly #1),
-  // that row is relabeled as "me" in place rather than getting a separate, duplicate-valued "You"
-  // row alongside it - a plain "#1: X" row otherwise gives no indication that X is the player.
-  const { myRank, myPoints } = result;
+// Shared by the collapsed (#1/#5/#10/#25) and expanded (full top 25 + rank+/-2) views: the
+// player's own rank gets relabeled "You" in place when it lands on a row already there, or
+// appended as its own row (in its correct numeric position) when it doesn't.
+function buildRows(source: LeaderboardBenchmark[], myRank: number | null, myPoints: number | null) {
   const hasOwnRow = myRank !== null && myPoints !== null;
-  const myRowAlreadyShown = hasOwnRow && baseRows.some((r) => r.rank === myRank);
-
-  // Rank-ascending (#1 first, #25 last) - the "You" row's sort key is the player's actual rank,
-  // so it lands in its correct numeric position among the benchmarks (e.g. between #10 and #25).
-  const rows = [
-    ...baseRows.map((r) => (hasOwnRow && r.rank === myRank ? { ...r, kind: "me" as const } : r)),
-    ...(hasOwnRow && !myRowAlreadyShown ? [{ rank: myRank, points: myPoints, kind: "me" as const }] : []),
+  const myRowAlreadyShown = hasOwnRow && source.some((r) => r.rank === myRank);
+  return [
+    ...source.map((r) => ({ ...r, kind: (hasOwnRow && r.rank === myRank ? "me" : "row") as RowKind })),
+    ...(hasOwnRow && !myRowAlreadyShown ? [{ rank: myRank!, points: myPoints!, kind: "me" as RowKind }] : []),
   ]
-    .map((r) => ({ ...r, label: r.kind === "me" ? `You (#${r.rank})` : r.kind === "reference" ? `#${r.rank} (top 10%)` : `#${r.rank}` }))
+    .map((r) => ({ ...r, label: r.kind === "me" ? `You (#${r.rank})` : `#${r.rank}` }))
     .sort((a, b) => a.rank - b.rank);
+}
+
+// Shared by both the Side and Faction Leaderboard columns - identical shape, identical rendering
+// rules. Blank entirely when there's no leaderboard entry at all for this planet (a missing/
+// wrong-prefix response, or - for the side leaderboard specifically - neither side having any
+// entry) - not the same as "no personal rank", which still renders benchmarks (myRank === null
+// below).
+//
+// Collapsed by default: just #1/#5/#10/#25, individually omitted when that rank doesn't exist -
+// no filling in from other ranks, unlike the expanded view below. The disclosure triangle at the
+// bottom switches to the expanded view - the full top 25 plus the player's own rank +/-2
+// (nearMe, deduped against topEntries by rank since every rank maps to exactly one row) - and
+// back again.
+export function LeaderboardBreakdownCell({ result }: { result: SideLeaderboardResult | FactionLeaderboardResult | null }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!result) return null;
+
+  const source = expanded
+    ? [...result.topEntries, ...result.nearMe.filter((r) => !result.topEntries.some((t) => t.rank === r.rank))].sort((a, b) => a.rank - b.rank)
+    : result.benchmarks;
+  const rows = buildRows(source, result.myRank, result.myPoints);
 
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col items-start gap-0.5">
       {result.myRank !== null ? (
         <>
           <span>
@@ -87,6 +89,20 @@ export function LeaderboardBreakdownCell({ result }: { result: SideLeaderboardRe
           {row.label}: {row.points.toLocaleString()}
         </span>
       ))}
+      <button
+        type="button"
+        aria-label={expanded ? "Collapse leaderboard" : "Expand leaderboard"}
+        title={expanded ? "Collapse leaderboard" : "Expand leaderboard"}
+        onClick={(e) => {
+          // Both the Domination table row and card have their own onClick to open the sector map -
+          // without this, toggling the triangle bubbles up and opens it too.
+          e.stopPropagation();
+          setExpanded(!expanded);
+        }}
+        className={TRIANGLE_BUTTON_CLASS}
+      >
+        {expanded ? "▲" : "▼"}
+      </button>
     </div>
   );
 }

@@ -59,7 +59,15 @@ function leaderboardsRawWithMyRank(planetId: string) {
     eventResult: {
       eventResponseData: {
         leaderboards: {
-          [ids.playerFor]: { numParticipants: 500, myRank: 41, myPoints: 4000, topEntries: [{ position: 0, points: 9000 }] },
+          [ids.playerFor]: {
+            numParticipants: 500,
+            myRank: 41,
+            myPoints: 4000,
+            topEntries: [{ position: 0, points: 9000 }],
+            // Falls within the myRank(42) +/-2 window (40-44) - buildNearMe would surface this if
+            // it weren't for stripMyRank clearing nearMe on the anonymous path.
+            localEntries: [{ position: 41, points: 4200 }],
+          },
           [ids.playerAgainst]: { numParticipants: 400, topEntries: [{ position: 0, points: 8000 }] },
           [custodesId]: { numParticipants: 50, myRank: 3, myPoints: 2500, topEntries: [{ position: 0, points: 3000 }] },
         },
@@ -126,6 +134,11 @@ describe("seedPlanetRefreshStateFromCache", () => {
     // Benchmarks (the actual public leaderboard content) survive the stripping untouched.
     expect(entry?.leaderboard?.side?.numParticipants).toBe(500);
     expect(entry?.leaderboard?.faction?.numParticipants).toBe(50);
+    // nearMe (the expanded view's "rank +/-2" window) is emptied too - it's built from that same
+    // raw myRank, so leaving it would still show a narrow band of rows centered on the poller's
+    // real rank even with myRank/myPoints themselves hidden.
+    expect(entry?.leaderboard?.side?.nearMe).toEqual([]);
+    expect(entry?.leaderboard?.faction?.nearMe).toEqual([]);
   });
 
   it("falls back to the 'against' side leaderboard when an against-side faction is picked", () => {

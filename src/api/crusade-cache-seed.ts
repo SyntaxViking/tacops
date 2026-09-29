@@ -25,9 +25,12 @@ export interface SeededCrusadeState {
 }
 
 // See the myRank/myPoints comment above - null out the poller's own personal placement so it never
-// reaches an anonymous visitor's screen or sort order.
+// reaches an anonymous visitor's screen or sort order. nearMe (the expanded-view "rank +/-2"
+// window) gets emptied too, not just myRank/myPoints - it's built from that same raw myRank
+// (buildNearMe in fetch-crusade-data.ts), so leaving it populated would still show a narrow band
+// of rows centered on the poller's real rank, just without the label naming it.
 function stripMyRank<T extends SideLeaderboardResult | FactionLeaderboardResult>(result: T | null): T | null {
-  return result ? { ...result, myRank: null, myPoints: null } : null;
+  return result ? { ...result, myRank: null, myPoints: null, nearMe: [] } : null;
 }
 
 // selectedFactionId is null for the logged-in bootstrap seed (App.tsx's go()) - side/faction stay
