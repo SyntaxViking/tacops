@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   computeCaptureRace,
   computeConquestProgress,
+  isDominationSunk,
   isPlanetAutoRefreshable,
   isPlanetRanked,
   parsePositiveIntFilter,
   passesDominationFilters,
+  pointsRemaining,
   sortDominationPlanets,
 } from "./crusade-domination-view-model";
 import type { CrusadePlanet, FactionLeaderboardResult, PlanetLeaderboard, PlanetRefreshEntry, SideLeaderboardResult } from "../api/types";
@@ -101,6 +103,53 @@ describe("computeCaptureRace", () => {
     });
     // Devastation (attacker here) needs 100-90=10 more; Imperial (defender) needs 100-10=90 more.
     expect(computeCaptureRace(p)).toEqual({ leadingSide: "Devastation", pointsRemaining: 10 });
+  });
+});
+
+describe("isDominationSunk", () => {
+  it("is false for a live contested planet", () => {
+    const p = planet({
+      sideOwner: "For",
+      pointsFor: 10,
+      pointsAgainst: 10,
+      struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
+    });
+    expect(isDominationSunk(p)).toBe(false);
+  });
+
+  it("is true once a side has reached (or passed) its capture threshold", () => {
+    const p = planet({
+      sideOwner: "For",
+      pointsFor: 10,
+      pointsAgainst: 1000,
+      struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 2000 },
+    });
+    expect(isDominationSunk(p)).toBe(true);
+  });
+
+  it("is true during post-capture cooldown (struggleData present, both sides at 0)", () => {
+    const p = planet({ struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 } });
+    expect(isDominationSunk(p)).toBe(true);
+  });
+
+  it("is false for a planet with no struggleData at all (not Domination-active yet)", () => {
+    expect(isDominationSunk(planet())).toBe(false);
+  });
+});
+
+describe("pointsRemaining", () => {
+  it("returns each side's threshold minus current points", () => {
+    const p = planet({
+      sideOwner: "For",
+      pointsFor: 40,
+      pointsAgainst: 25,
+      struggleData: { conquestThresholdPointsAttacker: 100, conquestThresholdPointsDefender: 200 },
+    });
+    expect(pointsRemaining(p)).toEqual({ imperial: 160, devastation: 75 });
+  });
+
+  it("returns Infinity for both sides when the planet has no struggleData", () => {
+    expect(pointsRemaining(planet())).toEqual({ imperial: Infinity, devastation: Infinity });
   });
 });
 

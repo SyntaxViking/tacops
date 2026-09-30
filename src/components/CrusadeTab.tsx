@@ -6,6 +6,7 @@ import { CrusadeDominationTable } from "./CrusadeDominationTable";
 import { DominationSortModeToggle } from "./DominationSortModeToggle";
 import { DominationTopTenFilter } from "./DominationTopTenFilter";
 import { PlanetSectorMapModal } from "./PlanetSectorMapModal";
+import { PlanetTrackerGraph } from "./PlanetTrackerGraph";
 import {
   parsePositiveIntFilter,
   passesDominationFilters,
@@ -14,6 +15,7 @@ import {
   type DominationSortMode,
 } from "../crusade/crusade-domination-view-model";
 import { adjacentZone, computeAllSectorsMap, computeSectorMap, sectorZones } from "../crusade/crusade-sector-map-view-model";
+import type { TrackedPlanetState } from "../crusade/planet-tracker-view-model";
 import type { ViewMode } from "./ViewModeToggle";
 import type { CrusadeData, CrusadeSectorMap, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
 
@@ -34,6 +36,11 @@ interface CrusadeTabProps {
   // toward the visitor's chosen side - re-synced whenever it changes (see the effect below), not
   // just on first mount, so picking a different faction mid-session actually re-sorts.
   defaultDominationSortMode?: DominationSortMode;
+  // Omitted (like onRefreshPlanet/onToggleFavoritePlanet above) suppresses the track icon entirely
+  // - AnonymousCrusadeSection has no account to track a planet's live refresh against.
+  trackedPlanetId?: string | null;
+  trackedPlanetState?: TrackedPlanetState | null;
+  onToggleTrackPlanet?: (planetId: string) => void;
 }
 
 export function CrusadeTab({
@@ -46,6 +53,9 @@ export function CrusadeTab({
   favoritedPlanetIds,
   onToggleFavoritePlanet,
   defaultDominationSortMode,
+  trackedPlanetId = null,
+  trackedPlanetState = null,
+  onToggleTrackPlanet,
 }: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   // The sector the map modal is showing - starts at the clicked planet's sector but can be stepped
@@ -60,6 +70,18 @@ export function CrusadeTab({
   useEffect(() => {
     if (defaultDominationSortMode) setDominationSortMode(defaultDominationSortMode);
   }, [defaultDominationSortMode]);
+
+  // Drives PlanetTrackerGraph's "elapsed" caption while a planet is tracked and live - the actual
+  // line data comes entirely from trackedPlanetState's own samples (App.tsx owns that), this is
+  // only for the ticking "Ns elapsed" text. Stops (and the graph freezes in place) once frozen -
+  // deliberately keyed on trackedPlanetId/frozen rather than trackedPlanetState itself, since a new
+  // sample replaces that object every refresh and would otherwise restart this interval constantly.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!trackedPlanetId || trackedPlanetState?.frozen) return;
+    const interval = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [trackedPlanetId, trackedPlanetState?.frozen]);
 
   if (!crusadeData) {
     return error ? (
@@ -121,11 +143,23 @@ export function CrusadeTab({
     // no longer exceeds the threshold.
     const maxSide = parsePositiveIntFilter(maxSideInput);
     const maxFaction = parsePositiveIntFilter(maxFactionInput);
-    const visibleDominationPlanets = dominationPlanets.filter((p) =>
-      passesDominationFilters(leaderboardByPlanet.get(p.planetId), maxSide, maxFaction),
-    );
+    let visibleDominationPlanets = dominationPlanets.filter((p) => passesDominationFilters(leaderboardByPlanet.get(p.planetId), maxSide, maxFaction));
+
+    // The tracked planet is always first and always visible while tracked, regardless of sort mode
+    // or the side/faction filters above - a user actively watching a capture race shouldn't have it
+    // disappear because a filter now excludes it.
+    if (trackedPlanetId) {
+      const tracked = dominationPlanets.find((p) => p.planetId === trackedPlanetId) ?? crusadeData.planets.find((p) => p.planetId === trackedPlanetId);
+      if (tracked) {
+        visibleDominationPlanets = [tracked, ...visibleDominationPlanets.filter((p) => p.planetId !== trackedPlanetId)];
+      }
+    }
+
+    const trackedPlanet = trackedPlanetId ? crusadeData.planets.find((p) => p.planetId === trackedPlanetId) : undefined;
+
     return (
       <>
+        {trackedPlanetState && trackedPlanet && <PlanetTrackerGraph state={trackedPlanetState} planetName={trackedPlanet.name} nowMs={nowMs} />}
         <DominationSortModeToggle value={dominationSortMode} onChange={setDominationSortMode} />
         <DominationTopTenFilter
           maxSideInput={maxSideInput}
@@ -141,6 +175,8 @@ export function CrusadeTab({
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
+            trackedPlanetId={trackedPlanetId}
+            onToggleTrackPlanet={onToggleTrackPlanet}
           />
         ) : (
           <CrusadeDominationCards
@@ -150,6 +186,8 @@ export function CrusadeTab({
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
+            trackedPlanetId={trackedPlanetId}
+            onToggleTrackPlanet={onToggleTrackPlanet}
           />
         )}
         {sectorMapModal}

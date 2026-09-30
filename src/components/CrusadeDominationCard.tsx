@@ -2,6 +2,7 @@ import { FactionBadge, LeaderboardBreakdownCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
+import { TrackIconButton } from "./TrackIconButton";
 import { Spinner } from "./Spinner";
 import { computeCaptureRace, computeConquestProgress, isPlanetRanked } from "../crusade/crusade-domination-view-model";
 import type { CrusadePlanet, PlanetRefreshEntry } from "../api/types";
@@ -16,9 +17,25 @@ interface CrusadeDominationCardProps {
   isFavorited: boolean;
   onToggleFavorite?: () => void;
   starDisabled?: boolean;
+  isTracked?: boolean;
+  onToggleTrack?: () => void;
+  trackDisabled?: boolean;
+  trackDisabledTitle?: string;
 }
 
-export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, onRefresh, isFavorited, onToggleFavorite, starDisabled }: CrusadeDominationCardProps) {
+export function CrusadeDominationCard({
+  planet,
+  refreshEntry,
+  onSelectPlanet,
+  onRefresh,
+  isFavorited,
+  onToggleFavorite,
+  starDisabled,
+  isTracked = false,
+  onToggleTrack,
+  trackDisabled,
+  trackDisabledTitle,
+}: CrusadeDominationCardProps) {
   const leaderboard = refreshEntry.leaderboard ?? undefined;
   const progress = computeConquestProgress(planet);
   const captureRace = computeCaptureRace(planet);
@@ -42,7 +59,10 @@ export function CrusadeDominationCard({ planet, refreshEntry, onSelectPlanet, on
             {onToggleFavorite && <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} disabled={starDisabled} />}
             <span className="font-medium">{planet.name}</span>
           </div>
-          {planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}
+          <div className="flex items-center gap-1">
+            {planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}
+            {onToggleTrack && <TrackIconButton isTracked={isTracked} onToggle={onToggleTrack} disabled={trackDisabled} disabledTitle={trackDisabledTitle} />}
+          </div>
         </div>
         <div className="flex items-start justify-between gap-2">
           <span className="text-xs opacity-70">Sector {(planet.zone ?? 0) + 1}</span>

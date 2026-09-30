@@ -1,8 +1,10 @@
 import { isStarDisabled } from "../crusade/starred-planets";
+import { isPlanetTrackable, isTrackDisabled } from "../crusade/tracked-planet";
 import { FactionBadge, LeaderboardBreakdownCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
+import { TrackIconButton } from "./TrackIconButton";
 import { Spinner } from "./Spinner";
 import { EMPTY_REFRESH_ENTRY } from "./planet-refresh-defaults";
 import { computeCaptureRace, computeConquestProgress, isPlanetRanked } from "../crusade/crusade-domination-view-model";
@@ -17,6 +19,8 @@ interface CrusadeDominationTableProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
+  trackedPlanetId?: string | null;
+  onToggleTrackPlanet?: (planetId: string) => void;
 }
 
 export function CrusadeDominationTable({
@@ -26,7 +30,10 @@ export function CrusadeDominationTable({
   onRefreshPlanet,
   favoritedPlanetIds,
   onToggleFavoritePlanet,
+  trackedPlanetId = null,
+  onToggleTrackPlanet,
 }: CrusadeDominationTableProps) {
+  const trackedPlanetName = trackedPlanetId ? planets.find((p) => p.planetId === trackedPlanetId)?.name : undefined;
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
       <thead>
@@ -68,7 +75,23 @@ export function CrusadeDominationTable({
               </td>
               <td className={cellClass}>{planet.name}</td>
               <td className={cellClass}>{(planet.zone ?? 0) + 1}</td>
-              <td className={cellClass}>{planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}</td>
+              <td className={cellClass}>
+                <div className="flex items-center gap-1">
+                  {planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}
+                  {onToggleTrackPlanet && (
+                    <TrackIconButton
+                      isTracked={trackedPlanetId === planet.planetId}
+                      onToggle={() => onToggleTrackPlanet(planet.planetId)}
+                      disabled={isTrackDisabled(trackedPlanetId, planet.planetId) || (trackedPlanetId === null && !isPlanetTrackable(planet))}
+                      disabledTitle={
+                        isTrackDisabled(trackedPlanetId, planet.planetId)
+                          ? `Untrack ${trackedPlanetName ?? "the other planet"} first - only one planet can be tracked at a time`
+                          : "Not currently available to track (already captured or in cooldown)"
+                      }
+                    />
+                  )}
+                </div>
+              </td>
               <td className={cellClass}>
                 {progress && (
                   <div className="flex flex-col gap-0.5">

@@ -85,11 +85,11 @@ function isInDominationCooldown(planet: CrusadePlanet): boolean {
   return planet.struggleData != null && (planet.pointsFor ?? 0) === 0 && (planet.pointsAgainst ?? 0) === 0;
 }
 
-function isDominationSunk(planet: CrusadePlanet): boolean {
+export function isDominationSunk(planet: CrusadePlanet): boolean {
   return isJustCaptured(planet) || isInDominationCooldown(planet);
 }
 
-function pointsRemaining(planet: CrusadePlanet): { imperial: number; devastation: number } {
+export function pointsRemaining(planet: CrusadePlanet): { imperial: number; devastation: number } {
   const progress = computeConquestProgress(planet);
   if (!progress) return { imperial: Infinity, devastation: Infinity };
   return {
