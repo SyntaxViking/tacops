@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendTrackedSample,
   computeAxisScale,
-  computeTrackerGraphPoints,
+  computeTrackerGraphData,
   createTrackedPlanetState,
   formatAxisValue,
   restartIfRecontested,
@@ -120,24 +120,12 @@ describe("computeAxisScale", () => {
     expect(computeAxisScale([5, 50, 500]).ceiling).toBe(500);
   });
 
-  it("holds the ceiling steady through a dip that stays within one power of ten", () => {
-    // 70 is itself a clean ceiling (7 x 10); 60 is within one decade of it (60 >= 7), so the
-    // ceiling doesn't move even though the value dropped.
-    expect(computeAxisScale([70, 60]).ceiling).toBe(70);
-  });
-
-  it("holds the ceiling steady across a whole run of decreasing-but-still-within-one-decade samples", () => {
-    // Regression guard for the original (rejected) design: a *shrinking* ceiling that re-based to
-    // every new value made the line always pin to the top of the chart, visually flat - exactly the
-    // symptom grid lines/dual axes were meant to fix. A run of moderate decreases must leave the
-    // ceiling in place throughout, not just for one step.
+  it("never shrinks the ceiling, no matter how far or how many samples a value drops - the axis is static once a peak is set", () => {
+    // A previous design dynamically shrank the ceiling over time and it looked bad in practice, so
+    // this is a direct regression guard: even a huge, multi-step drop (10M all the way down to 50)
+    // must leave the ceiling exactly where its peak left it.
     expect(computeAxisScale([90, 80, 70, 60]).ceiling).toBe(90);
-  });
-
-  it("steps the ceiling down by exactly one power of ten when a value drops more than one decade below it - the spec's own example", () => {
-    // Ceiling reaches >=10M, then a sample's own natural ceiling is <1M - the axis steps down to
-    // exactly 1M (10M / 10), not all the way to the tiny value's own true decade.
-    expect(computeAxisScale([10_000_000, 50_000]).ceiling).toBe(1_000_000);
+    expect(computeAxisScale([10_000_000, 50]).ceiling).toBe(10_000_000);
   });
 
   it("skips a zero sample entirely rather than letting it collapse the ceiling", () => {
@@ -145,7 +133,7 @@ describe("computeAxisScale", () => {
   });
 
   it("produces one tick per single-digit multiple of the ceiling's own decade, each already a clean label", () => {
-    const axis = computeAxisScale([10_000_000, 50_000]); // ceiling 1,000,000 (see above)
+    const axis = computeAxisScale([1_000_000]); // decade 1,000,000, k=1
     expect(axis.ticks).toEqual([{ value: 1_000_000, normalizedY: 1, label: "1M" }]);
   });
 
@@ -189,32 +177,38 @@ describe("timeAxisStepSeconds", () => {
   });
 });
 
-describe("computeTrackerGraphPoints", () => {
+describe("computeTrackerGraphData", () => {
   it("returns empty output for a state with no samples yet", () => {
-    expect(computeTrackerGraphPoints(createTrackedPlanetState("planet_001", 1000))).toEqual({
-      imperial: [],
-      devastation: [],
-      imperialAxis: { ceiling: 0, ticks: [] },
-      devastationAxis: { ceiling: 0, ticks: [] },
+    const emptyAxis = { ceiling: 0, ticks: [] };
+    const emptyLine = { points: [], label: null };
+    expect(computeTrackerGraphData(createTrackedPlanetState("planet_001", 1000))).toEqual({
+      imperial: { line: emptyLine, axis: emptyAxis },
+      devastation: { line: emptyLine, axis: emptyAxis },
+      combined: { imperial: emptyLine, devastation: emptyLine, axis: emptyAxis },
       timeTicks: [],
-      imperialLabel: null,
-      devastationLabel: null,
     });
   });
 
-  it("renders a single sample at the top of its own (single-sample) scale for both sides", () => {
+  it("renders a single sample at the top of each side's own solo scale, but proportionally on the shared combined scale", () => {
     const state: TrackedPlanetState = {
       planetId: "planet_001",
       startedAtMs: 1000,
       samples: [{ atMs: 1000, imperialRemaining: 500, devastationRemaining: 300 }],
       frozen: false,
     };
-    const result = computeTrackerGraphPoints(state);
-    expect(result.imperial).toEqual([{ x: 0, y: 1 }]);
-    expect(result.devastation).toEqual([{ x: 0, y: 1 }]);
+    const result = computeTrackerGraphData(state);
+    // Solo: each side's own ceiling equals its own value, so both read "1" - exactly the
+    // misleading behavior the Combined graph exists to fix.
+    expect(result.imperial.line.points).toEqual([{ x: 0, y: 1 }]);
+    expect(result.devastation.line.points).toEqual([{ x: 0, y: 1 }]);
+    // Combined: one shared ceiling (500, the larger side's own) - devastation's 300 now honestly
+    // reads as 60% of imperial's, not equal to it.
+    expect(result.combined.axis.ceiling).toBe(500);
+    expect(result.combined.imperial.points).toEqual([{ x: 0, y: 1 }]);
+    expect(result.combined.devastation.points).toEqual([{ x: 0, y: 0.6 }]);
   });
 
-  it("keeps a trailing side's line visibly moving on its own scale, even when it's orders of magnitude behind the other side", () => {
+  it("keeps a trailing side's SOLO line visibly moving on its own scale, even when it's orders of magnitude behind the other side", () => {
     const state: TrackedPlanetState = {
       planetId: "planet_001",
       startedAtMs: 0,
@@ -224,14 +218,19 @@ describe("computeTrackerGraphPoints", () => {
       ],
       frozen: false,
     };
-    const result = computeTrackerGraphPoints(state);
-    // Both lines fall to half their own starting height - devastation is nowhere near flat/pinned
-    // to 0 despite being ~10,000x smaller in absolute terms than imperial.
-    expect(result.imperial.map((p) => p.y)).toEqual([1, 0.5]);
-    expect(result.devastation.map((p) => p.y)).toEqual([1, 0.5]);
+    const result = computeTrackerGraphData(state);
+    // Both solo lines fall to half their own starting height - devastation's solo graph is nowhere
+    // near flat/pinned to 0 despite being ~10,000x smaller in absolute terms than imperial.
+    expect(result.imperial.line.points.map((p) => p.y)).toEqual([1, 0.5]);
+    expect(result.devastation.line.points.map((p) => p.y)).toEqual([1, 0.5]);
+    // The Combined graph accepts the opposite tradeoff on purpose: one honest shared scale means
+    // devastation's line is legitimately squashed near 0 there - that's exactly why the solo graphs
+    // still exist alongside it, not a bug in the combined one.
+    expect(result.combined.axis.ceiling).toBe(900_000);
+    expect(result.combined.devastation.points.every((p) => p.y < 0.001)).toBe(true);
   });
 
-  it("clamps an older, higher sample to the top of the chart once the axis has since stepped down", () => {
+  it("keeps every axis fixed at its peak even after a huge drop - no rescaling, on any of the three graphs", () => {
     const state: TrackedPlanetState = {
       planetId: "planet_001",
       startedAtMs: 0,
@@ -241,40 +240,47 @@ describe("computeTrackerGraphPoints", () => {
       ],
       frozen: false,
     };
-    const result = computeTrackerGraphPoints(state);
-    // Ceiling steps down to 1M (see computeAxisScale's own test) - the first sample (10M) is now
-    // far above that, so it clamps to 1 rather than escaping the plot area.
-    expect(result.imperial[0].y).toBe(1);
-    expect(result.imperial[1].y).toBeCloseTo(0.05); // 50,000 / 1,000,000
+    const result = computeTrackerGraphData(state);
+    // Imperial's solo ceiling stays at its peak (10M) for the whole line.
+    expect(result.imperial.line.points[0].y).toBe(1);
+    expect(result.imperial.line.points[1].y).toBeCloseTo(0.005); // 50,000 / 10,000,000
+    // The Combined axis (10M, the larger side's peak) never shrinks either.
+    expect(result.combined.axis.ceiling).toBe(10_000_000);
   });
 
-  it("always labels both lines at their own last point, in raw remaining-value terms", () => {
+  it("always labels every line at its own last point, in raw remaining-value terms", () => {
     const state: TrackedPlanetState = {
       planetId: "planet_001",
       startedAtMs: 0,
       samples: [{ atMs: 0, imperialRemaining: 50, devastationRemaining: 900 }],
       frozen: false,
     };
-    const result = computeTrackerGraphPoints(state);
-    // Single sample -> each side's own ceiling equals that sample's value, so y is 1 for both,
-    // regardless of the 50 vs 900 gap - each label's `value` still carries the real raw number.
-    expect(result.imperialLabel).toEqual({ x: 0, y: 1, value: 50 });
-    expect(result.devastationLabel).toEqual({ x: 0, y: 1, value: 900 });
+    const result = computeTrackerGraphData(state);
+    // Solo: each side's own ceiling equals that sample's value, so y is 1 for both, regardless of
+    // the 50 vs 900 gap - each label's `value` still carries the real raw number.
+    expect(result.imperial.line.label).toEqual({ x: 0, y: 1, value: 50 });
+    expect(result.devastation.line.label).toEqual({ x: 0, y: 1, value: 900 });
+    // Combined: same shared ceiling (900, the larger side's) for both labels' positions, but each
+    // still reports its own true value.
+    expect(result.combined.imperial.label).toEqual({ x: 0, y: 50 / 900, value: 50 });
+    expect(result.combined.devastation.label).toEqual({ x: 0, y: 1, value: 900 });
   });
 
-  it("still labels both lines even on an exact tie (no more XOR - which side renders above/below is a rendering decision, not made here)", () => {
+  it("still labels every line even on an exact tie", () => {
     const state: TrackedPlanetState = {
       planetId: "planet_001",
       startedAtMs: 0,
       samples: [{ atMs: 0, imperialRemaining: 300, devastationRemaining: 300 }],
       frozen: false,
     };
-    const result = computeTrackerGraphPoints(state);
-    expect(result.imperialLabel).toEqual({ x: 0, y: 1, value: 300 });
-    expect(result.devastationLabel).toEqual({ x: 0, y: 1, value: 300 });
+    const result = computeTrackerGraphData(state);
+    expect(result.imperial.line.label).toEqual({ x: 0, y: 1, value: 300 });
+    expect(result.devastation.line.label).toEqual({ x: 0, y: 1, value: 300 });
+    expect(result.combined.imperial.label).toEqual({ x: 0, y: 1, value: 300 });
+    expect(result.combined.devastation.label).toEqual({ x: 0, y: 1, value: 300 });
   });
 
-  it("spaces time ticks by timeAxisStepSeconds's own step, not a fixed fraction of the duration", () => {
+  it("spaces time ticks by timeAxisStepSeconds's own step, not a fixed fraction of the duration - shared by all three graphs", () => {
     const state: TrackedPlanetState = {
       planetId: "planet_001",
       startedAtMs: 0,
@@ -284,7 +290,7 @@ describe("computeTrackerGraphPoints", () => {
       ],
       frozen: false,
     };
-    const result = computeTrackerGraphPoints(state);
+    const result = computeTrackerGraphData(state);
     // 40s total duration -> still under the "every 10s up to a minute" tier.
     expect(result.timeTicks).toEqual([
       { normalizedX: 0, label: "0s" },
@@ -306,7 +312,7 @@ describe("computeTrackerGraphPoints", () => {
       frozen: false,
     };
     // 90s total duration -> past the 60s tier, now every 30s (not 10s) - 4 ticks, not 9.
-    const result = computeTrackerGraphPoints(state);
+    const result = computeTrackerGraphData(state);
     expect(result.timeTicks).toEqual([
       { normalizedX: 0, label: "0s" },
       { normalizedX: 1 / 3, label: "30s" },
@@ -322,6 +328,6 @@ describe("computeTrackerGraphPoints", () => {
       samples: [{ atMs: 1000, imperialRemaining: 500, devastationRemaining: 300 }],
       frozen: false,
     };
-    expect(computeTrackerGraphPoints(state).timeTicks).toEqual([]);
+    expect(computeTrackerGraphData(state).timeTicks).toEqual([]);
   });
 });

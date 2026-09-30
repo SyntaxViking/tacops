@@ -71,29 +71,43 @@ export interface TimeTick {
   label: string;
 }
 
-export interface TrackerGraphPoints {
-  imperial: GraphPoint[];
-  devastation: GraphPoint[];
-  imperialAxis: SideAxis;
-  devastationAxis: SideAxis;
-  timeTicks: TimeTick[];
-  // Both lines are always labeled at their rightmost (most recent) point, unlike the single
-  // XOR-picked label this used to be - with two independent per-side axes there's no longer one
-  // "closer to zero" answer that means anything across both scales. Which one renders above/below
-  // its point (so the two labels don't overlap) is a rendering decision made in the .tsx component,
-  // which already has the shared pixel mapping needed to compare the two points' screen positions.
-  imperialLabel: LabeledPoint | null;
-  devastationLabel: LabeledPoint | null;
+// One drawable line: its points (already normalized against whichever axis it's paired with) plus
+// its own rightmost-point label (raw remaining-value terms) - always present once there's at least
+// one sample, unlike the single XOR-picked label this used to be. Which line renders its label
+// above/below its point (so two labels sharing one graph don't overlap) is a rendering decision made
+// in the .tsx component, which has the shared pixel mapping needed to compare screen positions.
+export interface GraphLine {
+  points: GraphPoint[];
+  label: LabeledPoint | null;
 }
 
-const EMPTY_GRAPH_POINTS: TrackerGraphPoints = {
-  imperial: [],
-  devastation: [],
-  imperialAxis: { ceiling: 0, ticks: [] },
-  devastationAxis: { ceiling: 0, ticks: [] },
+export interface SingleSideGraph {
+  line: GraphLine;
+  axis: SideAxis;
+}
+
+// Both sides' lines, each normalized against the *same* one shared axis - see
+// computeTrackerGraphData's own comment for why this exists alongside the independent-scale graphs.
+export interface CombinedGraph {
+  imperial: GraphLine;
+  devastation: GraphLine;
+  axis: SideAxis;
+}
+
+export interface TrackerGraphData {
+  imperial: SingleSideGraph;
+  devastation: SingleSideGraph;
+  combined: CombinedGraph;
+  timeTicks: TimeTick[];
+}
+
+const EMPTY_AXIS: SideAxis = { ceiling: 0, ticks: [] };
+const EMPTY_LINE: GraphLine = { points: [], label: null };
+const EMPTY_GRAPH_DATA: TrackerGraphData = {
+  imperial: { line: EMPTY_LINE, axis: EMPTY_AXIS },
+  devastation: { line: EMPTY_LINE, axis: EMPTY_AXIS },
+  combined: { imperial: EMPTY_LINE, devastation: EMPTY_LINE, axis: EMPTY_AXIS },
   timeTicks: [],
-  imperialLabel: null,
-  devastationLabel: null,
 };
 
 // Ceiling used before any real (positive) sample has been seen - only matters for a degenerate
@@ -116,38 +130,18 @@ function rawCeiling(v: number): number {
   return Math.ceil(v / decade) * decade;
 }
 
-// Folds a side's whole chronological sample history into one axis ceiling - this is what makes the
-// axis "remember" a recent peak instead of hugging whatever the single latest sample happens to be
-// (which would make the line always end pinned to the top of the chart, visually flat, exactly what
-// grid lines/dual axes were meant to fix). Three cases per sample, applied in order:
-//   - a new peak (this sample's own natural ceiling exceeds the running one) - adopt it immediately,
-//     no damping needed for growth;
-//   - a small dip (within one power of ten of the running ceiling) - leave the ceiling exactly where
-//     it is, so a lead that's merely narrowing doesn't itself trigger a rescale;
-//   - a big drop (more than one power of ten below the running ceiling - the "two powers of ten from
-//     the displayed graph" case) - step the ceiling down by exactly one power of ten, never further
-//     in a single sample, so the axis never jumps straight to the new tiny value. Reproduces the
-//     spec's own example: a running ceiling >=10M, a sample whose own natural ceiling is <1M, steps
-//     the axis down to exactly 1M (10M / 10), not the far smaller value's true decade.
-// A sample of exactly 0 (that side already fully captured/depleted) is skipped entirely - it
-// shouldn't itself drag a still-live axis down.
-function foldAxisCeiling(values: readonly number[]): number {
+// The ceiling is simply the highest value this side has ever reached this session (rounded up to
+// its own clean single-digit-times-a-power-of-ten value, see rawCeiling) - it only ever grows,
+// never shrinks. An earlier attempt at a dynamically-shrinking axis (stepping down over time as the
+// value dropped) looked bad in practice, so the axis is deliberately static once a peak is set - a
+// sample of exactly 0 (that side already fully captured/depleted) is skipped entirely so it can't
+// drag a still-live axis down to nothing.
+function computeCeiling(values: readonly number[]): number {
   let ceiling = MIN_CEILING;
-  let seeded = false;
   for (const v of values) {
     if (v <= 0) continue;
     const raw = rawCeiling(v);
-    if (!seeded) {
-      ceiling = raw;
-      seeded = true;
-      continue;
-    }
-    if (raw > ceiling) {
-      ceiling = raw;
-    } else if (raw < ceiling / 10) {
-      ceiling = ceiling / 10;
-    }
-    // else: within one decade below the current ceiling - hold steady.
+    if (raw > ceiling) ceiling = raw;
   }
   return ceiling;
 }
@@ -170,13 +164,13 @@ export function formatAxisValue(value: number): string {
   return `${displayNumber}${suffix}`;
 }
 
-// One side's independent scale: a ceiling folded from its own sample history (see
-// foldAxisCeiling), plus one grid-line tick per single-digit multiple of the ceiling's own decade
-// up to the ceiling itself - always clean single-significant-digit values by construction, so no
-// separate rounding step is needed for the tick values (only for arbitrary/unrounded numbers, which
-// don't occur here).
+// One side's independent scale: a ceiling that's the highest value this side has ever reached
+// (see computeCeiling - it never shrinks), plus one grid-line tick per single-digit multiple of the
+// ceiling's own decade up to the ceiling itself - always clean single-significant-digit values by
+// construction, so no separate rounding step is needed for the tick values (only for arbitrary/
+// unrounded numbers, which don't occur here).
 export function computeAxisScale(values: readonly number[]): SideAxis {
-  const ceiling = foldAxisCeiling(values);
+  const ceiling = computeCeiling(values);
   const decade = decadeOf(ceiling);
   const k = Math.round(ceiling / decade);
   const ticks: AxisTick[] = [];
@@ -239,19 +233,21 @@ function computeTimeTicks(samples: readonly TrackedPlanetSample[]): TimeTick[] {
   return ticks;
 }
 
-// Normalizes samples into [0,1] x/y space for the .tsx component's own pixel mapper: x is elapsed
-// time since the first sample (0 = first sample, 1 = the last sample - i.e. "now" while live, or the
-// freeze point once frozen). y is points-remaining scaled against that *side's own* axis ceiling
-// (see computeAxisScale) - each side gets its own independent scale so a trailing side's line still
-// visibly moves instead of being squashed flat by a leading side's much larger numbers. Clamped to
-// at most 1: once the ceiling has stepped down in response to recent samples, an older/higher
-// sample can exceed it - it simply renders pinned to the top of the chart rather than escaping the
-// plot area, which is the normal, expected look for a live-rescaling axis. imperialLabel/
-// devastationLabel are each that side's own last (rightmost) point, in raw remaining-value terms -
-// always both present once there's at least one sample (both sides get a sample every tick).
-export function computeTrackerGraphPoints(state: TrackedPlanetState): TrackerGraphPoints {
+// Computes all three graphs' worth of data in one pass: independent-scale Imperial and
+// Devastation lines (each side's own peak-only-grows ceiling, see computeCeiling - unchanged, a
+// trailing side's line still visibly moves instead of being squashed flat by a leading side's much
+// larger numbers), plus a Combined line pair that shares *one* axis (the larger of the two sides'
+// own ceilings, via concatenating both sides' values into one computeAxisScale call) so relative
+// progress between the two sides is always honestly comparable there - the two views are
+// deliberately kept side by side rather than trying to auto-pick one, since dynamically switching
+// between them would reintroduce the same kind of rescale-driven jumpiness that was just removed.
+// x is elapsed time since the first sample (0 = first sample, 1 = the last sample - i.e. "now" while
+// live, or the freeze point once frozen), shared by all three graphs. y-clamping to at most 1 is a
+// defensive belt-and-braces guard against floating-point edge cases (ceilings only grow, so normal
+// data should never actually hit it).
+export function computeTrackerGraphData(state: TrackedPlanetState): TrackerGraphData {
   const { samples } = state;
-  if (samples.length === 0) return EMPTY_GRAPH_POINTS;
+  if (samples.length === 0) return EMPTY_GRAPH_DATA;
 
   const firstMs = samples[0].atMs;
   const lastMs = samples[samples.length - 1].atMs;
@@ -264,15 +260,27 @@ export function computeTrackerGraphPoints(state: TrackedPlanetState): TrackerGra
     return ceiling > 0 ? Math.min(1, Math.max(0, value) / ceiling) : 0;
   }
 
-  const imperialAxis = computeAxisScale(samples.map((s) => s.imperialRemaining));
-  const devastationAxis = computeAxisScale(samples.map((s) => s.devastationRemaining));
+  const xs = samples.map((s) => toX(s.atMs));
+  const imperialValues = samples.map((s) => s.imperialRemaining);
+  const devastationValues = samples.map((s) => s.devastationRemaining);
 
-  const imperial = samples.map((s) => ({ x: toX(s.atMs), y: toY(s.imperialRemaining, imperialAxis.ceiling) }));
-  const devastation = samples.map((s) => ({ x: toX(s.atMs), y: toY(s.devastationRemaining, devastationAxis.ceiling) }));
+  function buildLine(values: readonly number[], ceiling: number): GraphLine {
+    const points = values.map((v, i) => ({ x: xs[i], y: toY(v, ceiling) }));
+    return { points, label: { x: points[points.length - 1].x, y: points[points.length - 1].y, value: values[values.length - 1] } };
+  }
 
-  const last = samples[samples.length - 1];
-  const imperialLabel: LabeledPoint = { x: imperial[imperial.length - 1].x, y: imperial[imperial.length - 1].y, value: last.imperialRemaining };
-  const devastationLabel: LabeledPoint = { x: devastation[devastation.length - 1].x, y: devastation[devastation.length - 1].y, value: last.devastationRemaining };
+  const imperialAxis = computeAxisScale(imperialValues);
+  const devastationAxis = computeAxisScale(devastationValues);
+  const combinedAxis = computeAxisScale([...imperialValues, ...devastationValues]);
 
-  return { imperial, devastation, imperialAxis, devastationAxis, timeTicks: computeTimeTicks(samples), imperialLabel, devastationLabel };
+  return {
+    imperial: { line: buildLine(imperialValues, imperialAxis.ceiling), axis: imperialAxis },
+    devastation: { line: buildLine(devastationValues, devastationAxis.ceiling), axis: devastationAxis },
+    combined: {
+      imperial: buildLine(imperialValues, combinedAxis.ceiling),
+      devastation: buildLine(devastationValues, combinedAxis.ceiling),
+      axis: combinedAxis,
+    },
+    timeTicks: computeTimeTicks(samples),
+  };
 }
