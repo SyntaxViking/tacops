@@ -100,6 +100,10 @@ describe("seedPlanetRefreshStateFromCache", () => {
     expect(entry?.leaderboard?.topFactionsAgainst).toEqual([]);
     expect(entry?.leaderboard?.side).toBeNull();
     expect(entry?.leaderboard?.faction).toBeNull();
+    // Unlike side/faction above, forParticipants/againstParticipants aren't gated on a picked
+    // faction - they're not personal data, just a raw headcount, so they're already populated here.
+    expect(entry?.leaderboard?.forParticipants).toBe(500);
+    expect(entry?.leaderboard?.againstParticipants).toBe(400);
   });
 
   it("populates the Side and Faction Leaderboards with benchmarks when a 'for' faction is picked", () => {

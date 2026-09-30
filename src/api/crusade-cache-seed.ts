@@ -65,10 +65,12 @@ export function seedPlanetRefreshStateFromCache(cache: CrusadeCacheResponse, sel
 
     const leaderboards = (cached.raw as any)?.eventResult?.eventResponseData?.leaderboards;
     const ids = leaderboardIdsForPlanet(crusadeData.crusadeId, crusadeData.seasonNumber, planetId);
-    const side =
-      selectedSide != null
-        ? stripMyRank(mergeSideLeaderboard(readLeaderboard(leaderboards, ids.playerFor, ""), readLeaderboard(leaderboards, ids.playerAgainst, ""), selectedSide))
-        : null;
+    // Read unconditionally (not gated on selectedSide, unlike `side` below) - a raw participant
+    // count isn't personal data the way myRank/myPoints is, so it's safe to surface (via
+    // forParticipants/againstParticipants) even before a visitor has picked a faction.
+    const playerFor = readLeaderboard(leaderboards, ids.playerFor, "");
+    const playerAgainst = readLeaderboard(leaderboards, ids.playerAgainst, "");
+    const side = selectedSide != null ? stripMyRank(mergeSideLeaderboard(playerFor, playerAgainst, selectedSide)) : null;
     const faction =
       selectedFactionId != null
         ? stripMyRank(
@@ -78,7 +80,15 @@ export function seedPlanetRefreshStateFromCache(cache: CrusadeCacheResponse, sel
           )
         : null;
 
-    const leaderboard: PlanetLeaderboard = { planetId, topFactionsFor: [], topFactionsAgainst: [], side, faction };
+    const leaderboard: PlanetLeaderboard = {
+      planetId,
+      topFactionsFor: [],
+      topFactionsAgainst: [],
+      side,
+      faction,
+      forParticipants: playerFor?.numParticipants ?? null,
+      againstParticipants: playerAgainst?.numParticipants ?? null,
+    };
     planetRefreshState.set(planetId, {
       leaderboard,
       lastSuccessAt: cached.fetchedAt,

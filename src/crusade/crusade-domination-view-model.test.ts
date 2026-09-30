@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeCaptureRace,
   computeConquestProgress,
+  countRankedParticipants,
   isDominationSunk,
   isPlanetAutoRefreshable,
   isPlanetRanked,
@@ -17,7 +18,16 @@ function planet(overrides: Partial<CrusadePlanet> = {}): CrusadePlanet {
 }
 
 function leaderboard(overrides: Partial<PlanetLeaderboard> = {}): PlanetLeaderboard {
-  return { planetId: "planet_001", topFactionsFor: [], topFactionsAgainst: [], side: null, faction: null, ...overrides };
+  return {
+    planetId: "planet_001",
+    topFactionsFor: [],
+    topFactionsAgainst: [],
+    side: null,
+    faction: null,
+    forParticipants: null,
+    againstParticipants: null,
+    ...overrides,
+  };
 }
 
 function sideResult(overrides: Partial<SideLeaderboardResult> = {}): SideLeaderboardResult {
@@ -195,6 +205,43 @@ describe("isPlanetAutoRefreshable", () => {
 
   it("keeps retrying an unstarred planet whose only attempts so far failed", () => {
     expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptFailed: true }), false)).toBe(true);
+  });
+});
+
+describe("countRankedParticipants", () => {
+  function entryWith(forParticipants: number | null, againstParticipants: number | null): PlanetRefreshEntry {
+    return {
+      leaderboard: leaderboard({ forParticipants, againstParticipants }),
+      lastSuccessAt: 1000,
+      lastAttemptAt: 1000,
+      lastAttemptFailed: false,
+      isLoading: false,
+    };
+  }
+
+  it("sums forParticipants (Imperial) and againstParticipants (Devastation) across every planet", () => {
+    const state = new Map([
+      ["planet_001", entryWith(500, 400)],
+      ["planet_002", entryWith(300, 900)],
+    ]);
+    expect(countRankedParticipants(state)).toEqual({ imperial: 800, devastation: 1300 });
+  });
+
+  it("treats a planet with no leaderboard loaded yet as contributing 0, not throwing", () => {
+    const state = new Map([
+      ["planet_001", { leaderboard: null, lastSuccessAt: null, lastAttemptAt: null, lastAttemptFailed: false, isLoading: false } as PlanetRefreshEntry],
+      ["planet_002", entryWith(300, 900)],
+    ]);
+    expect(countRankedParticipants(state)).toEqual({ imperial: 300, devastation: 900 });
+  });
+
+  it("treats a planet whose side leaderboard came back null (forParticipants/againstParticipants null) as 0", () => {
+    const state = new Map([["planet_001", entryWith(null, null)]]);
+    expect(countRankedParticipants(state)).toEqual({ imperial: 0, devastation: 0 });
+  });
+
+  it("returns zero for an empty map", () => {
+    expect(countRankedParticipants(new Map())).toEqual({ imperial: 0, devastation: 0 });
   });
 });
 

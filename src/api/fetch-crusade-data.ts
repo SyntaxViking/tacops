@@ -331,5 +331,7 @@ export async function fetchPlanetLeaderboard(
     topFactionsAgainst: topFactionStandings(factionAgainst),
     side: mergeSideLeaderboard(playerFor, playerAgainst, chosenSide),
     faction,
+    forParticipants: playerFor?.numParticipants ?? null,
+    againstParticipants: playerAgainst?.numParticipants ?? null,
   };
 }
