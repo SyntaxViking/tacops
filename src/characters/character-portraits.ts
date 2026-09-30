@@ -115,6 +115,7 @@ export const CHARACTER_PORTRAIT_FILE: Record<string, string> = {
   votanUthar: "ui_image_RoundPortrait_votan_uthar_01.png",
   astarCyrus: "ui_image_RoundPortrait_astar_cyrus_01.png",
   astarLysander: "ui_image_RoundPortrait_astar_lysander_01.png",
+  astarEradicator: "ui_image_RoundPortrait_astar_eradicator_01.png",
 };
 
 export function characterPortraitUrl(characterId: string): string {
