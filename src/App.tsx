@@ -17,6 +17,7 @@ import { RewardPriorityPicker } from "./components/RewardPriorityPicker";
 import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
+import { RankedParticipantsCounter } from "./components/RankedParticipantsCounter";
 import { Toast } from "./components/Toast";
 import { fetchPlayerData } from "./api/fetch-player-data";
 import { entryIsUnavailable } from "./board/board-view-model";
@@ -25,7 +26,7 @@ import { storeWebCredential } from "./api/store-web-credential";
 import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
 import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
-import { isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
+import { countRankedParticipants, isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
 import { appendTrackedSample, createTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
@@ -711,12 +712,18 @@ export function App() {
     }
   }
 
+  // Global ranked-participant headcount (see RankedParticipantsCounter) - summed fresh each
+  // render, same as the rest of this component's derived-from-state values; planetRefreshState is
+  // small enough (dozens of planets) that memoizing this would be premature.
+  const rankedParticipantCounts = countRankedParticipants(planetRefreshState);
+
   return (
     <main
       onClick={() => setSelectedExpeditionId(null)}
       className="mx-auto flex min-h-screen w-full flex-col items-center bg-neutral-100 px-4 py-[5vh] text-center text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
     >
       <BuildTimestamp />
+      {devModeEnabled && <RankedParticipantsCounter imperial={rankedParticipantCounts.imperial} devastation={rankedParticipantCounts.devastation} />}
       {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />}
       <h1 className="cursor-pointer text-2xl font-semibold select-none" onClick={handleTitleTap}>
         TacOps

@@ -155,6 +155,13 @@ export interface PlanetLeaderboard {
   // _against query actually comes back with a myRank - null if neither does.
   side: SideLeaderboardResult | null;
   faction: FactionLeaderboardResult | null;
+  // Both sides' raw side-leaderboard participant counts, kept independently unlike `side` above
+  // (which collapses to whichever side is mine) - not personal data, just an aggregate headcount,
+  // so unlike myRank/myPoints it's safe to show on the anonymous view too. Lets a global "ranked
+  // Imperial vs Devastation participants" count be summed across every planet's leaderboard. null
+  // when that side's leaderboard didn't come back at all for this planet.
+  forParticipants: number | null;
+  againstParticipants: number | null;
 }
 
 // Per-planet leaderboard fetch/refresh state, owned in App.tsx and threaded down through the

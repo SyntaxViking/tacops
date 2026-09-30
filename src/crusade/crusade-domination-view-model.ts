@@ -46,6 +46,27 @@ export function isPlanetAutoRefreshable(entry: PlanetRefreshEntry, isStarred: bo
   return isStarred || entry.lastSuccessAt === null || isPlanetRanked(entry.leaderboard ?? undefined);
 }
 
+export interface RankedParticipantCounts {
+  imperial: number;
+  devastation: number;
+}
+
+// Global headcount, not per-planet - sums each loaded planet's own forParticipants/
+// againstParticipants (see PlanetLeaderboard) across the whole map. "For" is Imperial,
+// "Against" is Devastation, matching the codebase's established side convention. A planet whose
+// leaderboard hasn't loaded yet (or that side's leaderboard came back empty) simply contributes 0,
+// not a special-cased skip - so the total climbs as more planets finish loading, same as every
+// other rolling aggregate in this feature.
+export function countRankedParticipants(planetRefreshState: ReadonlyMap<string, PlanetRefreshEntry>): RankedParticipantCounts {
+  let imperial = 0;
+  let devastation = 0;
+  for (const entry of planetRefreshState.values()) {
+    imperial += entry.leaderboard?.forParticipants ?? 0;
+    devastation += entry.leaderboard?.againstParticipants ?? 0;
+  }
+  return { imperial, devastation };
+}
+
 export interface CaptureRace {
   leadingSide: "Imperial" | "Devastation";
   pointsRemaining: number;

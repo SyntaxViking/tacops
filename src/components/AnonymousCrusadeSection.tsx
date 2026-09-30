@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { CrusadeTab } from "./CrusadeTab";
 import { FactionPicker } from "./FactionPicker";
+import { RankedParticipantsCounter } from "./RankedParticipantsCounter";
 import { fetchCrusadeCache, type CrusadeCacheResponse } from "../api/fetch-crusade-cache";
 import { seedPlanetRefreshStateFromCache } from "../api/crusade-cache-seed";
 import { getOrCreateAnonymousId } from "../api/anonymous-id";
 import { trackAnonymousUsage } from "../track-usage";
 import { factionSide } from "../factions/faction-side";
-import type { DominationSortMode } from "../crusade/crusade-domination-view-model";
+import { countRankedParticipants, type DominationSortMode } from "../crusade/crusade-domination-view-model";
 import sectorMapData from "../assets/sector-map.json";
 import type { CrusadeSectorMap } from "../api/types";
 
@@ -72,8 +73,11 @@ export function AnonymousCrusadeSection() {
   const defaultDominationSortMode: DominationSortMode | undefined =
     selectedSide === "against" ? "devastationFirst" : selectedSide === "for" ? "imperialFirst" : undefined;
 
+  const rankedParticipantCounts = countRankedParticipants(planetRefreshState);
+
   return (
     <div className="w-full max-w-4xl">
+      <RankedParticipantsCounter imperial={rankedParticipantCounts.imperial} devastation={rankedParticipantCounts.devastation} />
       <FactionPicker selectedFactionId={selectedFactionId} onSelect={selectFaction} />
       {!selectedFactionId && <p className="mt-2 text-sm opacity-70">Pick a faction above to see its leaderboard standings on every planet.</p>}
       <CrusadeTab
