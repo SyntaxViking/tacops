@@ -64,6 +64,7 @@ export function CrusadeTab({
   const [dominationSortMode, setDominationSortMode] = useState<DominationSortMode>(defaultDominationSortMode ?? "closestToCapture");
   const [maxSideInput, setMaxSideInput] = useState("");
   const [maxFactionInput, setMaxFactionInput] = useState("");
+  const [planetSearch, setPlanetSearch] = useState("");
 
   // defaultDominationSortMode's initial value (above) only ever applies on first mount - without
   // this, picking a different faction after the initial load wouldn't actually change sort order.
@@ -124,6 +125,13 @@ export function CrusadeTab({
       />
     ) : null;
 
+  // Shared by both branches below - trims once, lowercases once, and treats an empty box as
+  // "match everything" so the unfiltered list is what shows when nothing's typed.
+  const searchLower = planetSearch.trim().toLowerCase();
+  function matchesSearch(name: string): boolean {
+    return searchLower === "" || name.toLowerCase().includes(searchLower);
+  }
+
   if (crusadeData.phase === "STRUGGLE") {
     // Domination phase: every planet is contestable at once (no zone filter), ordered by
     // opportunity - see sortDominationPlanets. Filtering against planetRefreshState (not
@@ -143,7 +151,9 @@ export function CrusadeTab({
     // no longer exceeds the threshold.
     const maxSide = parsePositiveIntFilter(maxSideInput);
     const maxFaction = parsePositiveIntFilter(maxFactionInput);
-    let visibleDominationPlanets = dominationPlanets.filter((p) => passesDominationFilters(leaderboardByPlanet.get(p.planetId), maxSide, maxFaction));
+    let visibleDominationPlanets = dominationPlanets
+      .filter((p) => passesDominationFilters(leaderboardByPlanet.get(p.planetId), maxSide, maxFaction))
+      .filter((p) => matchesSearch(p.name));
 
     // The tracked planet is always first and always visible while tracked, regardless of sort mode
     // or the side/faction filters above - a user actively watching a capture race shouldn't have it
@@ -166,6 +176,13 @@ export function CrusadeTab({
           onChangeMaxSideInput={setMaxSideInput}
           maxFactionInput={maxFactionInput}
           onChangeMaxFactionInput={setMaxFactionInput}
+        />
+        <input
+          type="text"
+          placeholder="Search planets..."
+          value={planetSearch}
+          onChange={(e) => setPlanetSearch(e.target.value)}
+          className="mt-2 w-64 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-blue-500 dark:border-neutral-600 dark:bg-neutral-900/60 dark:text-white"
         />
         {viewMode === "table" ? (
           <CrusadeDominationTable
@@ -205,7 +222,9 @@ export function CrusadeTab({
   // visible, the tougher the planet). Planets with no score yet (still loading, or genuinely no
   // faction leaderboard data) sort last within their group rather than being dropped.
   const activePlanets = sortPlanetsRankedFirst(
-    crusadeData.planets.filter((p) => planetRefreshState.has(p.planetId)),
+    crusadeData.planets
+      .filter((p) => planetRefreshState.has(p.planetId))
+      .filter((p) => matchesSearch(p.name)),
     leaderboardByPlanet,
     favoritedPlanetIds,
     (a, b) => {
@@ -221,21 +240,32 @@ export function CrusadeTab({
     return <p>No active-zone planet data loaded yet.</p>;
   }
 
-  return viewMode === "table" ? (
-    <CrusadePlanetsTable
-      planets={activePlanets}
-      planetRefreshState={planetRefreshState}
-      onRefreshPlanet={onRefreshPlanet}
-      favoritedPlanetIds={favoritedPlanetIds}
-      onToggleFavoritePlanet={onToggleFavoritePlanet}
-    />
-  ) : (
-    <CrusadePlanetsCards
-      planets={activePlanets}
-      planetRefreshState={planetRefreshState}
-      onRefreshPlanet={onRefreshPlanet}
-      favoritedPlanetIds={favoritedPlanetIds}
-      onToggleFavoritePlanet={onToggleFavoritePlanet}
-    />
+  return (
+    <>
+      <input
+        type="text"
+        placeholder="Search planets..."
+        value={planetSearch}
+        onChange={(e) => setPlanetSearch(e.target.value)}
+        className="mt-2 mb-2 w-64 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-blue-500 dark:border-neutral-600 dark:bg-neutral-900/60 dark:text-white"
+      />
+      {viewMode === "table" ? (
+        <CrusadePlanetsTable
+          planets={activePlanets}
+          planetRefreshState={planetRefreshState}
+          onRefreshPlanet={onRefreshPlanet}
+          favoritedPlanetIds={favoritedPlanetIds}
+          onToggleFavoritePlanet={onToggleFavoritePlanet}
+        />
+      ) : (
+        <CrusadePlanetsCards
+          planets={activePlanets}
+          planetRefreshState={planetRefreshState}
+          onRefreshPlanet={onRefreshPlanet}
+          favoritedPlanetIds={favoritedPlanetIds}
+          onToggleFavoritePlanet={onToggleFavoritePlanet}
+        />
+      )}
+    </>
   );
 }
