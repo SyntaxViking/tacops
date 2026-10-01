@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { computeTrackerGraphData, type GraphPoint, type LabeledPoint, type SideAxis, type TimeTick, type TrackedPlanetState } from "../crusade/planet-tracker-view-model";
 
 // Same side colors as the sector map modal's NODE_COLOR (not shared/exported anywhere in this
@@ -64,16 +64,90 @@ interface AxisSpec {
 
 interface LineSpec {
   points: GraphPoint[];
+  // Raw remaining-value per sample, parallel to `points` - only needed for the hover tooltip
+  // (everything else about rendering a line only needs its normalized points).
+  values: number[];
   label: LabeledPoint | null;
   color: string;
+}
+
+// Hovering shows a vertical rule snapped to the nearest actual sample (not a continuously
+// interpolated position) - that's what guarantees the dot the tooltip draws sits exactly on the
+// line/vertical-rule intersection, rather than slightly off it between two real data points.
+// Clicking does nothing - this is pure hover, no onClick handler exists to suppress.
+const TOOLTIP_WIDTH = 132;
+const TOOLTIP_LINE_HEIGHT = 15;
+const TOOLTIP_PADDING = 6;
+
+function HoverOverlay({ lines, index }: { lines: LineSpec[]; index: number }) {
+  const first = lines[0]?.points[index];
+  if (!first) return null;
+  const x = toSvgX(first.x);
+  // Flip the tooltip to the line's left once the cursor is past the plot's midpoint, so it never
+  // runs off the right edge of the chart (and symmetrically never off the left).
+  const anchorLeft = x > (PLOT_LEFT + PLOT_RIGHT) / 2;
+  const boxX = anchorLeft ? x - TOOLTIP_WIDTH - 8 : x + 8;
+  const boxY = MARGIN_TOP + 4;
+  const boxHeight = TOOLTIP_PADDING * 2 + lines.length * TOOLTIP_LINE_HEIGHT;
+
+  return (
+    <g pointerEvents="none">
+      <line x1={x} y1={MARGIN_TOP} x2={x} y2={PLOT_BOTTOM} stroke="currentColor" strokeOpacity={0.5} strokeWidth={1} strokeDasharray="3 3" />
+      {lines.map((line, i) => {
+        const p = line.points[index];
+        return p ? <circle key={i} cx={x} cy={toSvgY(p.y)} r={3.5} fill={line.color} stroke="white" strokeWidth={1.2} /> : null;
+      })}
+      <rect x={boxX} y={boxY} width={TOOLTIP_WIDTH} height={boxHeight} rx={4} fill="rgba(23,23,23,0.85)" />
+      {lines.map((line, i) => {
+        const value = line.values[index];
+        if (value == null) return null;
+        return (
+          <text key={i} x={boxX + TOOLTIP_PADDING} y={boxY + TOOLTIP_PADDING + (i + 1) * TOOLTIP_LINE_HEIGHT - 4} fontSize={12} fontWeight="bold" fill={line.color}>
+            {value.toLocaleString()}
+          </text>
+        );
+      })}
+    </g>
+  );
 }
 
 // The shared rendering core for all three graphs - a solo graph passes one AxisSpec/LineSpec, the
 // Combined graph passes two (both AxisSpecs pointing at the very same SideAxis, one per side, so
 // the same numbers are drawn once at the left edge and once at the right).
 function SingleGraph({ axes, lines, timeTicks }: { axes: AxisSpec[]; lines: LineSpec[]; timeTicks: TimeTick[] }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const referencePoints = lines[0]?.points;
+
+  function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
+    if (!referencePoints || referencePoints.length === 0) return;
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // 1 viewBox unit = 1 real pixel throughout this component (see the fixed-size comment above),
+    // so the client offset maps directly to viewBox coordinates with no scale correction needed.
+    const localX = e.clientX - rect.left;
+    const normalizedX = Math.min(1, Math.max(0, (localX - PLOT_LEFT) / PLOT_WIDTH));
+    let nearest = 0;
+    let nearestDistance = Infinity;
+    for (let i = 0; i < referencePoints.length; i++) {
+      const distance = Math.abs(referencePoints[i].x - normalizedX);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = i;
+      }
+    }
+    setHoverIndex(nearest);
+  }
+
   return (
-    <svg viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`} width={VIEWBOX_WIDTH} height={VIEWBOX_HEIGHT}>
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
+      width={VIEWBOX_WIDTH}
+      height={VIEWBOX_HEIGHT}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={() => setHoverIndex(null)}
+    >
       {axes.map(({ axis, side, color }) =>
         axis.ticks.map((tick) => {
           const y = toSvgY(tick.normalizedY);
@@ -117,6 +191,7 @@ function SingleGraph({ axes, lines, timeTicks }: { axes: AxisSpec[]; lines: Line
         const above = lines.every((other, j) => j === i || !other.label || thisY <= toSvgY(other.label.y));
         return <LabelCallout key={i} x={toSvgX(label.x)} y={thisY} value={label.value} color={color} above={above} />;
       })}
+      {hoverIndex !== null && <HoverOverlay lines={lines} index={hoverIndex} />}
     </svg>
   );
 }
@@ -152,14 +227,14 @@ export function PlanetTrackerGraph({ state, planetName, nowMs }: PlanetTrackerGr
       <GraphCard title={`${planetName} - Imperial`} caption={caption}>
         <SingleGraph
           axes={[{ axis: data.imperial.axis, side: "left", color: IMPERIAL_COLOR }]}
-          lines={[{ points: data.imperial.line.points, label: data.imperial.line.label, color: IMPERIAL_COLOR }]}
+          lines={[{ points: data.imperial.line.points, values: data.imperial.line.values, label: data.imperial.line.label, color: IMPERIAL_COLOR }]}
           timeTicks={data.timeTicks}
         />
       </GraphCard>
       <GraphCard title={`${planetName} - Devastation`} caption={caption}>
         <SingleGraph
           axes={[{ axis: data.devastation.axis, side: "left", color: DEVASTATION_COLOR }]}
-          lines={[{ points: data.devastation.line.points, label: data.devastation.line.label, color: DEVASTATION_COLOR }]}
+          lines={[{ points: data.devastation.line.points, values: data.devastation.line.values, label: data.devastation.line.label, color: DEVASTATION_COLOR }]}
           timeTicks={data.timeTicks}
         />
       </GraphCard>
@@ -170,8 +245,8 @@ export function PlanetTrackerGraph({ state, planetName, nowMs }: PlanetTrackerGr
             { axis: data.combined.axis, side: "right", color: DEVASTATION_COLOR },
           ]}
           lines={[
-            { points: data.combined.imperial.points, label: data.combined.imperial.label, color: IMPERIAL_COLOR },
-            { points: data.combined.devastation.points, label: data.combined.devastation.label, color: DEVASTATION_COLOR },
+            { points: data.combined.imperial.points, values: data.combined.imperial.values, label: data.combined.imperial.label, color: IMPERIAL_COLOR },
+            { points: data.combined.devastation.points, values: data.combined.devastation.values, label: data.combined.devastation.label, color: DEVASTATION_COLOR },
           ]}
           timeTicks={data.timeTicks}
         />

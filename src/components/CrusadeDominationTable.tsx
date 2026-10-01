@@ -7,7 +7,14 @@ import { StarIconButton } from "./StarIconButton";
 import { TrackIconButton } from "./TrackIconButton";
 import { Spinner } from "./Spinner";
 import { EMPTY_REFRESH_ENTRY } from "./planet-refresh-defaults";
-import { computeCaptureRace, computeConquestProgress, isPlanetRanked } from "../crusade/crusade-domination-view-model";
+import {
+  computeCaptureRace,
+  computeConquestProgress,
+  cooldownRemainingMs,
+  formatCooldownEndLocalTime,
+  formatPointsFromCapture,
+  isPlanetRanked,
+} from "../crusade/crusade-domination-view-model";
 import type { CrusadePlanet, PlanetRefreshEntry } from "../api/types";
 
 const cellClass = "border-b border-black/10 px-3 py-2 align-top dark:border-white/15";
@@ -34,6 +41,7 @@ export function CrusadeDominationTable({
   onToggleTrackPlanet,
 }: CrusadeDominationTableProps) {
   const trackedPlanetName = trackedPlanetId ? planets.find((p) => p.planetId === trackedPlanetId)?.name : undefined;
+  const nowMs = Date.now();
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
       <thead>
@@ -56,6 +64,8 @@ export function CrusadeDominationTable({
           const progress = computeConquestProgress(planet);
           const captureRace = computeCaptureRace(planet);
           const ranked = isPlanetRanked(leaderboard);
+          const recaptureTimestamp = planet.struggleData?.recaptureTimestamp;
+          const cooldownEndLocal = recaptureTimestamp != null && cooldownRemainingMs(planet, nowMs) !== null ? formatCooldownEndLocalTime(recaptureTimestamp) : null;
           return (
             <tr
               key={planet.planetId}
@@ -98,9 +108,8 @@ export function CrusadeDominationTable({
                     <span>
                       {progress.imperialCurrent.toLocaleString()} / {progress.imperialThreshold.toLocaleString()} ({progress.imperialPercent}%)
                     </span>
-                    {captureRace?.leadingSide === "Imperial" && (
-                      <span className="font-bold italic">{captureRace.pointsRemaining.toLocaleString()} from capture</span>
-                    )}
+                    {captureRace?.leadingSide === "Imperial" && <span className="font-bold italic">{formatPointsFromCapture(captureRace.pointsRemaining)}</span>}
+                    {captureRace?.leadingSide === "Imperial" && cooldownEndLocal && <span className="text-xs opacity-70">Available again at {cooldownEndLocal}</span>}
                   </div>
                 )}
               </td>
@@ -110,9 +119,8 @@ export function CrusadeDominationTable({
                     <span>
                       {progress.devastationCurrent.toLocaleString()} / {progress.devastationThreshold.toLocaleString()} ({progress.devastationPercent}%)
                     </span>
-                    {captureRace?.leadingSide === "Devastation" && (
-                      <span className="font-bold italic">{captureRace.pointsRemaining.toLocaleString()} from capture</span>
-                    )}
+                    {captureRace?.leadingSide === "Devastation" && <span className="font-bold italic">{formatPointsFromCapture(captureRace.pointsRemaining)}</span>}
+                    {captureRace?.leadingSide === "Devastation" && cooldownEndLocal && <span className="text-xs opacity-70">Available again at {cooldownEndLocal}</span>}
                   </div>
                 )}
               </td>
