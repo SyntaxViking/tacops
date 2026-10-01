@@ -5,6 +5,7 @@ import {
   computeTrackerGraphData,
   createTrackedPlanetState,
   formatAxisValue,
+  mergeHistoryIntoTrackedPlanetState,
   restartIfRecontested,
   timeAxisStepSeconds,
   type TrackedPlanetState,
@@ -86,6 +87,50 @@ describe("restartIfRecontested", () => {
     const live = createTrackedPlanetState("planet_001", 1000);
     const cooldownPlanet = planet({ struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 } });
     expect(restartIfRecontested(live, cooldownPlanet, 5000)).toBe(live);
+  });
+});
+
+describe("mergeHistoryIntoTrackedPlanetState", () => {
+  it("is a no-op for an empty history", () => {
+    const state = createTrackedPlanetState("planet_001", 5000);
+    expect(mergeHistoryIntoTrackedPlanetState(state, [])).toBe(state);
+  });
+
+  it("prepends history and moves startedAtMs back to the earliest sample", () => {
+    const state: TrackedPlanetState = {
+      planetId: "planet_001",
+      startedAtMs: 5000,
+      samples: [{ atMs: 5000, imperialRemaining: 400, devastationRemaining: 300 }],
+      frozen: false,
+    };
+    const history = [
+      { atMs: 1000, imperialRemaining: 900, devastationRemaining: 800 },
+      { atMs: 2000, imperialRemaining: 700, devastationRemaining: 600 },
+    ];
+    const result = mergeHistoryIntoTrackedPlanetState(state, history);
+    expect(result.startedAtMs).toBe(1000);
+    expect(result.samples).toEqual([...history, { atMs: 5000, imperialRemaining: 400, devastationRemaining: 300 }]);
+    expect(result.frozen).toBe(false);
+  });
+
+  it("stays frozen when the live state was already frozen", () => {
+    const state: TrackedPlanetState = {
+      planetId: "planet_001",
+      startedAtMs: 5000,
+      samples: [{ atMs: 5000, imperialRemaining: 0, devastationRemaining: 300 }],
+      frozen: true,
+    };
+    const history = [{ atMs: 1000, imperialRemaining: 900, devastationRemaining: 800 }];
+    expect(mergeHistoryIntoTrackedPlanetState(state, history).frozen).toBe(true);
+  });
+
+  it("freezes the merged state when the history's own last sample already shows a capture, even if the live state wasn't frozen yet", () => {
+    const state = createTrackedPlanetState("planet_001", 5000);
+    const history = [
+      { atMs: 1000, imperialRemaining: 900, devastationRemaining: 800 },
+      { atMs: 2000, imperialRemaining: 0, devastationRemaining: 600 },
+    ];
+    expect(mergeHistoryIntoTrackedPlanetState(state, history).frozen).toBe(true);
   });
 });
 
