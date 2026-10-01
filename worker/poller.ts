@@ -14,6 +14,7 @@
 import planetData from "../src/assets/planet-data.json";
 import { FACTION_SIDE } from "../src/factions/faction-side";
 import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, fetchLeaderboardTextWithSession, type Session } from "./loki-client";
+import { rawPlanetToCrusadePlanet, recordHistoryTick } from "./planet-history";
 
 // The 22 faction ids, reused as-is (no Tauri/browser coupling in faction-side.ts, unlike
 // fetch-crusade-data.ts, so no need to duplicate this list).
@@ -210,6 +211,20 @@ export async function runPollerTick(db: D1Database, userId: string, clientSecret
       const active = findActivePhase(data?.downtimePhase, data?.crusadePhases ?? [], data?.strugglePhase);
       meta = { crusadeId: data?.crusadeId ?? "", seasonNumber: data?.seasonNumber ?? 0, phase: active.phase, activeZone: active.activeZone };
       await writeCrusadeSnapshot(db, meta, text, now);
+
+      // Rides this same (already in-memory, already paid-for) call - no new upstream fetches.
+      // Domination-only: struggleData (and so points-remaining/cooldown) only exists during
+      // STRUGGLE; CRUSADE/DOWNTIME planets have nothing meaningful to record here.
+      if (meta.phase === "STRUGGLE") {
+        const planets = ((data?.planetsData ?? []) as { struggleData?: unknown }[])
+          .filter((p) => p.struggleData != null)
+          .map((p) => rawPlanetToCrusadePlanet(p as Parameters<typeof rawPlanetToCrusadePlanet>[0]));
+        try {
+          await recordHistoryTick(db, planets, now);
+        } catch (error) {
+          console.error("[poller] recordHistoryTick failed", error); // isolated - history is best-effort, never blocks the rest of the tick
+        }
+      }
     } else {
       meta = await readSnapshotMeta(db);
     }

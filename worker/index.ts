@@ -3,6 +3,7 @@ import { recordSighting } from "./track";
 import { renderInsightsPage } from "./insights";
 import { getUserPreferences, setUserPreferenceColumn } from "./user-preferences";
 import { getCrusadeCache } from "./crusade-cache";
+import { getPlanetHistory } from "./planet-history";
 import { runPollerTick } from "./poller";
 
 interface Env {
@@ -86,6 +87,14 @@ export default {
 
     if (url.pathname === "/api/crusade-cache" && request.method === "GET") {
       return Response.json(await getCrusadeCache(env.DB));
+    }
+
+    // Open/no-auth, same as /api/crusade-cache above - a planet's own points-remaining history is
+    // shared crusade data, not personal to any one account.
+    if (url.pathname === "/api/planet-history" && request.method === "GET") {
+      const planetId = url.searchParams.get("planetId");
+      if (!planetId) return Response.json({ error: "missing planetId" }, { status: 400 });
+      return Response.json({ samples: await getPlanetHistory(env.DB, planetId) });
     }
 
     if (url.pathname === "/api/track" && request.method === "POST") {
