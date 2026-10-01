@@ -139,6 +139,7 @@ export function App() {
     planets: [],
     connections: [],
   });
+  const [rawPlayerData, setRawPlayerData] = useState<unknown>(null);
   const [crusadeData, setCrusadeData] = useState<CrusadeData | null>(null);
   // Mirrors crusadeData for the dedicated tracker loop below (see the tracker effect) - that loop
   // must always read the latest planet data across ticks, not a stale closure, without depending on
@@ -429,6 +430,7 @@ export function App() {
       setResources(data.resources);
       setHeroQuestJars(data.heroQuestJars);
       setSectorMap(data.sectorMap);
+      setRawPlayerData(data.raw);
       setFetchState("success");
       if (!isTauri()) {
         void storeWebCredential(userId, clientSecret);
@@ -990,6 +992,14 @@ export function App() {
                     className="rounded-lg border border-transparent bg-white px-5 py-2.5 font-medium text-neutral-900 shadow-[0_2px_2px_rgba(0,0,0,0.2)] outline-none transition-colors hover:border-blue-500 active:border-blue-500 active:bg-neutral-100 disabled:cursor-default disabled:opacity-60 dark:bg-neutral-900/60 dark:text-white dark:active:bg-neutral-900/40"
                   >
                     GO
+                  </button>
+                  <button
+                    type="button"
+                    disabled={rawPlayerData === null}
+                    onClick={exportPlayerData}
+                    className="hidden"
+                  >
+                    Export JSON
                   </button>
                 </div>
               </form>
