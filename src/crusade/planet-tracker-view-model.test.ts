@@ -180,7 +180,7 @@ describe("timeAxisStepSeconds", () => {
 describe("computeTrackerGraphData", () => {
   it("returns empty output for a state with no samples yet", () => {
     const emptyAxis = { ceiling: 0, ticks: [] };
-    const emptyLine = { points: [], label: null };
+    const emptyLine = { points: [], values: [], label: null };
     expect(computeTrackerGraphData(createTrackedPlanetState("planet_001", 1000))).toEqual({
       imperial: { line: emptyLine, axis: emptyAxis },
       devastation: { line: emptyLine, axis: emptyAxis },
@@ -206,6 +206,25 @@ describe("computeTrackerGraphData", () => {
     expect(result.combined.axis.ceiling).toBe(500);
     expect(result.combined.imperial.points).toEqual([{ x: 0, y: 1 }]);
     expect(result.combined.devastation.points).toEqual([{ x: 0, y: 0.6 }]);
+  });
+
+  it("carries each sample's raw remaining value alongside its normalized point (for the hover tooltip)", () => {
+    const state: TrackedPlanetState = {
+      planetId: "planet_001",
+      startedAtMs: 0,
+      samples: [
+        { atMs: 0, imperialRemaining: 500, devastationRemaining: 300 },
+        { atMs: 1000, imperialRemaining: 250, devastationRemaining: 150 },
+      ],
+      frozen: false,
+    };
+    const result = computeTrackerGraphData(state);
+    expect(result.imperial.line.values).toEqual([500, 250]);
+    expect(result.devastation.line.values).toEqual([300, 150]);
+    // Combined lines report the same raw values too, even though their normalized points differ
+    // from the solo lines (shared axis).
+    expect(result.combined.imperial.values).toEqual([500, 250]);
+    expect(result.combined.devastation.values).toEqual([300, 150]);
   });
 
   it("keeps a trailing side's SOLO line visibly moving on its own scale, even when it's orders of magnitude behind the other side", () => {

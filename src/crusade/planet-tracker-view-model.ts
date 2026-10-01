@@ -78,6 +78,9 @@ export interface TimeTick {
 // in the .tsx component, which has the shared pixel mapping needed to compare screen positions.
 export interface GraphLine {
   points: GraphPoint[];
+  // Raw remaining-value per sample, same order/length as `points` - lets the hover tooltip show
+  // the exact points-remaining number at any sample, not just the rightmost (label's) one.
+  values: number[];
   label: LabeledPoint | null;
 }
 
@@ -102,7 +105,7 @@ export interface TrackerGraphData {
 }
 
 const EMPTY_AXIS: SideAxis = { ceiling: 0, ticks: [] };
-const EMPTY_LINE: GraphLine = { points: [], label: null };
+const EMPTY_LINE: GraphLine = { points: [], values: [], label: null };
 const EMPTY_GRAPH_DATA: TrackerGraphData = {
   imperial: { line: EMPTY_LINE, axis: EMPTY_AXIS },
   devastation: { line: EMPTY_LINE, axis: EMPTY_AXIS },
@@ -266,7 +269,11 @@ export function computeTrackerGraphData(state: TrackedPlanetState): TrackerGraph
 
   function buildLine(values: readonly number[], ceiling: number): GraphLine {
     const points = values.map((v, i) => ({ x: xs[i], y: toY(v, ceiling) }));
-    return { points, label: { x: points[points.length - 1].x, y: points[points.length - 1].y, value: values[values.length - 1] } };
+    return {
+      points,
+      values: [...values],
+      label: { x: points[points.length - 1].x, y: points[points.length - 1].y, value: values[values.length - 1] },
+    };
   }
 
   const imperialAxis = computeAxisScale(imperialValues);

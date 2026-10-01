@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  compareCooldownRemaining,
   computeCaptureRace,
   computeConquestProgress,
+  cooldownRemainingMs,
   countRankedParticipants,
+  formatCooldownEndLocalTime,
+  formatPointsFromCapture,
   isDominationSunk,
   isPlanetAutoRefreshable,
   isPlanetRanked,
@@ -113,6 +117,113 @@ describe("computeCaptureRace", () => {
     });
     // Devastation (attacker here) needs 100-90=10 more; Imperial (defender) needs 100-10=90 more.
     expect(computeCaptureRace(p)).toEqual({ leadingSide: "Devastation", pointsRemaining: 10 });
+  });
+});
+
+describe("formatPointsFromCapture", () => {
+  it("shows the points-remaining count for a still-live race", () => {
+    expect(formatPointsFromCapture(416)).toBe("416 from capture");
+  });
+
+  it("shows \"Captured\" instead of a stale number once the leading side has reached its threshold", () => {
+    expect(formatPointsFromCapture(0)).toBe("Captured");
+  });
+
+  it("shows \"Captured\" for a negative (overshot) remaining count too", () => {
+    expect(formatPointsFromCapture(-416)).toBe("Captured");
+  });
+});
+
+describe("cooldownRemainingMs", () => {
+  const nowMs = 1_000_000;
+
+  it("returns the time until recaptureTimestamp when it's in the future", () => {
+    const p = planet({ struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000, recaptureTimestamp: nowMs + 5000 } });
+    expect(cooldownRemainingMs(p, nowMs)).toBe(5000);
+  });
+
+  it("returns null once recaptureTimestamp has already passed (stale data, no longer cooling down)", () => {
+    const p = planet({ struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000, recaptureTimestamp: nowMs - 1 } });
+    expect(cooldownRemainingMs(p, nowMs)).toBeNull();
+  });
+
+  it("returns null when there's no recaptureTimestamp at all", () => {
+    const p = planet({ struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 } });
+    expect(cooldownRemainingMs(p, nowMs)).toBeNull();
+  });
+
+  it("returns null when the planet has no struggleData", () => {
+    expect(cooldownRemainingMs(planet(), nowMs)).toBeNull();
+  });
+});
+
+describe("formatCooldownEndLocalTime", () => {
+  it("formats a timestamp as a local hour:minute string", () => {
+    // Exact wording is locale-dependent (AM/PM, 24h, etc.) - just confirm it's a non-empty,
+    // deterministic rendering of the same timestamp, not asserting a specific locale's text.
+    const ts = new Date("2026-06-15T14:30:00Z").getTime();
+    const formatted = formatCooldownEndLocalTime(ts);
+    expect(formatted).toBe(new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+    expect(formatted.length).toBeGreaterThan(0);
+  });
+});
+
+describe("compareCooldownRemaining", () => {
+  const nowMs = 1_000_000;
+  function cooling(id: string, recaptureTimestamp: number): CrusadePlanet {
+    return planet({ planetId: id, struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000, recaptureTimestamp } });
+  }
+  function notCooling(id: string): CrusadePlanet {
+    return planet({ planetId: id, struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 } });
+  }
+
+  it("sorts ascending by time remaining when both planets are cooling down", () => {
+    const soon = cooling("soon", nowMs + 1000);
+    const later = cooling("later", nowMs + 9000);
+    expect(compareCooldownRemaining(soon, later, nowMs)).toBeLessThan(0);
+    expect(compareCooldownRemaining(later, soon, nowMs)).toBeGreaterThan(0);
+  });
+
+  it("puts a cooling-down planet before one that isn't", () => {
+    const a = cooling("a", nowMs + 1000);
+    const b = notCooling("b");
+    expect(compareCooldownRemaining(a, b, nowMs)).toBeLessThan(0);
+    expect(compareCooldownRemaining(b, a, nowMs)).toBeGreaterThan(0);
+  });
+
+  it("is a no-op (0) when neither planet is cooling down", () => {
+    expect(compareCooldownRemaining(notCooling("a"), notCooling("b"), nowMs)).toBe(0);
+  });
+});
+
+describe("sortDominationPlanets with cooldown", () => {
+  it("sorts cooling-down (sunk) planets ascending by time remaining, ahead of other sunk planets with no timer", () => {
+    const nowMs = 1_000_000;
+    const planets = [
+      // No recaptureTimestamp at all - sunk (0/0, the plain "idle" cooldown heuristic), no known timer.
+      planet({ planetId: "idle-sunk", struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 } }),
+      // Cooling down with a known end time, further away - pointsFor meets its own (defender)
+      // threshold exactly, same as the live data pattern that revealed recaptureTimestamp's real
+      // meaning, so this genuinely lands in the sunk bucket via isJustCaptured.
+      planet({
+        planetId: "cooling-later",
+        sideOwner: "For",
+        pointsFor: 2000,
+        pointsAgainst: 10,
+        struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 2000, recaptureTimestamp: nowMs + 9000 },
+      }),
+      // Cooling down with a known end time, sooner.
+      planet({
+        planetId: "cooling-soon",
+        sideOwner: "For",
+        pointsFor: 2000,
+        pointsAgainst: 10,
+        struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 2000, recaptureTimestamp: nowMs + 1000 },
+      }),
+    ];
+    const byPlanet = new Map<string, PlanetLeaderboard>();
+    const result = sortDominationPlanets(planets, byPlanet, new Set(), "closestToCapture", nowMs);
+    expect(result.map((p) => p.planetId)).toEqual(["cooling-soon", "cooling-later", "idle-sunk"]);
   });
 });
 
