@@ -29,7 +29,8 @@ import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
 import { countRankedParticipants, isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
-import { appendTrackedSample, createTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
+import { appendTrackedSample, createTrackedPlanetState, mergeHistoryIntoTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
+import { fetchPlanetHistory } from "./api/fetch-planet-history";
 import { AnonymousCrusadeSection } from "./components/AnonymousCrusadeSection";
 import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
@@ -680,9 +681,12 @@ export function App() {
 
   // In-memory only (never persisted) - see trackedPlanetId's own comment. Untracking (clicking the
   // already-tracked planet again) clears the graph entirely; tracking a new one seeds a fresh state
-  // starting now. The TrackIconButton on every other planet is disabled while one is tracked (see
-  // isTrackDisabled), so toggleTrackedPlanetId only ever actually switches planets via this path
-  // when nothing was tracked yet.
+  // starting now, then immediately (best-effort, see fetchPlanetHistory) backfills it with whatever
+  // the poller has recorded for this planet's current capture-cycle era - the graph shows instantly,
+  // then grows a history tail in moments rather than waiting on the fetch. The TrackIconButton on
+  // every other planet is disabled while one is tracked (see isTrackDisabled), so
+  // toggleTrackedPlanetId only ever actually switches planets via this path when nothing was
+  // tracked yet.
   function toggleTrackedPlanet(planetId: string) {
     const next = toggleTrackedPlanetId(trackedPlanetId, planetId);
     trackedPlanetIdRef.current = next;
@@ -690,6 +694,20 @@ export function App() {
     const nextState = next ? createTrackedPlanetState(next, Date.now()) : null;
     trackedPlanetStateRef.current = nextState;
     setTrackedPlanetState(nextState);
+
+    if (next) {
+      fetchPlanetHistory(next)
+        .then((history) => {
+          // Stale-fetch guard: the user may have untracked or switched to a different planet
+          // before this resolved - a late history fetch for an old selection must never land on
+          // whatever's tracked now.
+          if (trackedPlanetIdRef.current !== next || !trackedPlanetStateRef.current) return;
+          const merged = mergeHistoryIntoTrackedPlanetState(trackedPlanetStateRef.current, history);
+          trackedPlanetStateRef.current = merged;
+          setTrackedPlanetState(merged);
+        })
+        .catch((error) => console.error(`[App] toggleTrackedPlanet(${next}): fetchPlanetHistory failed`, error));
+    }
   }
 
   async function exportPlayerData() {

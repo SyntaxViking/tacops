@@ -43,6 +43,22 @@ export function restartIfRecontested(state: TrackedPlanetState, planet: CrusadeP
   return createTrackedPlanetState(state.planetId, nowMs);
 }
 
+// Prepends server-recorded history (see src/api/fetch-planet-history.ts) onto a just-created
+// tracked state, so the graph shows everything recorded since the current capture cycle began
+// instead of starting empty from the moment the user clicked track. `history` is always strictly
+// earlier than any live sample by construction (fetched once, synchronously before the live loop's
+// first append can land), so this is a plain prepend, never a sort. Re-derives `frozen` from the
+// merged array's last sample (appendTrackedSample's own freeze condition) to cover the edge case
+// where the fetched history already shows the planet captured moments before tracking started. A
+// no-op for an empty history (nothing recorded yet for this era, or the fetch failed/timed out).
+export function mergeHistoryIntoTrackedPlanetState(state: TrackedPlanetState, history: readonly TrackedPlanetSample[]): TrackedPlanetState {
+  if (history.length === 0) return state;
+  const samples = [...history, ...state.samples];
+  const last = samples[samples.length - 1];
+  const frozen = state.frozen || last.imperialRemaining <= 0 || last.devastationRemaining <= 0;
+  return { ...state, samples, startedAtMs: samples[0].atMs, frozen };
+}
+
 export interface GraphPoint {
   x: number;
   y: number;
