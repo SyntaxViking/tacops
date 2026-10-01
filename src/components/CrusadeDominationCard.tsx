@@ -4,7 +4,14 @@ import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
 import { TrackIconButton } from "./TrackIconButton";
 import { Spinner } from "./Spinner";
-import { computeCaptureRace, computeConquestProgress, isPlanetRanked } from "../crusade/crusade-domination-view-model";
+import {
+  computeCaptureRace,
+  computeConquestProgress,
+  cooldownRemainingMs,
+  formatCooldownEndLocalTime,
+  formatPointsFromCapture,
+  isPlanetRanked,
+} from "../crusade/crusade-domination-view-model";
 import type { CrusadePlanet, PlanetRefreshEntry } from "../api/types";
 
 const labelClass = "text-xs font-medium opacity-70";
@@ -40,6 +47,8 @@ export function CrusadeDominationCard({
   const progress = computeConquestProgress(planet);
   const captureRace = computeCaptureRace(planet);
   const ranked = isPlanetRanked(leaderboard);
+  const recaptureTimestamp = planet.struggleData?.recaptureTimestamp;
+  const cooldownEndLocal = recaptureTimestamp != null && cooldownRemainingMs(planet, Date.now()) !== null ? formatCooldownEndLocalTime(recaptureTimestamp) : null;
 
   return (
     <div className="relative">
@@ -81,9 +90,10 @@ export function CrusadeDominationCard({
             </span>
             {captureRace && (
               <span className="font-bold italic">
-                {captureRace.pointsRemaining.toLocaleString()} points from capture ({captureRace.leadingSide})
+                {formatPointsFromCapture(captureRace.pointsRemaining)} ({captureRace.leadingSide})
               </span>
             )}
+            {cooldownEndLocal && <span className="text-xs opacity-70">Available again at {cooldownEndLocal}</span>}
           </div>
         )}
         <div className="grid grid-cols-2 gap-2">

@@ -17,6 +17,7 @@ import { RewardPriorityPicker } from "./components/RewardPriorityPicker";
 import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
+import { RankedParticipantsCounter } from "./components/RankedParticipantsCounter";
 import { Toast } from "./components/Toast";
 import { fetchPlayerData } from "./api/fetch-player-data";
 import { entryIsUnavailable } from "./board/board-view-model";
@@ -35,7 +36,10 @@ import {
 } from "./api/user-preferences";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
 import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
-import { isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
+import {
+  countRankedParticipants,
+  isPlanetAutoRefreshable,
+} from "./crusade/crusade-domination-view-model";
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
 import {
@@ -869,12 +873,46 @@ export function App() {
     setTrackedPlanetState(nextState);
   }
 
+  async function exportPlayerData() {
+    const contents = JSON.stringify(rawPlayerData, null, 2);
+    const defaultFileName = `tacops-${environment}-player-data.json`;
+    if (isTauri()) {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const { invoke } = await import("@tauri-apps/api/core");
+      const path = await save({
+        defaultPath: defaultFileName,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!path) return; // user cancelled the dialog
+      await invoke("write_text_file", { path, contents });
+    } else {
+      const blob = new Blob([contents], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = defaultFileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  // Global ranked-participant headcount (see RankedParticipantsCounter) - summed fresh each
+  // render, same as the rest of this component's derived-from-state values; planetRefreshState is
+  // small enough (dozens of planets) that memoizing this would be premature.
+  const rankedParticipantCounts = countRankedParticipants(planetRefreshState);
+
   return (
     <main
       onClick={() => setSelectedExpeditionId(null)}
       className="mx-auto flex min-h-screen w-full flex-col items-center bg-neutral-100 px-4 py-[5vh] text-center text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
     >
       <BuildTimestamp />
+      {devModeEnabled && (
+        <RankedParticipantsCounter
+          imperial={rankedParticipantCounts.imperial}
+          devastation={rankedParticipantCounts.devastation}
+        />
+      )}
       {toastMessage && (
         <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
       )}

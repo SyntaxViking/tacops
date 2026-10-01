@@ -46,6 +46,27 @@ export function isPlanetAutoRefreshable(entry: PlanetRefreshEntry, isStarred: bo
   return isStarred || entry.lastSuccessAt === null || isPlanetRanked(entry.leaderboard ?? undefined);
 }
 
+export interface RankedParticipantCounts {
+  imperial: number;
+  devastation: number;
+}
+
+// Global headcount, not per-planet - sums each loaded planet's own forParticipants/
+// againstParticipants (see PlanetLeaderboard) across the whole map. "For" is Imperial,
+// "Against" is Devastation, matching the codebase's established side convention. A planet whose
+// leaderboard hasn't loaded yet (or that side's leaderboard came back empty) simply contributes 0,
+// not a special-cased skip - so the total climbs as more planets finish loading, same as every
+// other rolling aggregate in this feature.
+export function countRankedParticipants(planetRefreshState: ReadonlyMap<string, PlanetRefreshEntry>): RankedParticipantCounts {
+  let imperial = 0;
+  let devastation = 0;
+  for (const entry of planetRefreshState.values()) {
+    imperial += entry.leaderboard?.forParticipants ?? 0;
+    devastation += entry.leaderboard?.againstParticipants ?? 0;
+  }
+  return { imperial, devastation };
+}
+
 export interface CaptureRace {
   leadingSide: "Imperial" | "Devastation";
   pointsRemaining: number;
@@ -61,6 +82,13 @@ export function computeCaptureRace(planet: CrusadePlanet): CaptureRace | null {
   return imperialRemaining <= devastationRemaining
     ? { leadingSide: "Imperial", pointsRemaining: imperialRemaining }
     : { leadingSide: "Devastation", pointsRemaining: devastationRemaining };
+}
+
+// pointsRemaining <= 0 means the leading side has already reached (or passed) its threshold - the
+// planet is captured, so "−416 points until capture" (or any other stale/negative number) would be
+// actively misleading. Shown plainly as "Captured" instead; a still-live race shows the number.
+export function formatPointsFromCapture(pointsRemaining: number): string {
+  return pointsRemaining <= 0 ? "Captured" : `${pointsRemaining.toLocaleString()} from capture`;
 }
 
 function factionParticipants(leaderboard: PlanetLeaderboard | undefined): number {
@@ -96,6 +124,41 @@ export function pointsRemaining(planet: CrusadePlanet): { imperial: number; deva
     imperial: progress.imperialThreshold - progress.imperialCurrent,
     devastation: progress.devastationThreshold - progress.devastationCurrent,
   };
+}
+
+// GET_CRUSADE's own cooldown signal: struggleData.recaptureTimestamp is set the moment either
+// side's points cross *their own* threshold (the contest is decided - either the attacker captured
+// it, or the defender successfully re-affirmed their hold) and cleared once that locked window
+// ends. Confirmed against a live response: every planet carrying this field had its defending
+// side's points already past its own defender threshold (e.g. pointsFor just barely exceeding
+// conquestThresholdPointsDefender) - this is a different, narrower state than the struggleData-
+// present-but-0/0 "idle, not yet (re)contested" planets isInDominationCooldown catches above,
+// which carry no timestamp of their own at all. Guards against a timestamp that's already passed
+// (stale data the server hasn't cleared yet) by treating it as "no longer cooling down" rather than
+// showing a negative/zero countdown.
+export function cooldownRemainingMs(planet: CrusadePlanet, nowMs: number): number | null {
+  const ts = planet.struggleData?.recaptureTimestamp;
+  return ts != null && ts > nowMs ? ts - nowMs : null;
+}
+
+// Renders the moment a cooling-down planet becomes contestable again in the viewer's own local
+// time zone (toLocaleTimeString with no explicit timeZone uses the browser's) - e.g. "2:56 PM".
+export function formatCooldownEndLocalTime(recaptureTimestamp: number): string {
+  return new Date(recaptureTimestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+// Primary sort key for cooling-down planets: soonest-available first. Both cooling down -> compare
+// their actual remaining time; only one -> it sorts first (a known countdown is more actionable
+// than "sunk with no timer"); neither -> defers entirely to whatever comparator runs next. Since a
+// planet only ever carries recaptureTimestamp while already isJustCaptured (see above), this only
+// meaningfully activates within the sunk bucket - safe to apply unconditionally elsewhere too.
+export function compareCooldownRemaining(a: CrusadePlanet, b: CrusadePlanet, nowMs: number): number {
+  const remainingA = cooldownRemainingMs(a, nowMs);
+  const remainingB = cooldownRemainingMs(b, nowMs);
+  if (remainingA !== null && remainingB !== null) return remainingA - remainingB;
+  if (remainingA !== null) return -1;
+  if (remainingB !== null) return 1;
+  return 0;
 }
 
 // Both sides Infinity (no struggleData at all) means Infinity - Infinity (NaN), not a tie of 0 -
@@ -206,12 +269,18 @@ export function sortDominationPlanets(
   leaderboardByPlanet: Map<string, PlanetLeaderboard>,
   starredPlanetIds: ReadonlySet<string>,
   sortMode: DominationSortMode = "closestToCapture",
+  nowMs: number = Date.now(),
 ): CrusadePlanet[] {
   return sortPlanetsRankedFirst(
     planets,
     leaderboardByPlanet,
     starredPlanetIds,
     (a, b) => {
+      // Ascending time-until-available takes priority over the selected sort mode - "when do I get
+      // to fight for this again" is more useful than closestToCapture/etc. for planets that are
+      // already decided, and this is a no-op (returns 0) for any pair that isn't cooling down.
+      const cooldownCmp = compareCooldownRemaining(a, b, nowMs);
+      if (cooldownCmp !== 0) return cooldownCmp;
       const cmp = compareBySortMode(sortMode, a, b);
       if (cmp !== 0) return cmp;
       return factionParticipants(leaderboardByPlanet.get(a.planetId)) - factionParticipants(leaderboardByPlanet.get(b.planetId));
