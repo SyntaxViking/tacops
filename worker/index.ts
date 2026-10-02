@@ -3,7 +3,7 @@ import { recordSighting } from "./track";
 import { renderInsightsPage } from "./insights";
 import { getUserPreferences, setUserPreferenceColumn } from "./user-preferences";
 import { getCrusadeCache } from "./crusade-cache";
-import { getPlanetHistory } from "./planet-history";
+import { getAllPlanetHistory, getPlanetHistory } from "./planet-history";
 import { runPollerTick } from "./poller";
 import { isClientVersionAcceptable, STALE_CLIENT_MESSAGE } from "./client-version";
 
@@ -106,6 +106,12 @@ export default {
       const planetId = url.searchParams.get("planetId");
       if (!planetId) return Response.json({ error: "missing planetId" }, { status: 400 });
       return Response.json({ samples: await getPlanetHistory(env.DB, planetId) });
+    }
+
+    // Bulk variant of the route above (same open/no-auth pattern) - the Monitor tab's one-shot
+    // fetch of every planet's current-era history, instead of one request per planet.
+    if (url.pathname === "/api/planet-history-all" && request.method === "GET") {
+      return Response.json({ samples: Object.fromEntries(await getAllPlanetHistory(env.DB)) });
     }
 
     if (url.pathname === "/api/track" && request.method === "POST") {
