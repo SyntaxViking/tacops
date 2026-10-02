@@ -18,7 +18,9 @@ import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
 import { RankedParticipantsCounter } from "./components/RankedParticipantsCounter";
+import { StaleVersionBanner } from "./components/StaleVersionBanner";
 import { Toast } from "./components/Toast";
+import { registerStaleVersionHandler, startVersionCheck } from "./version-check";
 import { fetchPlayerData } from "./api/fetch-player-data";
 import { entryIsUnavailable } from "./board/board-view-model";
 import {
@@ -133,6 +135,7 @@ export function App() {
     new Set(),
   );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [staleVersionDetected, setStaleVersionDetected] = useState(false);
   const [machinesOfWar, setMachinesOfWar] = useState<RawUnit[]>([]);
   const [adViewsRemaining, setAdViewsRemaining] = useState<number | null>(null);
   const [resources, setResources] = useState<PlayerResources | null>(null);
@@ -225,6 +228,38 @@ export function App() {
   useEffect(() => {
     return () => workerRef.current?.terminate();
   }, []);
+
+  // Forces a stale tab to reload once a newer build has deployed (see src/version-check.ts) -
+  // specifically so an old tab's client logic (e.g. a tracker loop predating some future rate
+  // limit) can't keep running indefinitely against our Worker. Tauri's own desktop build has no
+  // "reload the page" concept and ships through GitHub Releases, not this web deploy, so it's
+  // exempt entirely. A 1-minute interval is deliberately tight - re-fetching "/" never reaches the
+  // Worker at all (served straight from Cloudflare's static asset cache, see version-check.ts's own
+  // comment), so polling this often costs nothing, and it bounds how long a stale tab can keep
+  // hammering the Worker with old behavior after a new deploy to about a minute.
+  useEffect(() => {
+    if (isTauri()) return;
+    const VERSION_CHECK_INTERVAL_MS = 60 * 1000;
+    return startVersionCheck(() => setStaleVersionDetected(true), VERSION_CHECK_INTERVAL_MS);
+  }, []);
+
+  // The other half of staleness detection: the server itself rejects any /api/fetch-* call from a
+  // too-old client with HTTP 426 (worker/client-version.ts), before doing any work - this is what
+  // protects a tab that's already open right now, running JS from before any of this version
+  // machinery existed. src/api/fetch-with-timeout.ts calls reportStaleVersion() the moment that
+  // happens; this just wires it to the same banner as the polling check above. Harmless to
+  // register in Tauri too (it never goes through fetchWithTimeout, so this simply never fires).
+  useEffect(() => {
+    registerStaleVersionHandler(() => setStaleVersionDetected(true));
+  }, []);
+
+  // A few seconds' grace after the banner appears (see StaleVersionBanner) before forcing the
+  // reload, purely so it's visible at all rather than the page vanishing with no explanation.
+  useEffect(() => {
+    if (!staleVersionDetected) return;
+    const timer = setTimeout(() => window.location.reload(), 3000);
+    return () => clearTimeout(timer);
+  }, [staleVersionDetected]);
 
   // The solver runs entirely in a Web Worker (javascript-lp-solver is synchronous with no
   // async/worker mode of its own) so it can never block the main thread - the board renders
@@ -621,6 +656,15 @@ export function App() {
   const CRUSADE_SCORE_ACTIVE_REFRESH_MS = 60 * 1000;
   const CRUSADE_SCORE_AWAY_REFRESH_MS = 5 * 60 * 1000;
 
+  // The tracker loop's web-only rate cap (see the tracker effect below) - web calls go through our
+  // own Worker (fetchWithTimeout -> /api/fetch-crusade-data/-leaderboard-data), so a web user
+  // tracking a planet directly costs us Workers resources; the Tauri desktop app's equivalent
+  // calls go straight from the user's own machine to Tacticus's servers (invokeWithTimeout's Rust
+  // commands), costing us nothing, so it keeps the original no-delay behavior. Measured on a real
+  // request pair: a *request-start-to-request-start* interval, not response-to-next-request - a
+  // slow round trip eats into the gap rather than stacking on top of it.
+  const TRACKER_WEB_MIN_INTERVAL_MS = 10_000;
+
   // Claims the most-overdue eligible planet (not currently loading, auto-refreshable - starred,
   // ranked, or not yet successfully loaded, see isPlanetAutoRefreshable - and past its cadence
   // threshold) by marking it isLoading synchronously - contains no `await`, so with up to 4 workers calling
@@ -720,9 +764,11 @@ export function App() {
 
   // Dedicated, single-instance loop for whichever planet is tracked (see toggleTrackedPlanet) -
   // separate from the worker pool above (which explicitly skips it, see claimEligiblePlanet) so it
-  // can refresh continuously with no delay between iterations, exactly like refreshPlanetNow fires
-  // both a leaderboard fetch and a crusade-score refresh together. Restarts whenever the tracked
-  // planet changes or a new go() starts a new session.
+  // can refresh on its own cadence, exactly like refreshPlanetNow fires both a leaderboard fetch
+  // and a crusade-score refresh together. True no-delay only in Tauri (see
+  // TRACKER_WEB_MIN_INTERVAL_MS's own comment, above) - the desktop app's calls never reach our
+  // Worker at all, so there's no backend cost to racing them. Restarts whenever the tracked planet
+  // changes or a new go() starts a new session.
   useEffect(() => {
     if (!trackedPlanetId) return;
     // Re-bound with an explicit type annotation (rather than relying on the flow-narrowing above)
@@ -744,7 +790,15 @@ export function App() {
         });
         if (cancelled) return;
         if (!trackedPlanetStateRef.current?.frozen) {
+          const requestStartedAt = Date.now();
           await Promise.all([fetchOnePlanet(planetId), refreshCrusadeScores()]);
+          // Request-start-to-request-start spacing, not response-to-next-request: a slow round
+          // trip eats into the 10s gap instead of stacking on top of it, and a round trip that
+          // already took >=10s loops again immediately rather than waiting negative time.
+          if (!isTauri()) {
+            const remaining = TRACKER_WEB_MIN_INTERVAL_MS - (Date.now() - requestStartedAt);
+            if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+          }
         } else {
           // Frozen (captured/in cooldown) - don't add extra fetch load for what can be a
           // multi-hour cooldown window. Just re-check the frozen flag periodically so recontest
@@ -940,19 +994,10 @@ export function App() {
       className="mx-auto flex min-h-screen w-full flex-col items-center bg-neutral-100 px-4 py-[5vh] text-center text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
     >
       <BuildTimestamp />
-      {devModeEnabled && (
-        <RankedParticipantsCounter
-          imperial={rankedParticipantCounts.imperial}
-          devastation={rankedParticipantCounts.devastation}
-        />
-      )}
-      {toastMessage && (
-        <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
-      )}
-      <h1
-        className="cursor-pointer text-2xl font-semibold select-none"
-        onClick={handleTitleTap}
-      >
+      {devModeEnabled && <RankedParticipantsCounter imperial={rankedParticipantCounts.imperial} devastation={rankedParticipantCounts.devastation} />}
+      {staleVersionDetected && <StaleVersionBanner onReloadNow={() => window.location.reload()} />}
+      {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />}
+      <h1 className="cursor-pointer text-2xl font-semibold select-none" onClick={handleTitleTap}>
         TacOps
       </h1>
       {!devModeEnabled ? (

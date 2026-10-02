@@ -1,21 +1,38 @@
 interface TrackIconButtonProps {
   isTracked: boolean;
   onToggle: () => void;
-  // Set when this button can't be used right now (either a different planet is tracked, or this
-  // one isn't currently trackable - see isTrackDisabled/isPlanetTrackable). The currently-tracked
-  // planet's own button is never disabled, so it can always be untracked.
+  // Set when this button can't be used right now - this planet isn't currently trackable (already
+  // captured or in cooldown) and isn't the one currently tracked - see isTrackDisabled/
+  // isPlanetTrackable. The currently-tracked planet's own button is never disabled, so it can
+  // always be untracked.
   disabled?: boolean;
-  // Full tooltip text while disabled - the caller knows *why* (a different planet is tracked vs.
-  // this planet just isn't available to track), so it composes the message rather than this
-  // component guessing from a single reason.
+  // Tooltip text while disabled.
   disabledTitle?: string;
+  // Name of whatever planet is tracked right now, if it's a different one than this button's own
+  // planet - surfaced in the enabled tooltip so clicking a different, trackable planet clearly
+  // reads as "switch tracking to this one" rather than silently stealing the slot.
+  otherTrackedPlanetName?: string;
   size?: number;
 }
 
 // Same inline-SVG-button shape as StarIconButton (aria-disabled + stopPropagation, since this sits
 // inside rows/cards that have their own onClick to open the sector map) - a small radar/target
 // glyph rather than a star, filled while tracking.
-export function TrackIconButton({ isTracked, onToggle, disabled = false, disabledTitle, size = 18 }: TrackIconButtonProps) {
+export function TrackIconButton({
+  isTracked,
+  onToggle,
+  disabled = false,
+  disabledTitle,
+  otherTrackedPlanetName,
+  size = 18,
+}: TrackIconButtonProps) {
+  const title = disabled
+    ? (disabledTitle ?? "Not available to track")
+    : isTracked
+      ? "Untrack this planet"
+      : otherTrackedPlanetName
+        ? `Track this planet (stops tracking ${otherTrackedPlanetName})`
+        : "Track this planet's capture race";
   return (
     <button
       type="button"
@@ -24,7 +41,7 @@ export function TrackIconButton({ isTracked, onToggle, disabled = false, disable
         e.stopPropagation();
         if (!disabled) onToggle();
       }}
-      title={disabled ? (disabledTitle ?? "Not available to track") : isTracked ? "Untrack this planet" : "Track this planet's capture race"}
+      title={title}
       className={`inline-flex shrink-0 items-center justify-center outline-none transition-colors ${
         disabled
           ? "cursor-not-allowed text-neutral-300 dark:text-neutral-600"

@@ -39,16 +39,33 @@ describe("isPlanetTrackable", () => {
 });
 
 describe("isTrackDisabled", () => {
-  it("is false for any planet when nothing is tracked", () => {
-    expect(isTrackDisabled(null, "planet_001")).toBe(false);
+  const trackable = planet({
+    planetId: "planet_002",
+    sideOwner: "For",
+    pointsFor: 10,
+    pointsAgainst: 10,
+    struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
+  });
+  const sunk = planet({
+    planetId: "planet_003",
+    struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
   });
 
-  it("is false for the currently-tracked planet itself (so it can be untracked)", () => {
-    expect(isTrackDisabled("planet_001", "planet_001")).toBe(false);
+  it("is false for a trackable planet when nothing is tracked", () => {
+    expect(isTrackDisabled(null, trackable)).toBe(false);
   });
 
-  it("is true for every other planet while one is tracked", () => {
-    expect(isTrackDisabled("planet_001", "planet_002")).toBe(true);
+  it("is false for the currently-tracked planet itself, even if it's since become untrackable (so it can always be untracked)", () => {
+    expect(isTrackDisabled("planet_003", sunk)).toBe(false);
+  });
+
+  it("is false for a different, trackable planet while another one is tracked - clicking it switches tracking straight to it", () => {
+    expect(isTrackDisabled("planet_001", trackable)).toBe(false);
+  });
+
+  it("is true for a planet that isn't itself trackable, whether or not anything is tracked", () => {
+    expect(isTrackDisabled(null, sunk)).toBe(true);
+    expect(isTrackDisabled("planet_001", sunk)).toBe(true);
   });
 });
 
@@ -61,7 +78,7 @@ describe("toggleTrackedPlanetId", () => {
     expect(toggleTrackedPlanetId("planet_001", "planet_001")).toBeNull();
   });
 
-  it("switches to a different planet id (pure function - the UI is what actually prevents this via isTrackDisabled)", () => {
+  it("switches to a different planet id, discarding whatever was tracked before", () => {
     expect(toggleTrackedPlanetId("planet_001", "planet_002")).toBe("planet_002");
   });
 });
