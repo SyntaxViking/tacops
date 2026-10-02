@@ -5,6 +5,7 @@ import {
   computeTrackerGraphData,
   createTrackedPlanetState,
   formatAxisValue,
+  formatElapsedSeconds,
   mergeHistoryIntoTrackedPlanetState,
   restartIfRecontested,
   timeAxisStepSeconds,
@@ -231,6 +232,7 @@ describe("computeTrackerGraphData", () => {
       devastation: { line: emptyLine, axis: emptyAxis },
       combined: { imperial: emptyLine, devastation: emptyLine, axis: emptyAxis },
       timeTicks: [],
+      sampleElapsedSeconds: [],
     });
   });
 
@@ -393,5 +395,52 @@ describe("computeTrackerGraphData", () => {
       frozen: false,
     };
     expect(computeTrackerGraphData(state).timeTicks).toEqual([]);
+  });
+
+  it("formats time tick labels as HH:mm:ss once the duration crosses an hour", () => {
+    const state: TrackedPlanetState = {
+      planetId: "planet_001",
+      startedAtMs: 0,
+      samples: [
+        { atMs: 0, imperialRemaining: 100, devastationRemaining: 100 },
+        { atMs: 3_600_000, imperialRemaining: 50, devastationRemaining: 50 },
+      ],
+      frozen: false,
+    };
+    const result = computeTrackerGraphData(state);
+    expect(result.timeTicks.map((t) => t.label)).toContain("1:00:00");
+  });
+
+  it("reports each sample's elapsed seconds since the first one, for the hover tooltip", () => {
+    const state: TrackedPlanetState = {
+      planetId: "planet_001",
+      startedAtMs: 1000,
+      samples: [
+        { atMs: 1000, imperialRemaining: 100, devastationRemaining: 100 },
+        { atMs: 1000 + 65_000, imperialRemaining: 50, devastationRemaining: 50 },
+      ],
+      frozen: false,
+    };
+    expect(computeTrackerGraphData(state).sampleElapsedSeconds).toEqual([0, 65]);
+  });
+});
+
+describe("formatElapsedSeconds", () => {
+  it("formats under a minute as plain seconds", () => {
+    expect(formatElapsedSeconds(0)).toBe("0s");
+    expect(formatElapsedSeconds(45)).toBe("45s");
+    expect(formatElapsedSeconds(59)).toBe("59s");
+  });
+
+  it("formats a minute or more, but under an hour, as m:ss", () => {
+    expect(formatElapsedSeconds(60)).toBe("1:00");
+    expect(formatElapsedSeconds(65)).toBe("1:05");
+    expect(formatElapsedSeconds(3599)).toBe("59:59");
+  });
+
+  it("formats an hour or more as h:mm:ss", () => {
+    expect(formatElapsedSeconds(3600)).toBe("1:00:00");
+    expect(formatElapsedSeconds(3665)).toBe("1:01:05");
+    expect(formatElapsedSeconds(7384)).toBe("2:03:04");
   });
 });

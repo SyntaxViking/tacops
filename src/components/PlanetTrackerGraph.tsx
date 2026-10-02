@@ -1,5 +1,13 @@
 import { useRef, useState, type ReactNode } from "react";
-import { computeTrackerGraphData, type GraphPoint, type LabeledPoint, type SideAxis, type TimeTick, type TrackedPlanetState } from "../crusade/planet-tracker-view-model";
+import {
+  computeTrackerGraphData,
+  formatElapsedSeconds,
+  type GraphPoint,
+  type LabeledPoint,
+  type SideAxis,
+  type TimeTick,
+  type TrackedPlanetState,
+} from "../crusade/planet-tracker-view-model";
 
 // Same side colors as the sector map modal's NODE_COLOR (not shared/exported anywhere in this
 // codebase - every hand-rolled SVG component defines its own local copy).
@@ -79,7 +87,7 @@ const TOOLTIP_WIDTH = 132;
 const TOOLTIP_LINE_HEIGHT = 15;
 const TOOLTIP_PADDING = 6;
 
-function HoverOverlay({ lines, index }: { lines: LineSpec[]; index: number }) {
+function HoverOverlay({ lines, times, index }: { lines: LineSpec[]; times: number[]; index: number }) {
   const first = lines[0]?.points[index];
   if (!first) return null;
   const x = toSvgX(first.x);
@@ -88,7 +96,9 @@ function HoverOverlay({ lines, index }: { lines: LineSpec[]; index: number }) {
   const anchorLeft = x > (PLOT_LEFT + PLOT_RIGHT) / 2;
   const boxX = anchorLeft ? x - TOOLTIP_WIDTH - 8 : x + 8;
   const boxY = MARGIN_TOP + 4;
-  const boxHeight = TOOLTIP_PADDING * 2 + lines.length * TOOLTIP_LINE_HEIGHT;
+  // One extra line up top for the sample's elapsed time, above each side's value.
+  const boxHeight = TOOLTIP_PADDING * 2 + (lines.length + 1) * TOOLTIP_LINE_HEIGHT;
+  const elapsedSeconds = times[index];
 
   return (
     <g pointerEvents="none">
@@ -98,11 +108,16 @@ function HoverOverlay({ lines, index }: { lines: LineSpec[]; index: number }) {
         return p ? <circle key={i} cx={x} cy={toSvgY(p.y)} r={3.5} fill={line.color} stroke="white" strokeWidth={1.2} /> : null;
       })}
       <rect x={boxX} y={boxY} width={TOOLTIP_WIDTH} height={boxHeight} rx={4} fill="rgba(23,23,23,0.85)" />
+      {elapsedSeconds != null && (
+        <text x={boxX + TOOLTIP_PADDING} y={boxY + TOOLTIP_PADDING + TOOLTIP_LINE_HEIGHT - 4} fontSize={12} fontWeight="bold" fill="white" opacity={0.85}>
+          {formatElapsedSeconds(elapsedSeconds)}
+        </text>
+      )}
       {lines.map((line, i) => {
         const value = line.values[index];
         if (value == null) return null;
         return (
-          <text key={i} x={boxX + TOOLTIP_PADDING} y={boxY + TOOLTIP_PADDING + (i + 1) * TOOLTIP_LINE_HEIGHT - 4} fontSize={12} fontWeight="bold" fill={line.color}>
+          <text key={i} x={boxX + TOOLTIP_PADDING} y={boxY + TOOLTIP_PADDING + (i + 2) * TOOLTIP_LINE_HEIGHT - 4} fontSize={12} fontWeight="bold" fill={line.color}>
             {value.toLocaleString()}
           </text>
         );
@@ -114,7 +129,7 @@ function HoverOverlay({ lines, index }: { lines: LineSpec[]; index: number }) {
 // The shared rendering core for all three graphs - a solo graph passes one AxisSpec/LineSpec, the
 // Combined graph passes two (both AxisSpecs pointing at the very same SideAxis, one per side, so
 // the same numbers are drawn once at the left edge and once at the right).
-function SingleGraph({ axes, lines, timeTicks }: { axes: AxisSpec[]; lines: LineSpec[]; timeTicks: TimeTick[] }) {
+function SingleGraph({ axes, lines, timeTicks, times }: { axes: AxisSpec[]; lines: LineSpec[]; timeTicks: TimeTick[]; times: number[] }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const referencePoints = lines[0]?.points;
@@ -191,7 +206,7 @@ function SingleGraph({ axes, lines, timeTicks }: { axes: AxisSpec[]; lines: Line
         const above = lines.every((other, j) => j === i || !other.label || thisY <= toSvgY(other.label.y));
         return <LabelCallout key={i} x={toSvgX(label.x)} y={thisY} value={label.value} color={color} above={above} />;
       })}
-      {hoverIndex !== null && <HoverOverlay lines={lines} index={hoverIndex} />}
+      {hoverIndex !== null && <HoverOverlay lines={lines} times={times} index={hoverIndex} />}
     </svg>
   );
 }
@@ -220,7 +235,8 @@ interface PlanetTrackerGraphProps {
 export function PlanetTrackerGraph({ state, planetName, nowMs }: PlanetTrackerGraphProps) {
   const data = computeTrackerGraphData(state);
   const elapsedSeconds = Math.max(0, Math.round(((state.frozen ? state.samples[state.samples.length - 1]?.atMs ?? nowMs : nowMs) - state.startedAtMs) / 1000));
-  const caption = state.frozen ? `Captured at ${elapsedSeconds}s` : `${elapsedSeconds}s elapsed`;
+  const elapsedLabel = formatElapsedSeconds(elapsedSeconds);
+  const caption = state.frozen ? `Captured at ${elapsedLabel}` : `${elapsedLabel} elapsed`;
 
   return (
     <div className="mt-4 flex flex-wrap gap-4">
@@ -229,6 +245,7 @@ export function PlanetTrackerGraph({ state, planetName, nowMs }: PlanetTrackerGr
           axes={[{ axis: data.imperial.axis, side: "left", color: IMPERIAL_COLOR }]}
           lines={[{ points: data.imperial.line.points, values: data.imperial.line.values, label: data.imperial.line.label, color: IMPERIAL_COLOR }]}
           timeTicks={data.timeTicks}
+          times={data.sampleElapsedSeconds}
         />
       </GraphCard>
       <GraphCard title={`${planetName} - Devastation`} caption={caption}>
@@ -236,6 +253,7 @@ export function PlanetTrackerGraph({ state, planetName, nowMs }: PlanetTrackerGr
           axes={[{ axis: data.devastation.axis, side: "left", color: DEVASTATION_COLOR }]}
           lines={[{ points: data.devastation.line.points, values: data.devastation.line.values, label: data.devastation.line.label, color: DEVASTATION_COLOR }]}
           timeTicks={data.timeTicks}
+          times={data.sampleElapsedSeconds}
         />
       </GraphCard>
       <GraphCard title={`${planetName} - Combined`} caption={caption}>
@@ -249,6 +267,7 @@ export function PlanetTrackerGraph({ state, planetName, nowMs }: PlanetTrackerGr
             { points: data.combined.devastation.points, values: data.combined.devastation.values, label: data.combined.devastation.label, color: DEVASTATION_COLOR },
           ]}
           timeTicks={data.timeTicks}
+          times={data.sampleElapsedSeconds}
         />
       </GraphCard>
     </div>
