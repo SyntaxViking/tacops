@@ -118,6 +118,10 @@ export interface TrackerGraphData {
   devastation: SingleSideGraph;
   combined: CombinedGraph;
   timeTicks: TimeTick[];
+  // Elapsed seconds since the first sample, one per sample, same order as every line's `values` -
+  // every line on a given planet shares this same x-axis, so it's computed once here rather than
+  // duplicated per line. Lets the hover tooltip show *when* a point was sampled, not just its value.
+  sampleElapsedSeconds: number[];
 }
 
 const EMPTY_AXIS: SideAxis = { ceiling: 0, ticks: [] };
@@ -127,6 +131,7 @@ const EMPTY_GRAPH_DATA: TrackerGraphData = {
   devastation: { line: EMPTY_LINE, axis: EMPTY_AXIS },
   combined: { imperial: EMPTY_LINE, devastation: EMPTY_LINE, axis: EMPTY_AXIS },
   timeTicks: [],
+  sampleElapsedSeconds: [],
 };
 
 // Ceiling used before any real (positive) sample has been seen - only matters for a degenerate
@@ -200,10 +205,15 @@ export function computeAxisScale(values: readonly number[]): SideAxis {
   return { ceiling, ticks };
 }
 
-function formatElapsedSeconds(totalSeconds: number): string {
+// ss under a minute, mm:ss under an hour, HH:mm:ss from an hour on - shared by the time axis's tick
+// labels, the "Ns/Captured at Ns" caption, and the hover tooltip, so every elapsed-time display on
+// a tracker graph ticks over to the next format at exactly the same point.
+export function formatElapsedSeconds(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
@@ -305,5 +315,6 @@ export function computeTrackerGraphData(state: TrackedPlanetState): TrackerGraph
       axis: combinedAxis,
     },
     timeTicks: computeTimeTicks(samples),
+    sampleElapsedSeconds: samples.map((s) => Math.round((s.atMs - firstMs) / 1000)),
   };
 }
