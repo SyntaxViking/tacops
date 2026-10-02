@@ -27,3 +27,23 @@ export async function fetchPlanetHistory(planetId: string): Promise<TrackedPlane
     return [];
   }
 }
+
+// Bulk variant of fetchPlanetHistory above - every planet's history in one request instead of one
+// per planet, used by the Monitor tab (src/components/MonitorTab.tsx) to show every planet's graph
+// at once. Same best-effort semantics: resolves to an empty Map on any failure.
+export async function fetchAllPlanetHistory(): Promise<Map<string, TrackedPlanetSample[]>> {
+  try {
+    const res = await Promise.race([
+      fetch("/api/planet-history-all"),
+      new Promise<Response>((_, reject) => {
+        setTimeout(() => reject(new Error(`"/api/planet-history-all" timed out after ${TIMEOUT_MS / 1000}s`)), TIMEOUT_MS);
+      }),
+    ]);
+    if (!res.ok) throw new Error(`"/api/planet-history-all" returned HTTP ${res.status}`);
+    const data = (await res.json()) as { samples: Record<string, TrackedPlanetSample[]> };
+    return new Map(Object.entries(data.samples ?? {}));
+  } catch (error) {
+    console.error("[fetchAllPlanetHistory] failed", error);
+    return new Map();
+  }
+}
