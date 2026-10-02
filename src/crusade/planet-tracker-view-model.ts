@@ -59,6 +59,30 @@ export function mergeHistoryIntoTrackedPlanetState(state: TrackedPlanetState, hi
   return { ...state, samples, startedAtMs: samples[0].atMs, frozen };
 }
 
+// Builds a read-only TrackedPlanetState purely from persisted history (see
+// src/api/fetch-planet-history.ts's fetchAllPlanetHistory) - used by the Monitor tab to show every
+// planet's graph without actively tracking (polling) any of them. frozen mirrors
+// appendTrackedSample's own freeze condition, derived from the last sample rather than live data.
+// An empty history (nothing recorded yet) is a valid, un-frozen, zero-sample state - the graph
+// component already renders that as an empty plot rather than erroring.
+export function trackedStateFromHistory(planetId: string, history: readonly TrackedPlanetSample[], nowMs: number): TrackedPlanetState {
+  const last = history[history.length - 1];
+  const frozen = last ? last.imperialRemaining <= 0 || last.devastationRemaining <= 0 : false;
+  return { planetId, startedAtMs: history[0]?.atMs ?? nowMs, samples: [...history], frozen };
+}
+
+// A single "right now" sample straight from the planet's own current live data (not persisted
+// history) - used by the Monitor tab as a fallback for a planet with no recorded history yet
+// (just recontested, or the backend poller simply hasn't caught up since this feature shipped) so
+// it still shows *something* instead of a perpetually empty graph until the next poller tick.
+// Returns null when the planet has no struggleData - pointsRemaining is Infinity in that case,
+// which can't scale an axis and isn't meaningful to plot anyway.
+export function liveSnapshotSample(planet: CrusadePlanet, nowMs: number): TrackedPlanetSample | null {
+  const remaining = pointsRemaining(planet);
+  if (!Number.isFinite(remaining.imperial) || !Number.isFinite(remaining.devastation)) return null;
+  return { atMs: nowMs, imperialRemaining: remaining.imperial, devastationRemaining: remaining.devastation };
+}
+
 export interface GraphPoint {
   x: number;
   y: number;

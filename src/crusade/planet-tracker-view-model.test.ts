@@ -6,9 +6,11 @@ import {
   createTrackedPlanetState,
   formatAxisValue,
   formatElapsedSeconds,
+  liveSnapshotSample,
   mergeHistoryIntoTrackedPlanetState,
   restartIfRecontested,
   timeAxisStepSeconds,
+  trackedStateFromHistory,
   type TrackedPlanetState,
 } from "./planet-tracker-view-model";
 import type { CrusadePlanet } from "../api/types";
@@ -132,6 +134,48 @@ describe("mergeHistoryIntoTrackedPlanetState", () => {
       { atMs: 2000, imperialRemaining: 0, devastationRemaining: 600 },
     ];
     expect(mergeHistoryIntoTrackedPlanetState(state, history).frozen).toBe(true);
+  });
+});
+
+describe("trackedStateFromHistory", () => {
+  it("builds an empty, un-frozen state for a planet with no recorded history yet", () => {
+    expect(trackedStateFromHistory("planet_001", [], 5000)).toEqual({
+      planetId: "planet_001",
+      startedAtMs: 5000,
+      samples: [],
+      frozen: false,
+    });
+  });
+
+  it("starts at the earliest sample and isn't frozen while both sides still have points left", () => {
+    const history = [
+      { atMs: 1000, imperialRemaining: 900, devastationRemaining: 800 },
+      { atMs: 2000, imperialRemaining: 700, devastationRemaining: 600 },
+    ];
+    expect(trackedStateFromHistory("planet_001", history, 5000)).toEqual({
+      planetId: "planet_001",
+      startedAtMs: 1000,
+      samples: history,
+      frozen: false,
+    });
+  });
+
+  it("is frozen when the last recorded sample already shows a capture", () => {
+    const history = [
+      { atMs: 1000, imperialRemaining: 900, devastationRemaining: 800 },
+      { atMs: 2000, imperialRemaining: 0, devastationRemaining: 600 },
+    ];
+    expect(trackedStateFromHistory("planet_001", history, 5000).frozen).toBe(true);
+  });
+});
+
+describe("liveSnapshotSample", () => {
+  it("builds a sample from the planet's current remaining points, timestamped now", () => {
+    expect(liveSnapshotSample(liveContestedPlanet(100, 50), 5000)).toEqual({ atMs: 5000, imperialRemaining: 900, devastationRemaining: 950 });
+  });
+
+  it("returns null for a planet with no struggleData (pointsRemaining is Infinity)", () => {
+    expect(liveSnapshotSample(planet(), 5000)).toBeNull();
   });
 });
 

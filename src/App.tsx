@@ -12,6 +12,7 @@ import { MowTable } from "./components/MowTable";
 import { GuildChatTab } from "./components/GuildChatTab";
 import { BoardCoverageTab } from "./components/BoardCoverageTab";
 import { CrusadeTab } from "./components/CrusadeTab";
+import { MonitorTab } from "./components/MonitorTab";
 import { HeroQuestsTab } from "./components/HeroQuestsTab";
 import { RewardPriorityPicker } from "./components/RewardPriorityPicker";
 import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
@@ -72,6 +73,7 @@ import type { TrackedPlanetState } from "./crusade/planet-tracker-view-model";
 const TABS = [
   { id: "operations", label: "Operations" },
   { id: "crusade", label: "Crusade" },
+  { id: "monitor", label: "Monitor" },
   { id: "guildchat", label: "Guild Chat" },
   { id: "characters", label: "Characters" },
   { id: "mows", label: "Machines of War" },
@@ -239,7 +241,7 @@ export function App() {
   // hammering the Worker with old behavior after a new deploy to about a minute.
   useEffect(() => {
     if (isTauri()) return;
-    const VERSION_CHECK_INTERVAL_MS = 60 * 1000;
+    const VERSION_CHECK_INTERVAL_MS = 3600 * 1000;
     return startVersionCheck(() => setStaleVersionDetected(true), VERSION_CHECK_INTERVAL_MS);
   }, []);
 
@@ -817,9 +819,11 @@ export function App() {
 
   // Tracks how long the user has been away from the Crusades tab - reset to null the instant
   // they return (snapping the auto-refresh cadence back to 5 minutes immediately), started the
-  // instant they leave.
+  // instant they leave. The Monitor tab counts as "still here" too - it's just another view onto
+  // the same Domination data (built from already-persisted history, see MonitorTab), and the user
+  // shouldn't see Crusade's own refresh cadence slow down just for having looked at it.
   useEffect(() => {
-    if (activeTab === "crusade") {
+    if (activeTab === "crusade" || activeTab === "monitor") {
       awayFromCrusadeSinceRef.current = null;
     } else if (awayFromCrusadeSinceRef.current === null) {
       awayFromCrusadeSinceRef.current = Date.now();
@@ -1192,6 +1196,9 @@ export function App() {
                 trackedPlanetState={trackedPlanetState}
                 onToggleTrackPlanet={toggleTrackedPlanet}
               />
+            )}
+            {activeTab === "monitor" && (
+              <MonitorTab crusadeData={crusadeData} planetRefreshState={planetRefreshState} favoritedPlanetIds={favoritedPlanetIds} error={crusadeError} />
             )}
           </div>
         </>

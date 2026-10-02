@@ -230,13 +230,39 @@ interface PlanetTrackerGraphProps {
   // samples themselves (see computeTrackerGraphData), so a stale nowMs never misdraws the lines, it
   // just freezes the caption along with everything else once the parent stops re-passing it.
   nowMs: number;
+  // Renders only the Combined (both sides on one shared scale) graph, omitting the Imperial/
+  // Devastation solo ones - used by the Monitor tab, which shows every planet at once and has no
+  // room (or need) for three graphs apiece. Also drops the "- Combined" title suffix, since there's
+  // nothing left to disambiguate it from.
+  onlyCombined?: boolean;
 }
 
-export function PlanetTrackerGraph({ state, planetName, nowMs }: PlanetTrackerGraphProps) {
+export function PlanetTrackerGraph({ state, planetName, nowMs, onlyCombined = false }: PlanetTrackerGraphProps) {
   const data = computeTrackerGraphData(state);
   const elapsedSeconds = Math.max(0, Math.round(((state.frozen ? state.samples[state.samples.length - 1]?.atMs ?? nowMs : nowMs) - state.startedAtMs) / 1000));
   const elapsedLabel = formatElapsedSeconds(elapsedSeconds);
   const caption = state.frozen ? `Captured at ${elapsedLabel}` : `${elapsedLabel} elapsed`;
+
+  const combinedGraph = (
+    <GraphCard title={onlyCombined ? planetName : `${planetName} - Combined`} caption={caption}>
+      <SingleGraph
+        axes={[
+          { axis: data.combined.axis, side: "left", color: IMPERIAL_COLOR },
+          { axis: data.combined.axis, side: "right", color: DEVASTATION_COLOR },
+        ]}
+        lines={[
+          { points: data.combined.imperial.points, values: data.combined.imperial.values, label: data.combined.imperial.label, color: IMPERIAL_COLOR },
+          { points: data.combined.devastation.points, values: data.combined.devastation.values, label: data.combined.devastation.label, color: DEVASTATION_COLOR },
+        ]}
+        timeTicks={data.timeTicks}
+        times={data.sampleElapsedSeconds}
+      />
+    </GraphCard>
+  );
+
+  if (onlyCombined) {
+    return <div className="mt-4 flex flex-wrap gap-4">{combinedGraph}</div>;
+  }
 
   return (
     <div className="mt-4 flex flex-wrap gap-4">
@@ -256,20 +282,7 @@ export function PlanetTrackerGraph({ state, planetName, nowMs }: PlanetTrackerGr
           times={data.sampleElapsedSeconds}
         />
       </GraphCard>
-      <GraphCard title={`${planetName} - Combined`} caption={caption}>
-        <SingleGraph
-          axes={[
-            { axis: data.combined.axis, side: "left", color: IMPERIAL_COLOR },
-            { axis: data.combined.axis, side: "right", color: DEVASTATION_COLOR },
-          ]}
-          lines={[
-            { points: data.combined.imperial.points, values: data.combined.imperial.values, label: data.combined.imperial.label, color: IMPERIAL_COLOR },
-            { points: data.combined.devastation.points, values: data.combined.devastation.values, label: data.combined.devastation.label, color: DEVASTATION_COLOR },
-          ]}
-          timeTicks={data.timeTicks}
-          times={data.sampleElapsedSeconds}
-        />
-      </GraphCard>
+      {combinedGraph}
     </div>
   );
 }

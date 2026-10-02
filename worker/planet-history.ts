@@ -129,3 +129,25 @@ export async function getPlanetHistory(db: D1Database, planetId: string): Promis
     .all<HistoryRow>();
   return (result.results ?? []).map((row) => ({ atMs: row.at_ms, imperialRemaining: row.imperial_remaining, devastationRemaining: row.devastation_remaining }));
 }
+
+interface AllHistoryRow extends HistoryRow {
+  planet_id: string;
+}
+
+// Read glue for GET /api/planet-history-all (worker/index.ts) - every planet's current-era history
+// in one query/round-trip, grouped by planetId, instead of the Monitor tab issuing one
+// getPlanetHistory request per planet. Same row shape/ordering as getPlanetHistory, just not
+// filtered to one planet_id.
+export async function getAllPlanetHistory(db: D1Database): Promise<Map<string, PlanetHistorySample[]>> {
+  const result = await db
+    .prepare("SELECT planet_id, at_ms, imperial_remaining, devastation_remaining FROM planet_history ORDER BY planet_id ASC, at_ms ASC")
+    .all<AllHistoryRow>();
+  const byPlanet = new Map<string, PlanetHistorySample[]>();
+  for (const row of result.results ?? []) {
+    const sample: PlanetHistorySample = { atMs: row.at_ms, imperialRemaining: row.imperial_remaining, devastationRemaining: row.devastation_remaining };
+    const existing = byPlanet.get(row.planet_id);
+    if (existing) existing.push(sample);
+    else byPlanet.set(row.planet_id, [sample]);
+  }
+  return byPlanet;
+}
