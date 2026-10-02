@@ -28,6 +28,7 @@ interface CrusadeDominationCardProps {
   onToggleTrack?: () => void;
   trackDisabled?: boolean;
   trackDisabledTitle?: string;
+  otherTrackedPlanetName?: string;
 }
 
 export function CrusadeDominationCard({
@@ -42,6 +43,7 @@ export function CrusadeDominationCard({
   onToggleTrack,
   trackDisabled,
   trackDisabledTitle,
+  otherTrackedPlanetName,
 }: CrusadeDominationCardProps) {
   const leaderboard = refreshEntry.leaderboard ?? undefined;
   const progress = computeConquestProgress(planet);
@@ -70,7 +72,15 @@ export function CrusadeDominationCard({
           </div>
           <div className="flex items-center gap-1">
             {planet.ownedByFaction && <FactionBadge factionId={planet.ownedByFaction} />}
-            {onToggleTrack && <TrackIconButton isTracked={isTracked} onToggle={onToggleTrack} disabled={trackDisabled} disabledTitle={trackDisabledTitle} />}
+            {onToggleTrack && (
+              <TrackIconButton
+                isTracked={isTracked}
+                onToggle={onToggleTrack}
+                disabled={trackDisabled}
+                disabledTitle={trackDisabledTitle}
+                otherTrackedPlanetName={otherTrackedPlanetName}
+              />
+            )}
           </div>
         </div>
         <div className="flex items-start justify-between gap-2">
