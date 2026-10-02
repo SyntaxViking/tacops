@@ -1,5 +1,5 @@
 import { isStarDisabled } from "../crusade/starred-planets";
-import { isPlanetTrackable, isTrackDisabled } from "../crusade/tracked-planet";
+import { isTrackDisabled } from "../crusade/tracked-planet";
 import { FactionBadge, LeaderboardBreakdownCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
@@ -92,12 +92,9 @@ export function CrusadeDominationTable({
                     <TrackIconButton
                       isTracked={trackedPlanetId === planet.planetId}
                       onToggle={() => onToggleTrackPlanet(planet.planetId)}
-                      disabled={isTrackDisabled(trackedPlanetId, planet.planetId) || (trackedPlanetId === null && !isPlanetTrackable(planet))}
-                      disabledTitle={
-                        isTrackDisabled(trackedPlanetId, planet.planetId)
-                          ? `Untrack ${trackedPlanetName ?? "the other planet"} first - only one planet can be tracked at a time`
-                          : "Not currently available to track (already captured or in cooldown)"
-                      }
+                      disabled={isTrackDisabled(trackedPlanetId, planet)}
+                      disabledTitle="Not currently available to track (already captured or in cooldown)"
+                      otherTrackedPlanetName={trackedPlanetName}
                     />
                   )}
                 </div>
