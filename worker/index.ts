@@ -5,6 +5,7 @@ import { getUserPreferences, setUserPreferenceColumn } from "./user-preferences"
 import { getCrusadeCache } from "./crusade-cache";
 import { getPlanetHistory } from "./planet-history";
 import { runPollerTick } from "./poller";
+import { isClientVersionAcceptable, STALE_CLIENT_MESSAGE } from "./client-version";
 
 interface Env {
   DB: D1Database;
@@ -17,6 +18,9 @@ interface RequestBody {
   userId: string;
   clientSecret: string;
   snowId?: string;
+  // src/api-version.ts's API_VERSION, merged into every request body automatically by
+  // src/api/fetch-with-timeout.ts - absent entirely on any client that predates this field.
+  apiVersion?: number;
 }
 
 interface LeaderboardRequestBody extends RequestBody {
@@ -37,6 +41,10 @@ interface SetPreferenceRequestBody {
   ids: string[];
 }
 
+// 426 Upgrade Required - semantically "the server refuses to proceed with the current client,
+// upgrade (reload) to continue". Shared across every /api/fetch-* route below.
+const STALE_CLIENT_RESPONSE = () => Response.json({ error: STALE_CLIENT_MESSAGE }, { status: 426 });
+
 // Cloudflare serves a matching file out of the [assets] directory before this Worker ever runs
 // (the default when both `main` and `[assets]` are configured), so this only needs to handle the
 // routes that aren't static files - everything else falling through here is a genuine 404.
@@ -46,6 +54,7 @@ export default {
 
     if (url.pathname === "/api/fetch-player-data" && request.method === "POST") {
       const body = (await request.json()) as RequestBody;
+      if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
       try {
         const data = await fetchPlayerDataFromLoki(
           body.environment,
@@ -61,6 +70,7 @@ export default {
 
     if (url.pathname === "/api/fetch-crusade-data" && request.method === "POST") {
       const body = (await request.json()) as RequestBody;
+      if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
       try {
         const data = await fetchCrusadeDataFromLoki(body.environment, body.userId, body.clientSecret, body.snowId ?? "");
         return Response.json(data);
@@ -71,6 +81,7 @@ export default {
 
     if (url.pathname === "/api/fetch-leaderboard-data" && request.method === "POST") {
       const body = (await request.json()) as LeaderboardRequestBody;
+      if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
       try {
         const data = await fetchLeaderboardDataFromLoki(
           body.environment,

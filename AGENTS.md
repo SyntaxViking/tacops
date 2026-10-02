@@ -8,3 +8,16 @@ See the "Style requirements" section of [README.md](README.md) for style rules (
 Don't start the dev server or drive it with Playwright/chromium-cli to verify a change works.
 Run `npx tsc --noEmit` and `npm test`, then just tell the user what to manually check (which
 screen/tab, what button to click, what result to expect) instead.
+
+## API version (`src/api-version.ts`)
+
+`API_VERSION` is the client<->server API contract version, sent with every web client request and
+enforced as the Worker's own minimum (`worker/client-version.ts`) - a request from a client whose
+`apiVersion` is below the Worker's current `API_VERSION` is rejected outright (HTTP 426, no work
+done), which forces that client to refresh the page.
+
+**Never bump `API_VERSION` without the developer explicitly, deliberately asking for that exact
+change in that exact request.** Most changes to the API or app are backwards compatible and should
+ship with this number left alone - bumping it on an ordinary change would force-refresh every open
+tab for no reason. It only goes up for a genuine breaking change, where old clients must not keep
+talking to the new backend (or vice versa) until they update.
