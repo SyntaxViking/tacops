@@ -352,7 +352,7 @@ export function App() {
         setSelectedExpeditionId(null);
         return;
       }
-      if (e.key !== "8" || e.repeat) return;
+      if (e.key !== "F9" || e.repeat) return;
       const now = Date.now();
       if (now - lastEightPressRef.current < 400) return;
       lastEightPressRef.current = now;
