@@ -33,7 +33,7 @@ import { countRankedParticipants, isPlanetAutoRefreshable } from "./crusade/crus
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
 import { appendTrackedSample, createTrackedPlanetState, mergeHistoryIntoTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
-import { fetchPlanetHistory } from "./api/fetch-planet-history";
+import { fetchAllPlanetHistory, fetchPlanetHistory } from "./api/fetch-planet-history";
 import { AnonymousCrusadeSection } from "./components/AnonymousCrusadeSection";
 import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
@@ -41,7 +41,7 @@ import type { SolveRequest, SolveResponse } from "./board/board-solver.worker";
 import type { PriorityKey } from "./board/reward-amount";
 import type { CrusadeData, CrusadeSectorMap, Environment, ExpeditionBoardEntry, PlanetLeaderboard, PlanetRefreshEntry, PlayerResources, RawUnit } from "./api/types";
 import type { HeroQuestJar } from "./hero-quests/hero-quest-view-model";
-import type { TrackedPlanetState } from "./crusade/planet-tracker-view-model";
+import type { TrackedPlanetSample, TrackedPlanetState } from "./crusade/planet-tracker-view-model";
 
 const TABS = [
   { id: "operations", label: "Operations" },
@@ -120,6 +120,13 @@ export function App() {
   // (which would tear down/rebuild the loop on every single sample).
   const trackedPlanetStateRef = useRef<TrackedPlanetState | null>(null);
   trackedPlanetStateRef.current = trackedPlanetState;
+  // Every planet's persisted history, for the Monitor tab (MonitorTab.tsx) - fetched and kept
+  // fresh here, not inside MonitorTab itself, so it survives switching away from the Monitor tab
+  // and back (MonitorTab is only ever mounted while its tab is active, so state owned inside it
+  // would reset to empty and have to re-fetch from scratch on every tab switch). Shared,
+  // account-agnostic data (the same open /api/planet-history-all endpoint everyone reads), so this
+  // starts and keeps refreshing independent of go()/crusadeSessionId/activeTab.
+  const [planetHistoryByPlanet, setPlanetHistoryByPlanet] = useState<Map<string, TrackedPlanetSample[]>>(new Map());
   // Bumped on every scheduler effect setup/teardown so a stale in-flight fetch from a torn-down
   // session (a previous GO, unmount, or React StrictMode's dev-mode double-invoke) can never
   // commit into a newer session's state.
@@ -669,6 +676,24 @@ export function App() {
     }
   }, [activeTab]);
 
+  // Every planet's persisted history, for the Monitor tab - runs once on mount and keeps
+  // refetching every 5 minutes regardless of activeTab/login state, matching the backend poller's
+  // own crusade-refresh cadence (fetching any faster couldn't possibly turn up new data). See
+  // planetHistoryByPlanet's own declaration for why this lives here rather than inside MonitorTab.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const history = await fetchAllPlanetHistory();
+      if (!cancelled) setPlanetHistoryByPlanet(history);
+    }
+    void load();
+    const interval = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Manual refresh (req 3) - bypasses claimEligiblePlanet's cadence threshold entirely and isn't
   // capped by the 4-worker pool, since each refresh icon disables itself the instant it's
   // clicked (self-limiting in practice).
@@ -974,7 +999,13 @@ export function App() {
               />
             )}
             {activeTab === "monitor" && (
-              <MonitorTab crusadeData={crusadeData} planetRefreshState={planetRefreshState} favoritedPlanetIds={favoritedPlanetIds} error={crusadeError} />
+              <MonitorTab
+                crusadeData={crusadeData}
+                planetRefreshState={planetRefreshState}
+                favoritedPlanetIds={favoritedPlanetIds}
+                error={crusadeError}
+                historyByPlanet={planetHistoryByPlanet}
+              />
             )}
           </div>
         </>
