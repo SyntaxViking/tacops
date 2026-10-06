@@ -21,7 +21,7 @@
 // pointsRemaining/isDominationSunk are reused as-is from src/crusade/crusade-domination-view-model.ts
 // (confirmed Tauri/browser-free - its only import is the plain-interface src/api/types.ts), the same
 // class of precedent as this worker already importing src/factions/faction-side.ts and
-// src/assets/planet-data.json. rawPlanetToCrusadePlanet below is a small hand-written duplicate of
+// src/assets/seasons' planet-data.json. rawPlanetToCrusadePlanet below is a small hand-written duplicate of
 // src/api/fetch-crusade-data.ts's mapCrusadeResponseData per-planet mapping, following the exact
 // precedent worker/poller.ts already set by duplicating findActivePhase rather than importing that
 // file (which pulls in @tauri-apps/api/core).

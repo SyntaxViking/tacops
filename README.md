@@ -122,15 +122,88 @@ players. Using an embargoed or otherwise-ahead-of-release config here would both
 content into a checked-in file and quietly compute the wrong power for players still on the live
 build.
 
-### Updating the bundled sector map
+### Crusade seasons (`src/season.ts`, `src/assets/seasons/`)
+
+Each crusade season has its own planet layout - `planet-data.json` (planet id/name/zone, used to
+figure out which planets are active this week and to label planets in data the live API doesn't
+name) and `sector-map.json` (positions and adjacency, used for the logged-out home page's sector
+map - see below). These live one folder per season, under `src/assets/seasons/<season>/`, named
+after the game client patch version that season started in (e.g. `1.41`) - not Tacticus's own
+numeric `seasonNumber` field, which is just an incrementing counter with no bearing on which static
+layout is correct.
+
+**The switchover is timed, not manually flipped.** `src/season.ts`'s `SEASON_SCHEDULE` is an
+ordered list of `{ season, endsAt }` - `endsAt` is the exact moment (epoch ms) that season's window
+ends and the next entry in the list takes over, or `null` if that season is still ongoing (its end
+isn't known yet). `src/assets/seasons/index.ts`'s `getPlanetData()`/`getSectorMapData()` resolve
+`SEASON_SCHEDULE` against the current time on *every call* (never cached) and return that season's
+two files; every reader (the worker's poller, the live app, the anonymous home page) calls one of
+those and never has to know seasons exist at all.
+
+**Setting a season's end date is the one step that actually matters:** the moment you know exactly
+when a season ends, set that season's `endsAt` in `SEASON_SCHEDULE` to the epoch-ms timestamp (e.g.
+`new Date("2026-11-04T17:00:00Z").getTime()`) and commit/deploy it - from that instant on, every
+caller automatically starts resolving to the next entry, with no further action needed. Until then,
+leave it `null`. Exactly one entry in the schedule should have `endsAt: null` at a time (the
+currently-ongoing season) - every entry *before* it needs a real `endsAt`, since
+`resolveActiveSeason` stops at the first entry that's either `null` or still in the future.
+
+**Caveat:** this only takes effect on the *next* call after the boundary passes - a Worker
+invocation or a page that's already running doesn't get interrupted mid-flight to recompute
+anything. In practice this is a non-issue for the worker (every request/cron tick is a fresh call)
+and for new page loads; the only real edge case is a browser tab left open exactly across the
+boundary, which would keep showing the old season's data until it's reloaded.
+
+#### Preparing a new crusade season
+
+1. Copy the current season's folder to a new one named after the new patch version, e.g.:
+   ```sh
+   cp -r src/assets/seasons/1.41 src/assets/seasons/1.43
+   ```
+2. Add the new version to `src/season.ts`'s `Season` type and `SEASONS` array, and add it to
+   `SEASON_SCHEDULE` with `endsAt: null`. Add its two files to the two lookup maps in
+   `src/assets/seasons/index.ts` (TypeScript errors if either map is missing an entry for a season
+   in `SEASONS`). **Leave the current season's own `endsAt` as `null` until you actually know when
+   it ends** - see above.
+3. Update `src/assets/seasons/<new version>/planet-data.json` with the new season's actual planet
+   ids/names/zones. It's the `planet_data` job in `datamine_tacticus`'s `extract_all.ts` (same as
+   `character-power-*.json`), run from a `datamine_tacticus` checkout against the live GlobalConfig
+   (never an embargoed one). Each crusade season has its own planet set in the config
+   (`crusade.seasonsData[n].planetSetId`, e.g. `planet_set_02`), so pass the matching one:
+   ```sh
+   npx tsx extract_all.ts planet_data --global-config <live GlobalConfig> --i2 <I2Languages_en.json> \
+     --planet-set planet_set_02 > <path-to-tacops>/src/assets/seasons/<new version>/planet-data.json
+   ```
+   The job prints a trailing newline the checked-in files don't have; strip it if you care about a
+   byte-identical diff.
+4. Build the new season's `sector-map.json` planets array (positions/zone/type) the same way as
+   step 3, straight from `crusade.planetSets.<new set>` - no live capture needed for this part.
+   **Connections (adjacency) are a separate problem**: that data genuinely isn't in the static
+   config at all (confirmed by searching the whole `crusade` tree) - it only exists in a live
+   `GET_PLAYER` response's `crusadeEvent` module, and only once the game actually starts exposing
+   the new season there (confirmed *not* present yet as of this writing, even though the new
+   season's planet set is already configured server-side - the game doesn't pre-expose it). Ship
+   the new season's file with `connections: []` in the meantime rather than blocking on this.
+   **Check back periodically (and especially right around the switchover)** with a fresh
+   `GET_PLAYER` export (see below) - the moment a second `crusadeEvent` module shows up, regenerate
+   the new season's sector map for real and replace the empty `connections` array. Until that
+   happens, the new season's sector map will render with no connecting lines between planets.
+5. Once you know exactly when the current season ends, set its `endsAt` (see above) - this is the
+   only step that actually switches anything over, and can be done the moment you know the date,
+   independent of steps 1-4.
+
+Steps 1-4 can be committed (and even deployed) at any point before the new season actually starts -
+none of it is read until the current season's `endsAt` makes `resolveActiveSeason` move past it.
+
+#### Updating a season's sector map
 
 The crusade sector map layout (planet positions and adjacency) only appears in a logged-in
-`GET_PLAYER` response, so the logged-out home page uses a snapshot bundled at
-`src/assets/sector-map.json` instead. If the layout ever changes (e.g. a new crusade season adds or
-moves planets), regenerate it from the "Export JSON" file of a logged-in session:
+`GET_PLAYER` response, so the logged-out home page uses a bundled snapshot instead (see above). If
+a season's layout ever changes, or you're preparing a new season's (see above), regenerate it from
+the "Export JSON" file of a logged-in session on that season:
 
 ```sh
-npx vite-node scripts/extract-sector-map.ts "<path-to-tacops-prod-player-data.json>"
+npx vite-node scripts/extract-sector-map.ts <season> "<path-to-tacops-prod-player-data.json>"
 ```
 
 ### Credentials
