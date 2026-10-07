@@ -95,17 +95,40 @@ export function computeGuildBossBombTimings(stamina: StaminaShaped | undefined):
 }
 
 // Twice a day, at 09:45 and 22:45 UTC, the server BURNS (discards) a raid token instead of letting
-// it sit at cap - confirmed by the user. Finds the earliest such checkpoint at or after `t`.
-const BURN_CHECKPOINT_UTC_MINUTES = [9 * 60 + 45, 22 * 60 + 45];
+// it sit at cap - confirmed by the user.
+const GUILD_BOSS_BURN_CHECKPOINT_UTC_MINUTES = [9 * 60 + 45, 22 * 60 + 45];
 
-function nextBurnCheckpointAtOrAfter(t: number): number {
+// Arena burns a token at *every* regen tick it's sitting at cap for, not just a handful of special
+// times a day - confirmed by the user, correcting an earlier guess at only 3 checkpoints 8h apart.
+// The real anchor is the moment arena's regen cycle ends each day, 03:20 CEST (confirmed by the
+// user, who also corrected an intermediate guess of 04:00 CEST - 40 minutes later than the real
+// anchor) - every checkpoint is one PVP_REGEN_MS (2h40m) tick from there, 9 of them across a day
+// (1440 min / 160 min exactly - CEST is UTC+2). Derived from this one anchor + the interval
+// instead of listing all 9, so there's only one fact to get right; getting the anchor wrong again
+// would shift every checkpoint by the same amount rather than only some of them.
+const PVP_BURN_CHECKPOINT_ANCHOR_UTC_MINUTES = 3 * 60 + 20 - 2 * 60; // 03:20 CEST (CEST = UTC+2)
+
+// Every checkpoint in the same minute-of-day residue class as `anchorUtcMinutes`, spaced
+// `stepMinutes` apart, covering one full day. `stepMinutes` must evenly divide 1440 (160 does: 9
+// checkpoints) or the gap before wrapping past midnight would be shorter than the rest.
+function dailyCheckpointsFromAnchor(anchorUtcMinutes: number, stepMinutes: number): number[] {
+  const checkpoints: number[] = [];
+  for (let m = ((anchorUtcMinutes % stepMinutes) + stepMinutes) % stepMinutes; m < 24 * 60; m += stepMinutes) {
+    checkpoints.push(m);
+  }
+  return checkpoints;
+}
+
+// Exported only so the test suite can pin this against the user's own confirmed CEST times,
+// independent of exercising it indirectly through computePvpTimings.
+export const PVP_BURN_CHECKPOINT_UTC_MINUTES = dailyCheckpointsFromAnchor(PVP_BURN_CHECKPOINT_ANCHOR_UTC_MINUTES, PVP_REGEN_MS / 60_000);
+
+// Finds the earliest checkpoint (minutes past UTC midnight, any count, any order) at or after `t`.
+function nextCheckpointAtOrAfter(checkpointUtcMinutes: readonly number[], t: number): number {
   const d = new Date(t);
   const dayStartUtc = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  const candidates = [
-    dayStartUtc + BURN_CHECKPOINT_UTC_MINUTES[0] * 60_000,
-    dayStartUtc + BURN_CHECKPOINT_UTC_MINUTES[1] * 60_000,
-    dayStartUtc + 24 * 3_600_000 + BURN_CHECKPOINT_UTC_MINUTES[0] * 60_000,
-  ];
+  const sorted = [...checkpointUtcMinutes].sort((a, b) => a - b);
+  const candidates = [...sorted.map((m) => dayStartUtc + m * 60_000), dayStartUtc + 24 * 3_600_000 + sorted[0] * 60_000];
   return candidates.find((c) => c >= t) ?? candidates[candidates.length - 1];
 }
 
@@ -124,7 +147,7 @@ export function computeGuildBossTimings(stamina: StaminaShaped | undefined, now:
   // future moment they'd reach it (capAt is only null here if already capped, since `stamina` is
   // known to exist - fall back to `now` defensively either way).
   const capReferencePoint = currentAmount >= GUILD_BOSS_MAX ? now : (capAt ?? now);
-  return { nextTokenAt, capAt, burnAt: nextBurnCheckpointAtOrAfter(capReferencePoint) };
+  return { nextTokenAt, capAt, burnAt: nextCheckpointAtOrAfter(GUILD_BOSS_BURN_CHECKPOINT_UTC_MINUTES, capReferencePoint) };
 }
 
 export interface PvpTimings {
@@ -132,24 +155,40 @@ export interface PvpTimings {
   capAt: number | null; // set only if the cap will be reached before regen pauses
   pausesAt: number | null; // set only if regen WON'T reach the cap before pausing (shown instead of capAt)
   stopped: boolean; // true if already past staminaRegenUntil and still under cap - no schedule to show
+  // Next 04:00/12:00/20:00 CEST checkpoint at which a token is lost if still sitting at cap then -
+  // same "it's common to intentionally sit at cap" framing as guild boss's burnAt. null whenever
+  // there's no projected moment of being at cap at all (currently under cap AND no capAt - i.e.
+  // `stopped`, or regen pauses before ever reaching cap).
+  burnAt: number | null;
 }
 
 // staminaRegenUntil marks when regen STOPS for the season (confirmed by the user - not a "next
 // token" timestamp), later reset by the server to 10 at some unpredictable point not modeled here.
 // Normal lastUpdatedThreshold + interval math still gives the real next/cap tick times; the
-// deadline only matters if it would cut that projection short.
+// deadline only matters if it would cut that projection short. The daily burn checkpoints
+// (PVP_BURN_CHECKPOINT_UTC_MINUTES) are a separate, independent cycle from this season-level
+// deadline - burn risk is evaluated the same way regardless of `stopped`/`pausesAt`.
 export function computePvpTimings(
   stamina: StaminaShaped | undefined,
   staminaRegenUntil: number | null,
   now: number = Date.now(),
 ): PvpTimings {
-  const none: PvpTimings = { nextTokenAt: null, capAt: null, pausesAt: null, stopped: false };
+  const none: PvpTimings = { nextTokenAt: null, capAt: null, pausesAt: null, stopped: false, burnAt: null };
   if (!stamina) return none;
   const currentAmount = stamina.currentAmount ?? 0;
-  if (currentAmount >= PVP_MAX) return none;
+
+  // Burn reference point: already sitting at cap right now, or the future moment this projection
+  // says they'd reach it (`capAt`, before it's known - passed in once computed below). No burn
+  // risk at all (null) when neither holds - under cap with no projected cap time either.
+  function withBurn<T extends { capAt: number | null }>(partial: T): T & { burnAt: number | null } {
+    const capReferencePoint = currentAmount >= PVP_MAX ? now : partial.capAt;
+    return { ...partial, burnAt: capReferencePoint !== null ? nextCheckpointAtOrAfter(PVP_BURN_CHECKPOINT_UTC_MINUTES, capReferencePoint) : null };
+  }
+
+  if (currentAmount >= PVP_MAX) return withBurn({ nextTokenAt: null, capAt: null, pausesAt: null, stopped: false });
 
   if (staminaRegenUntil !== null && now >= staminaRegenUntil) {
-    return { nextTokenAt: null, capAt: null, pausesAt: null, stopped: true };
+    return withBurn({ nextTokenAt: null, capAt: null, pausesAt: null, stopped: true });
   }
 
   const missing = PVP_MAX - currentAmount;
@@ -157,15 +196,15 @@ export function computePvpTimings(
   const capAt = stamina.lastUpdatedThreshold + PVP_REGEN_MS * missing;
 
   if (staminaRegenUntil === null || capAt <= staminaRegenUntil) {
-    return { nextTokenAt, capAt, pausesAt: null, stopped: false }; // caps before the stop - deadline is irrelevant
+    return withBurn({ nextTokenAt, capAt, pausesAt: null, stopped: false }); // caps before the stop - deadline is irrelevant
   }
 
   // Won't reach the cap before regen pauses - "cap" would show a time that never actually
   // happens, so show the pause boundary instead.
-  return {
+  return withBurn({
     nextTokenAt: nextTokenAt <= staminaRegenUntil ? nextTokenAt : null,
     capAt: null,
     pausesAt: staminaRegenUntil,
     stopped: false,
-  };
+  });
 }

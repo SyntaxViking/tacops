@@ -194,6 +194,7 @@ export interface PlayerResources {
   pvpCapAt: number | null;
   pvpPausesAt: number | null;
   pvpStopped: boolean;
+  pvpBurnAt: number | null;
   guildBoss: number; // "raid tokens" - has special burn-at-cap logic, see guildBossBurnAt
   guildBossNextTokenAt: number | null;
   guildBossCapAt: number | null;
@@ -214,4 +215,10 @@ export interface PlayerResources {
   // False when no seasonal event is currently live - ResourceTokens omits the tile entirely in
   // this case (unlike heroQuestActive, which grays the tile out instead).
   survivalActive: boolean;
+  legendaryEvent: number;
+  legendaryEventNextTokenAt: number | null;
+  legendaryEventCapAt: number | null;
+  // False when no Legendary Event is currently live - ResourceTokens omits the tile entirely in
+  // this case, same as survivalActive.
+  legendaryEventActive: boolean;
 }

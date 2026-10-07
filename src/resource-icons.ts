@@ -33,3 +33,7 @@ export function heroQuestIconUrl(): string {
 export function survivalIconUrl(): string {
   return new URL("./assets/resources/ui_icon_resource_token_battle_seasonal_event.png", import.meta.url).href;
 }
+
+export function legendaryEventIconUrl(): string {
+  return new URL("./assets/resources/ui_icon_resource_token_legendaryEvent.png", import.meta.url).href;
+}
