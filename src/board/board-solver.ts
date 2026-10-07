@@ -611,3 +611,32 @@ export function solveBoardAssignment(
   }
   return { assignment, status: "ok" };
 }
+
+export interface DispatchedCharacterClassification {
+  requiredIds: Set<string>;
+  optionalIds: Set<string>;
+}
+
+// Classifies an ALREADY-DISPATCHED entry's own characters as required/optional against that
+// entry's bonus objectives - same "smallest subset that still satisfies every objective group"
+// logic as findMinimalRequiredSubset above, but over the fixed set of characters actually sent,
+// not a hypothetical assignment choice (a dispatched board can't be reassigned, so there's no
+// BoardSolution/requiredCharacterIds for it from the solver - this is a separate classification
+// of what was already chosen, for DispatchedUnitsRow.tsx's own halo display). Non-character
+// dispatched units (MoWs) are always "optional" - they can't satisfy a character-trait-based
+// bonus objective. requiredIds comes back empty (everyone optional) when the entry has no bonus
+// objectives at all, same as the solver's own bonusCompleted:false fallback.
+export function classifyDispatchedCharacters(entry: ExpeditionBoardEntry, heroes: RawUnit[]): DispatchedCharacterClassification {
+  const dispatchedIds = (entry.units ?? []).filter(isCharacterId);
+  const heroById = new Map(heroes.map((h) => [h.id, h]));
+  const profileById = new Map(dispatchedIds.map((id) => [id, getCharacterProfile(id, heroById.get(id)?.extraDamageProfiles)]));
+
+  const groupRequirements: GroupRequirement[] = groupObjectives(entry.bonusObjectives).map((group) => ({
+    key: group.key,
+    count: group.count,
+    eligibleAssignedIds: dispatchedIds.filter((id) => characterSatisfiesObjective(profileById.get(id)!, group.objective)),
+  }));
+
+  const requiredIds = findMinimalRequiredSubset(dispatchedIds, groupRequirements);
+  return { requiredIds, optionalIds: new Set(dispatchedIds.filter((id) => !requiredIds.has(id))) };
+}

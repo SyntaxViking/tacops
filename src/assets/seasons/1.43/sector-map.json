@@ -1,0 +1,1062 @@
+{
+ "planets": [
+  {
+   "planetId": "notplayable_001",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3065,
+   "positionY": 359
+  },
+  {
+   "planetId": "notplayable_002",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3869,
+   "positionY": -552
+  },
+  {
+   "planetId": "notplayable_003",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3912,
+   "positionY": -395
+  },
+  {
+   "planetId": "notplayable_004",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3780,
+   "positionY": -334
+  },
+  {
+   "planetId": "notplayable_006",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -2762,
+   "positionY": -274
+  },
+  {
+   "planetId": "notplayable_008",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3910,
+   "positionY": 424
+  },
+  {
+   "planetId": "notplayable_009",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3796,
+   "positionY": 365
+  },
+  {
+   "planetId": "notplayable_010",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3428,
+   "positionY": -380
+  },
+  {
+   "planetId": "notplayable_011",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1595,
+   "positionY": 436
+  },
+  {
+   "planetId": "notplayable_012",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1457,
+   "positionY": 549
+  },
+  {
+   "planetId": "notplayable_013",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1478,
+   "positionY": 453
+  },
+  {
+   "planetId": "notplayable_014",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1550,
+   "positionY": -427
+  },
+  {
+   "planetId": "notplayable_015",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 2378,
+   "positionY": -455
+  },
+  {
+   "planetId": "notplayable_016",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -1176,
+   "positionY": 533
+  },
+  {
+   "planetId": "notplayable_017",
+   "zone": 2,
+   "type": "Agri",
+   "positionX": -1236,
+   "positionY": 328
+  },
+  {
+   "planetId": "notplayable_018",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -1041,
+   "positionY": 457
+  },
+  {
+   "planetId": "notplayable_019",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1758,
+   "positionY": -40
+  },
+  {
+   "planetId": "notplayable_020",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -1076,
+   "positionY": -179
+  },
+  {
+   "planetId": "notplayable_021",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -885,
+   "positionY": -161
+  },
+  {
+   "planetId": "notplayable_022",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -487,
+   "positionY": -543
+  },
+  {
+   "planetId": "notplayable_023",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -265,
+   "positionY": -507
+  },
+  {
+   "planetId": "notplayable_024",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -341,
+   "positionY": -571
+  },
+  {
+   "planetId": "notplayable_025",
+   "zone": 2,
+   "type": "NotPlayable",
+   "positionX": -734,
+   "positionY": 76
+  },
+  {
+   "planetId": "notplayable_026",
+   "zone": 5,
+   "type": "Fortress",
+   "positionX": 3241,
+   "positionY": 109
+  },
+  {
+   "planetId": "notplayable_027",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3496,
+   "positionY": 141
+  },
+  {
+   "planetId": "notplayable_028",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3427,
+   "positionY": -13
+  },
+  {
+   "planetId": "notplayable_029",
+   "zone": 4,
+   "type": "Agri",
+   "positionX": 1629,
+   "positionY": 475
+  },
+  {
+   "planetId": "notplayable_030",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1667,
+   "positionY": 252
+  },
+  {
+   "planetId": "notplayable_031",
+   "zone": 4,
+   "type": "Mining",
+   "positionX": 1473,
+   "positionY": 110
+  },
+  {
+   "planetId": "notplayable_032",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3723,
+   "positionY": -416
+  },
+  {
+   "planetId": "notplayable_033",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 867,
+   "positionY": 575
+  },
+  {
+   "planetId": "notplayable_034",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 1002,
+   "positionY": 294
+  },
+  {
+   "planetId": "notplayable_035",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 1080,
+   "positionY": 79
+  },
+  {
+   "planetId": "notplayable_036",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 757,
+   "positionY": -287
+  },
+  {
+   "planetId": "notplayable_040",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3397,
+   "positionY": 260
+  },
+  {
+   "planetId": "notplayable_041",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3628,
+   "positionY": 278
+  },
+  {
+   "planetId": "notplayable_042",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1912,
+   "positionY": 120
+  },
+  {
+   "planetId": "notplayable_043",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1998,
+   "positionY": 246
+  },
+  {
+   "planetId": "notplayable_044",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1986,
+   "positionY": 68
+  },
+  {
+   "planetId": "notplayable_045",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2538,
+   "positionY": -267
+  },
+  {
+   "planetId": "notplayable_046",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2553,
+   "positionY": -431
+  },
+  {
+   "planetId": "notplayable_047",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1540,
+   "positionY": -138
+  },
+  {
+   "planetId": "notplayable_048",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -1456,
+   "positionY": -26
+  },
+  {
+   "planetId": "notplayable_049",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 2366,
+   "positionY": 291
+  },
+  {
+   "planetId": "notplayable_050",
+   "zone": 1,
+   "type": "NotPlayable",
+   "positionX": -2196,
+   "positionY": -179
+  },
+  {
+   "planetId": "notplayable_051",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 1387,
+   "positionY": -315
+  },
+  {
+   "planetId": "notplayable_052",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 2717,
+   "positionY": 99
+  },
+  {
+   "planetId": "notplayable_053",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 2948,
+   "positionY": 193
+  },
+  {
+   "planetId": "notplayable_054",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 2873,
+   "positionY": 77
+  },
+  {
+   "planetId": "notplayable_055",
+   "zone": 4,
+   "type": "NotPlayable",
+   "positionX": 2143,
+   "positionY": -106
+  },
+  {
+   "planetId": "notplayable_056",
+   "zone": 4,
+   "type": "Mining",
+   "positionX": 2256,
+   "positionY": -79
+  },
+  {
+   "planetId": "notplayable_057",
+   "zone": 5,
+   "type": "NotPlayable",
+   "positionX": 3399,
+   "positionY": -253
+  },
+  {
+   "planetId": "notplayable_058",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 1274,
+   "positionY": -213
+  },
+  {
+   "planetId": "notplayable_059",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 236,
+   "positionY": 200
+  },
+  {
+   "planetId": "notplayable_060",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 379,
+   "positionY": 406
+  },
+  {
+   "planetId": "notplayable_061",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 241,
+   "positionY": 403
+  },
+  {
+   "planetId": "notplayable_062",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 879,
+   "positionY": 160
+  },
+  {
+   "planetId": "notplayable_063",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 797,
+   "positionY": 36
+  },
+  {
+   "planetId": "notplayable_064",
+   "zone": 0,
+   "type": "NotPlayable",
+   "positionX": -3139,
+   "positionY": 70
+  },
+  {
+   "planetId": "notplayable_065",
+   "zone": 3,
+   "type": "NotPlayable",
+   "positionX": 656,
+   "positionY": 512
+  },
+  {
+   "planetId": "planet_002",
+   "zone": 0,
+   "type": "Hive",
+   "positionX": -3762,
+   "positionY": 489
+  },
+  {
+   "planetId": "planet_003",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -2830,
+   "positionY": 247
+  },
+  {
+   "planetId": "planet_004",
+   "zone": 0,
+   "type": "Fortress",
+   "positionX": -2838,
+   "positionY": -270
+  },
+  {
+   "planetId": "planet_005",
+   "zone": 0,
+   "type": "Dead",
+   "positionX": -2972,
+   "positionY": -330
+  },
+  {
+   "planetId": "planet_006",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3920,
+   "positionY": -481
+  },
+  {
+   "planetId": "planet_007",
+   "zone": 0,
+   "type": "Hive",
+   "positionX": -2950,
+   "positionY": 477
+  },
+  {
+   "planetId": "planet_008",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3360,
+   "positionY": -331
+  },
+  {
+   "planetId": "planet_009",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -2737,
+   "positionY": -78
+  },
+  {
+   "planetId": "planet_010",
+   "zone": 0,
+   "type": "Mining",
+   "positionX": -3640,
+   "positionY": -549
+  },
+  {
+   "planetId": "planet_011",
+   "zone": 0,
+   "type": "Agri",
+   "positionX": -3586,
+   "positionY": -188
+  },
+  {
+   "planetId": "planet_012",
+   "zone": 0,
+   "type": "Agri",
+   "positionX": -3474,
+   "positionY": 369
+  },
+  {
+   "planetId": "planet_014",
+   "zone": 0,
+   "type": "Dead",
+   "positionX": -2892,
+   "positionY": -530
+  },
+  {
+   "planetId": "planet_015",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 527,
+   "positionY": 443
+  },
+  {
+   "planetId": "planet_016",
+   "zone": 0,
+   "type": "Fortress",
+   "positionX": -3244,
+   "positionY": 56
+  },
+  {
+   "planetId": "planet_017",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3526,
+   "positionY": 110
+  },
+  {
+   "planetId": "planet_018",
+   "zone": 0,
+   "type": "Mining",
+   "positionX": -3865,
+   "positionY": 204
+  },
+  {
+   "planetId": "planet_019",
+   "zone": 0,
+   "type": "Civilized",
+   "positionX": -3039,
+   "positionY": -10
+  },
+  {
+   "planetId": "planet_020",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -2361,
+   "positionY": 463
+  },
+  {
+   "planetId": "planet_021",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 1483,
+   "positionY": -191
+  },
+  {
+   "planetId": "planet_022",
+   "zone": 1,
+   "type": "Hive",
+   "positionX": -1520,
+   "positionY": 362
+  },
+  {
+   "planetId": "planet_025",
+   "zone": 1,
+   "type": "Agri",
+   "positionX": -2112,
+   "positionY": 112
+  },
+  {
+   "planetId": "planet_026",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -1914,
+   "positionY": 252
+  },
+  {
+   "planetId": "planet_027",
+   "zone": 1,
+   "type": "Agri",
+   "positionX": -2309,
+   "positionY": -353
+  },
+  {
+   "planetId": "planet_028",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -2016,
+   "positionY": -340
+  },
+  {
+   "planetId": "planet_029",
+   "zone": 1,
+   "type": "Mining",
+   "positionX": -1957,
+   "positionY": -123
+  },
+  {
+   "planetId": "planet_030",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -1792,
+   "positionY": -350
+  },
+  {
+   "planetId": "planet_031",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -1670,
+   "positionY": -10
+  },
+  {
+   "planetId": "planet_032",
+   "zone": 1,
+   "type": "Fortress",
+   "positionX": -1686,
+   "positionY": 496
+  },
+  {
+   "planetId": "planet_033",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 2550,
+   "positionY": -483
+  },
+  {
+   "planetId": "planet_034",
+   "zone": 1,
+   "type": "Mining",
+   "positionX": -2489,
+   "positionY": -511
+  },
+  {
+   "planetId": "planet_035",
+   "zone": 1,
+   "type": "Agri",
+   "positionX": -2507,
+   "positionY": 215
+  },
+  {
+   "planetId": "planet_036",
+   "zone": 1,
+   "type": "Mining",
+   "positionX": -2317,
+   "positionY": 289
+  },
+  {
+   "planetId": "planet_037",
+   "zone": 1,
+   "type": "Fortress",
+   "positionX": -1473,
+   "positionY": -285
+  },
+  {
+   "planetId": "planet_041",
+   "zone": 2,
+   "type": "Mining",
+   "positionX": -1127,
+   "positionY": -448
+  },
+  {
+   "planetId": "planet_042",
+   "zone": 4,
+   "type": "Feral",
+   "positionX": 2208,
+   "positionY": 522
+  },
+  {
+   "planetId": "planet_043",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -1139,
+   "positionY": -85
+  },
+  {
+   "planetId": "planet_044",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 1970,
+   "positionY": 200
+  },
+  {
+   "planetId": "planet_045",
+   "zone": 1,
+   "type": "Civilized",
+   "positionX": -2476,
+   "positionY": -32
+  },
+  {
+   "planetId": "planet_046",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 1888,
+   "positionY": 468
+  },
+  {
+   "planetId": "planet_047",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -514,
+   "positionY": 66
+  },
+  {
+   "planetId": "planet_048",
+   "zone": 4,
+   "type": "Fortress",
+   "positionX": 1719,
+   "positionY": 233
+  },
+  {
+   "planetId": "planet_049",
+   "zone": 2,
+   "type": "Agri",
+   "positionX": -924,
+   "positionY": -389
+  },
+  {
+   "planetId": "planet_050",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 1855,
+   "positionY": -112
+  },
+  {
+   "planetId": "planet_051",
+   "zone": 2,
+   "type": "Mining",
+   "positionX": -1028,
+   "positionY": 332
+  },
+  {
+   "planetId": "planet_052",
+   "zone": 1,
+   "type": "Dead",
+   "positionX": -1526,
+   "positionY": 52
+  },
+  {
+   "planetId": "planet_054",
+   "zone": 4,
+   "type": "Fortress",
+   "positionX": 1702,
+   "positionY": -377
+  },
+  {
+   "planetId": "planet_055",
+   "zone": 4,
+   "type": "Feral",
+   "positionX": 2434,
+   "positionY": 62
+  },
+  {
+   "planetId": "planet_058",
+   "zone": 4,
+   "type": "Dead",
+   "positionX": 2541,
+   "positionY": 291
+  },
+  {
+   "planetId": "planet_060",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -978,
+   "positionY": -20
+  },
+  {
+   "planetId": "planet_063",
+   "zone": 4,
+   "type": "Civilized",
+   "positionX": 2090,
+   "positionY": -364
+  },
+  {
+   "planetId": "planet_064",
+   "zone": 2,
+   "type": "Fortress",
+   "positionX": -269,
+   "positionY": -70
+  },
+  {
+   "planetId": "planet_066",
+   "zone": 2,
+   "type": "Hive",
+   "positionX": -611,
+   "positionY": 273
+  },
+  {
+   "planetId": "planet_067",
+   "zone": 2,
+   "type": "Feral",
+   "positionX": -739,
+   "positionY": -9
+  },
+  {
+   "planetId": "planet_068",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -284,
+   "positionY": 273
+  },
+  {
+   "planetId": "planet_069",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 2835,
+   "positionY": -510
+  },
+  {
+   "planetId": "planet_070",
+   "zone": 5,
+   "type": "Mining",
+   "positionX": 2837,
+   "positionY": -123
+  },
+  {
+   "planetId": "planet_071",
+   "zone": 5,
+   "type": "Hive",
+   "positionX": 3032,
+   "positionY": -181
+  },
+  {
+   "planetId": "planet_073",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -88,
+   "positionY": 333
+  },
+  {
+   "planetId": "planet_074",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -530,
+   "positionY": -413
+  },
+  {
+   "planetId": "planet_075",
+   "zone": 4,
+   "type": "Agri",
+   "positionX": 2266,
+   "positionY": -258
+  },
+  {
+   "planetId": "planet_076",
+   "zone": 5,
+   "type": "Hive",
+   "positionX": 3284,
+   "positionY": 477
+  },
+  {
+   "planetId": "planet_077",
+   "zone": 2,
+   "type": "Feral",
+   "positionX": -321,
+   "positionY": 507
+  },
+  {
+   "planetId": "planet_078",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -256,
+   "positionY": -430
+  },
+  {
+   "planetId": "planet_079",
+   "zone": 2,
+   "type": "Civilized",
+   "positionX": -786,
+   "positionY": 451
+  },
+  {
+   "planetId": "planet_080",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3550,
+   "positionY": 231
+  },
+  {
+   "planetId": "planet_081",
+   "zone": 5,
+   "type": "Agri",
+   "positionX": 3926,
+   "positionY": -306
+  },
+  {
+   "planetId": "planet_082",
+   "zone": 5,
+   "type": "Dead",
+   "positionX": 3582,
+   "positionY": 25
+  },
+  {
+   "planetId": "planet_084",
+   "zone": 5,
+   "type": "Mining",
+   "positionX": 3637,
+   "positionY": -509
+  },
+  {
+   "planetId": "planet_085",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3789,
+   "positionY": 427
+  },
+  {
+   "planetId": "planet_086",
+   "zone": 3,
+   "type": "Fortress",
+   "positionX": 175,
+   "positionY": -237
+  },
+  {
+   "planetId": "planet_087",
+   "zone": 5,
+   "type": "Fortress",
+   "positionX": 3483,
+   "positionY": -200
+  },
+  {
+   "planetId": "planet_090",
+   "zone": 5,
+   "type": "Agri",
+   "positionX": 3869,
+   "positionY": 156
+  },
+  {
+   "planetId": "planet_091",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 242,
+   "positionY": -27
+  },
+  {
+   "planetId": "planet_092",
+   "zone": 5,
+   "type": "Agri",
+   "positionX": 3302,
+   "positionY": -317
+  },
+  {
+   "planetId": "planet_093",
+   "zone": 4,
+   "type": "Hive",
+   "positionX": 1454,
+   "positionY": 369
+  },
+  {
+   "planetId": "planet_094",
+   "zone": 5,
+   "type": "Fortress",
+   "positionX": 2853,
+   "positionY": 320
+  },
+  {
+   "planetId": "planet_095",
+   "zone": 5,
+   "type": "Mining",
+   "positionX": 3100,
+   "positionY": -496
+  },
+  {
+   "planetId": "planet_096",
+   "zone": 3,
+   "type": "Mining",
+   "positionX": 279,
+   "positionY": 307
+  },
+  {
+   "planetId": "planet_098",
+   "zone": 5,
+   "type": "Civilized",
+   "positionX": 3743,
+   "positionY": -205
+  },
+  {
+   "planetId": "planet_103",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 1021,
+   "positionY": 428
+  },
+  {
+   "planetId": "planet_104",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 654,
+   "positionY": -309
+  },
+  {
+   "planetId": "planet_105",
+   "zone": 3,
+   "type": "Mining",
+   "positionX": 1089,
+   "positionY": 222
+  },
+  {
+   "planetId": "planet_106",
+   "zone": 3,
+   "type": "Hive",
+   "positionX": 1109,
+   "positionY": 550
+  },
+  {
+   "planetId": "planet_108",
+   "zone": 3,
+   "type": "Fortress",
+   "positionX": 796,
+   "positionY": -403
+  },
+  {
+   "planetId": "planet_110",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 1251,
+   "positionY": 122
+  },
+  {
+   "planetId": "planet_114",
+   "zone": 3,
+   "type": "Agri",
+   "positionX": 1095,
+   "positionY": -428
+  },
+  {
+   "planetId": "planet_115",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 799,
+   "positionY": 234
+  },
+  {
+   "planetId": "planet_116",
+   "zone": 3,
+   "type": "Feral",
+   "positionX": 141,
+   "positionY": 272
+  },
+  {
+   "planetId": "planet_117",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 635,
+   "positionY": 33
+  },
+  {
+   "planetId": "planet_119",
+   "zone": 3,
+   "type": "Agri",
+   "positionX": 562,
+   "positionY": -496
+  },
+  {
+   "planetId": "planet_120",
+   "zone": 3,
+   "type": "Civilized",
+   "positionX": 1152,
+   "positionY": -263
+  }
+ ],
+ "connections": []
+}

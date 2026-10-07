@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { invokeWithTimeout } from "./invoke-with-timeout";
 import { fetchWithTimeout } from "./fetch-with-timeout";
-import planetData from "../assets/planet-data.json";
+import { getPlanetData } from "../assets/seasons";
 import type {
   Credentials,
   CrusadeData,
@@ -13,8 +13,15 @@ import type {
   SideLeaderboardResult,
 } from "./types";
 
-const planetNameById = new Map((planetData as { planetId: string; name: string }[]).map((p) => [p.planetId, p.name]));
-const planetZoneById = new Map((planetData as { planetId: string; zone: number }[]).map((p) => [p.planetId, p.zone]));
+// Built fresh on every call, not hoisted to a module-level constant - getPlanetData() can resolve
+// to a different season at any moment (see src/season.ts), and a page can stay loaded (this
+// module stays imported) across that boundary.
+function planetNameById(): Map<string, string> {
+  return new Map((getPlanetData() as { planetId: string; name: string }[]).map((p) => [p.planetId, p.name]));
+}
+function planetZoneById(): Map<string, number> {
+  return new Map((getPlanetData() as { planetId: string; zone: number }[]).map((p) => [p.planetId, p.zone]));
+}
 
 // Turns a raw GET_CRUSADE eventResponseData object into a CrusadeData - factored out so
 // crusade-cache-seed.ts can reuse it against a cached/replayed response (from
@@ -22,6 +29,8 @@ const planetZoneById = new Map((planetData as { planetId: string; zone: number }
 // does, with no second implementation.
 export function mapCrusadeResponseData(data: any): CrusadeData {
   const { phase, activeZone } = findActivePhase(data?.downtimePhase, data?.crusadePhases ?? [], data?.strugglePhase);
+  const nameById = planetNameById();
+  const zoneById = planetZoneById();
   return {
     crusadeId: data?.crusadeId ?? "",
     seasonNumber: data?.seasonNumber ?? 0,
@@ -34,13 +43,13 @@ export function mapCrusadeResponseData(data: any): CrusadeData {
     phase,
     planets: (data?.planetsData ?? []).map((p: any) => ({
       planetId: p.planetId,
-      name: planetNameById.get(p.planetId) ?? p.planetId,
+      name: nameById.get(p.planetId) ?? p.planetId,
       sideOwner: p.sideOwner,
       ownedByFaction: p.ownedByFaction,
       pointsFor: p.pointsFor,
       pointsAgainst: p.pointsAgainst,
       struggleData: p.struggleData,
-      zone: planetZoneById.get(p.planetId) ?? null,
+      zone: zoneById.get(p.planetId) ?? null,
     })),
   };
 }
@@ -95,7 +104,7 @@ export function findActivePhase(
 // "has points" is not a usable signal for "active this week" (see conversation notes).
 export function activePlanetIds(activeZone: number | null): string[] {
   if (activeZone === null) return [];
-  return (planetData as { planetId: string; zone: number }[]).filter((p) => p.zone === activeZone).map((p) => p.planetId);
+  return (getPlanetData() as { planetId: string; zone: number }[]).filter((p) => p.zone === activeZone).map((p) => p.planetId);
 }
 
 // A player picks a side (chosenSide) but is independently pre-assigned one faction on EACH side

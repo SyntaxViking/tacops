@@ -7,6 +7,7 @@ import {
   guildBossBombIconUrl,
   guildBossIconUrl,
   heroQuestIconUrl,
+  legendaryEventIconUrl,
   mowAmmoIconUrl,
   pvpIconUrl,
   staminaIconUrl,
@@ -68,18 +69,26 @@ export function ResourceTokens({ resources, adViewsRemaining }: ResourceTokensPr
       : null;
   // PVP's "next token" comes from the server's own staminaRegenUntil deadline, not computed
   // regen math - see computePvpTimings in resource-regen.ts for the three possible states.
-  const pvpScheduleLines: SubtextLine[] = resources.pvpStopped
-    ? [{ text: `${resources.pvp}/${PVP_MAX} (no more regen)`, className: DEFAULT_SUBTEXT_CLASS }]
-    : [
-        resources.pvpNextTokenAt !== null
-          ? { text: `Next: ${formatDateTime(resources.pvpNextTokenAt)}`, className: DEFAULT_SUBTEXT_CLASS }
-          : null,
-        resources.pvpCapAt !== null
-          ? { text: `Cap: ${formatDateTime(resources.pvpCapAt)}`, className: urgencyColorClass(resources.pvpCapAt) }
-          : resources.pvpPausesAt !== null
-            ? { text: `Pauses: ${formatDateTime(resources.pvpPausesAt)}`, className: DEFAULT_SUBTEXT_CLASS }
+  // Burn (04:00/12:00/20:00 CEST, same "lost if still sitting at cap then" framing as guild boss's
+  // own burn line) is independent of those three states, so it's always appended after whichever
+  // one applies, same pattern as guildBossSubtext below.
+  const pvpScheduleLines: SubtextLine[] = [
+    ...(resources.pvpStopped
+      ? [{ text: `${resources.pvp}/${PVP_MAX} (no more regen)`, className: DEFAULT_SUBTEXT_CLASS }]
+      : [
+          resources.pvpNextTokenAt !== null
+            ? { text: `Next: ${formatDateTime(resources.pvpNextTokenAt)}`, className: DEFAULT_SUBTEXT_CLASS }
             : null,
-      ].filter((line): line is SubtextLine => line !== null);
+          resources.pvpCapAt !== null
+            ? { text: `Cap: ${formatDateTime(resources.pvpCapAt)}`, className: urgencyColorClass(resources.pvpCapAt) }
+            : resources.pvpPausesAt !== null
+              ? { text: `Pauses: ${formatDateTime(resources.pvpPausesAt)}`, className: DEFAULT_SUBTEXT_CLASS }
+              : null,
+        ].filter((line): line is SubtextLine => line !== null)),
+    ...(resources.pvpBurnAt !== null
+      ? [{ text: `Burn: ${formatDateTime(resources.pvpBurnAt)}`, className: urgencyColorClass(resources.pvpBurnAt) }]
+      : []),
+  ];
   const pvpPositionSubtext: SubtextLine[] = pvpPositionLine ? [{ text: pvpPositionLine, className: DEFAULT_SUBTEXT_CLASS }] : [];
   const pvpSubtext = [...pvpPositionSubtext, ...pvpScheduleLines];
 
@@ -162,6 +171,19 @@ export function ResourceTokens({ resources, adViewsRemaining }: ResourceTokensPr
             icon: survivalIconUrl(),
             value: resources.survival,
             subtext: regenSubtext(resources.survivalNextTokenAt, resources.survivalCapAt),
+          },
+        ]
+      : []),
+    // Same omit-when-absent treatment as Survival - no Legendary Event running means nothing
+    // useful to show.
+    ...(resources.legendaryEventActive
+      ? [
+          {
+            key: "legendaryEvent",
+            label: "Legendary Event",
+            icon: legendaryEventIconUrl(),
+            value: resources.legendaryEvent,
+            subtext: regenSubtext(resources.legendaryEventNextTokenAt, resources.legendaryEventCapAt),
           },
         ]
       : []),

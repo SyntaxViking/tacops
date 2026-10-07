@@ -1,0 +1,717 @@
+[
+  {
+    "planetId": "notplayable_017",
+    "name": "Mal-Khoris Sigma",
+    "zone": 2
+  },
+  {
+    "planetId": "notplayable_026",
+    "name": "Khraynus Omega",
+    "zone": 5
+  },
+  {
+    "planetId": "notplayable_029",
+    "name": "Gul-Horta",
+    "zone": 4
+  },
+  {
+    "planetId": "notplayable_031",
+    "name": "Gul",
+    "zone": 4
+  },
+  {
+    "planetId": "notplayable_056",
+    "name": "Temnotakh Hold",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_002",
+    "name": "Srinnan Prime",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_003",
+    "name": "Bornaux III",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_004",
+    "name": "Carnage Bastion",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_005",
+    "name": "Carnage VII",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_006",
+    "name": "Reydhor IX",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_007",
+    "name": "Bornaux I",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_008",
+    "name": "Narthacine Major",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_009",
+    "name": "Quarih",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_010",
+    "name": "Reydhor III",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_011",
+    "name": "Narthacine Minor",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_012",
+    "name": "Luxamara Beta",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_014",
+    "name": "Carnage III",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_015",
+    "name": "Zythar-Null",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_016",
+    "name": "Steadfast",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_017",
+    "name": "Luxamara Alpha",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_018",
+    "name": "Srinnan Inferior",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_019",
+    "name": "Demise",
+    "zone": 0
+  },
+  {
+    "planetId": "planet_020",
+    "name": "Scaldhost",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_021",
+    "name": "Knellspire",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_022",
+    "name": "Karthanem Alpha",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_025",
+    "name": "Lovi Minor",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_026",
+    "name": "Maiken Medius",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_027",
+    "name": "Ebonwold",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_028",
+    "name": "Sunde",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_029",
+    "name": "Gruundh",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_030",
+    "name": "Skafthea",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_031",
+    "name": "Shadowdross",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_032",
+    "name": "Karthanem Ultima",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_033",
+    "name": "Garstig",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_034",
+    "name": "Malva Sin",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_035",
+    "name": "Scaldvein Beta",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_036",
+    "name": "Scaldvein Alpha",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_037",
+    "name": "Ratacordium",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_041",
+    "name": "17-Siphon-Omega",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_042",
+    "name": "Gathram Minor",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_043",
+    "name": "Bakhera",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_044",
+    "name": "Gathram Major",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_045",
+    "name": "Kui-Luo",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_046",
+    "name": "Gathram Prime",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_047",
+    "name": "Khepryon Prime",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_048",
+    "name": "Zeidos IV",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_049",
+    "name": "14-Siphon-Omega",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_050",
+    "name": "Zeidos II",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_051",
+    "name": "Mal-Khoris Delta",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_052",
+    "name": "Ashenwoe",
+    "zone": 1
+  },
+  {
+    "planetId": "planet_054",
+    "name": "Rickard's Wall",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_055",
+    "name": "Jade's Hollow",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_058",
+    "name": "Resentment",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_060",
+    "name": "Azurra",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_063",
+    "name": "Temnotakh Prime",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_064",
+    "name": "Furyclast Bastion",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_066",
+    "name": "27-Decima Kroll Epsilon",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_067",
+    "name": "Khepryon",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_068",
+    "name": "Tantrum Quintus",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_069",
+    "name": "Castigate Centrum",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_070",
+    "name": "Canticlar I",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_071",
+    "name": "Canticlar IV",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_073",
+    "name": "Tantrum Quartus",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_074",
+    "name": "Rarndoff Omega",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_075",
+    "name": "Temnotakh Minor",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_076",
+    "name": "Colossarth Vermillion",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_077",
+    "name": "Tantrum Septimus",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_078",
+    "name": "Rarndoff Alpha",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_079",
+    "name": "27-Decima Kroll Zeta",
+    "zone": 2
+  },
+  {
+    "planetId": "planet_080",
+    "name": "Khraynus Alpha",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_081",
+    "name": "Sustenance",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_082",
+    "name": "Khraynus Gamma",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_084",
+    "name": "Effectuance",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_085",
+    "name": "Àguila Tempesta",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_086",
+    "name": "Vorrhast Bastion",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_087",
+    "name": "Solgar",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_090",
+    "name": "Halicón",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_091",
+    "name": "Vorrhast Prime",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_092",
+    "name": "Rivhgar",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_093",
+    "name": "Gul-Chasma",
+    "zone": 4
+  },
+  {
+    "planetId": "planet_094",
+    "name": "Vengeant Ire",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_095",
+    "name": "Wound Pit",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_096",
+    "name": "Nebelkrath",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_098",
+    "name": "Sanctus Lodge",
+    "zone": 5
+  },
+  {
+    "planetId": "planet_103",
+    "name": "Hargsy's Hold",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_104",
+    "name": "Thornecrest",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_105",
+    "name": "Eisenbrandr",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_106",
+    "name": "Alekvall",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_108",
+    "name": "Martyr's Thole",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_110",
+    "name": "Skarnvadd",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_114",
+    "name": "Kaqor V",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_115",
+    "name": "Drevantic I",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_116",
+    "name": "Immerkraht",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_117",
+    "name": "Drevantic III",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_119",
+    "name": "Thornepath",
+    "zone": 3
+  },
+  {
+    "planetId": "planet_120",
+    "name": "Kaqor Xi X",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_01",
+    "name": "Skarnvadd",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_02",
+    "name": "Nebelkrath",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_03",
+    "name": "Bornaux",
+    "zone": 0
+  },
+  {
+    "planetId": "sun_04",
+    "name": "Reydhor",
+    "zone": 0
+  },
+  {
+    "planetId": "sun_05",
+    "name": "Carnage's Wake",
+    "zone": 0
+  },
+  {
+    "planetId": "sun_06",
+    "name": "Srinnan",
+    "zone": 0
+  },
+  {
+    "planetId": "sun_07",
+    "name": "Narthacine",
+    "zone": 0
+  },
+  {
+    "planetId": "sun_08",
+    "name": "Quarih",
+    "zone": 0
+  },
+  {
+    "planetId": "sun_09",
+    "name": "Luxamara",
+    "zone": 0
+  },
+  {
+    "planetId": "sun_10",
+    "name": "Ribeem Cluster",
+    "zone": 1
+  },
+  {
+    "planetId": "sun_11",
+    "name": "Karthanem",
+    "zone": 1
+  },
+  {
+    "planetId": "sun_12",
+    "name": "Scaldvein",
+    "zone": 1
+  },
+  {
+    "planetId": "sun_13",
+    "name": "Ratacordium",
+    "zone": 1
+  },
+  {
+    "planetId": "sun_14",
+    "name": "Garstig",
+    "zone": 4
+  },
+  {
+    "planetId": "sun_15",
+    "name": "Gathram",
+    "zone": 4
+  },
+  {
+    "planetId": "sun_16",
+    "name": "Mal-Khoris",
+    "zone": 2
+  },
+  {
+    "planetId": "sun_17",
+    "name": "Siphon-Omega",
+    "zone": 2
+  },
+  {
+    "planetId": "sun_18",
+    "name": "Zeidos",
+    "zone": 4
+  },
+  {
+    "planetId": "sun_19",
+    "name": "Azurra Bakhera",
+    "zone": 2
+  },
+  {
+    "planetId": "sun_20",
+    "name": "27-Decima Kroll",
+    "zone": 2
+  },
+  {
+    "planetId": "sun_21",
+    "name": "Rarndoff's Design",
+    "zone": 2
+  },
+  {
+    "planetId": "sun_22",
+    "name": "Khepryon",
+    "zone": 2
+  },
+  {
+    "planetId": "sun_23",
+    "name": "Khraynus",
+    "zone": 5
+  },
+  {
+    "planetId": "sun_24",
+    "name": "Gul-Chasma",
+    "zone": 4
+  },
+  {
+    "planetId": "sun_25",
+    "name": "Sanctus Vane",
+    "zone": 5
+  },
+  {
+    "planetId": "sun_26",
+    "name": "Pilgrim’s Wound",
+    "zone": 5
+  },
+  {
+    "planetId": "sun_27",
+    "name": "Vorrhast",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_28",
+    "name": "Hargelund",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_29",
+    "name": "Desolation-Thorne",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_30",
+    "name": "Magna Kaisa",
+    "zone": 1
+  },
+  {
+    "planetId": "sun_31",
+    "name": "Talwarnum",
+    "zone": 1
+  },
+  {
+    "planetId": "sun_32",
+    "name": "Umbral Woe",
+    "zone": 1
+  },
+  {
+    "planetId": "sun_33",
+    "name": "Quiet Pyre",
+    "zone": 4
+  },
+  {
+    "planetId": "sun_34",
+    "name": "Kui-Luo",
+    "zone": 1
+  },
+  {
+    "planetId": "sun_35",
+    "name": "Rickard's Wall",
+    "zone": 4
+  },
+  {
+    "planetId": "sun_36",
+    "name": "Colossarth",
+    "zone": 5
+  },
+  {
+    "planetId": "sun_37",
+    "name": "Canticlar Omnus",
+    "zone": 5
+  },
+  {
+    "planetId": "sun_38",
+    "name": "Tantrum",
+    "zone": 2
+  },
+  {
+    "planetId": "sun_39",
+    "name": "The Furyclast Cluster",
+    "zone": 2
+  },
+  {
+    "planetId": "sun_40",
+    "name": "Àguila Tempesta",
+    "zone": 5
+  },
+  {
+    "planetId": "sun_41",
+    "name": "Vengeant Ire",
+    "zone": 5
+  },
+  {
+    "planetId": "sun_42",
+    "name": "Temnotakh",
+    "zone": 4
+  },
+  {
+    "planetId": "sun_43",
+    "name": "Frostgar",
+    "zone": 5
+  },
+  {
+    "planetId": "sun_44",
+    "name": "Zythar-Null",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_45",
+    "name": "Kaqor Xi",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_46",
+    "name": "Drevantic I",
+    "zone": 3
+  },
+  {
+    "planetId": "sun_47",
+    "name": "Demise",
+    "zone": 0
+  }
+]

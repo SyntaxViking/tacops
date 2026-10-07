@@ -11,7 +11,7 @@
 // (envelope-unwrapping, CrusadePlanet[] construction, building SideLeaderboardResult/
 // FactionLeaderboardResult from raw entries) happens client-side, in src/api/fetch-crusade-data.ts,
 // reused by src/api/crusade-cache-seed.ts - once per page load, not once per planet per minute.
-import planetData from "../src/assets/planet-data.json";
+import { getPlanetData } from "../src/assets/seasons";
 import { FACTION_SIDE } from "../src/factions/faction-side";
 import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, fetchLeaderboardTextWithSession, type Session } from "./loki-client";
 import { rawPlanetToCrusadePlanet, recordHistoryTick } from "./planet-history";
@@ -66,7 +66,7 @@ export function findActivePhase(
 // zone's planets matter. DOWNTIME/unknown: nothing to poll. Operates on the local static
 // planet-data.json asset, not on a Loki response, so it's unaffected by the no-reshaping decision.
 export function relevantPlanetIds(phase: string | null, activeZone: number | null): string[] {
-  const planets = planetData as { planetId: string; zone: number }[];
+  const planets = getPlanetData() as { planetId: string; zone: number }[];
   if (phase === "STRUGGLE") return planets.map((p) => p.planetId);
   if (phase === "CRUSADE" && activeZone !== null) return planets.filter((p) => p.zone === activeZone).map((p) => p.planetId);
   return [];
