@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyDispatchedCharacters,
   findMinimalRequiredSubset,
   solveBoardAssignment,
   solveGreedyFallback,
@@ -334,5 +335,52 @@ describe("solveBoardAssignment", () => {
 
     const plainResult = solveBoardAssignment([toxicBoard], [withoutRelic], priority).assignment.get("exp")!;
     expect(plainResult.bonusCompleted).toBe(false);
+  });
+});
+
+describe("classifyDispatchedCharacters", () => {
+  // Real character ids (getCharacterProfile looks them up in the bundled character-data.json, so
+  // these can't be made-up like findMinimalRequiredSubset's own synthetic ids above):
+  // ultraTigurius has the Psyker trait; ultraEliminatorSgt's ranged attack is Bolter-pierce.
+  const dispatchedBoard = board({
+    bonusObjectives: [
+      { objectiveType: "Trait", objectiveTarget: "Psyker" },
+      { objectiveType: "DamageType", objectiveTarget: "Bolter" },
+    ],
+    status: "Dispatched",
+    units: ["ultraTigurius", "ultraEliminatorSgt", "ultraApothecary"],
+  });
+  // ultraApothecary (Hero/Healer traits, melee-only) covers neither objective, so it should always
+  // land in optionalIds.
+  const heroes: RawUnit[] = [
+    { id: "ultraTigurius" },
+    { id: "ultraEliminatorSgt" },
+    { id: "ultraApothecary" },
+  ];
+
+  it("requires only the characters actually needed to satisfy the entry's own bonus objectives", () => {
+    const result = classifyDispatchedCharacters(dispatchedBoard, heroes);
+
+    expect(result.requiredIds).toEqual(new Set(["ultraTigurius", "ultraEliminatorSgt"]));
+    expect(result.optionalIds).toEqual(new Set(["ultraApothecary"]));
+  });
+
+  it("treats a non-character dispatched unit (a Machine of War) as always optional", () => {
+    const withMow = board({ ...dispatchedBoard, units: ["ultraTigurius", "mow_not_a_real_character"] });
+
+    const result = classifyDispatchedCharacters(withMow, heroes);
+
+    expect(result.requiredIds).toEqual(new Set(["ultraTigurius"]));
+    expect(result.optionalIds).toEqual(new Set());
+    // Crucially, no attempt is made to profile-lookup the non-character id (that would throw).
+  });
+
+  it("requires no one when the entry has no bonus objectives at all", () => {
+    const noObjectives = board({ status: "Dispatched", units: ["ultraTigurius", "ultraEliminatorSgt"] });
+
+    const result = classifyDispatchedCharacters(noObjectives, heroes);
+
+    expect(result.requiredIds).toEqual(new Set());
+    expect(result.optionalIds).toEqual(new Set(["ultraTigurius", "ultraEliminatorSgt"]));
   });
 });
