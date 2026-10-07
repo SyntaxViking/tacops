@@ -1,10 +1,10 @@
 interface IconProps {
   src: string;
   title?: string;
-  // A small glow around the icon - used by PortraitList to mark a character as required (red) or
-  // optional (orange) for an expedition's suggested solution, without splitting them into separate
-  // rows (see OperationCard.tsx) - picking units in power order across the whole group matters
-  // more than which bucket each one happens to be in.
+  // A small glow around the icon - used by PortraitList to mark a character as required (ruby) or
+  // optional (olive green) for an expedition's suggested solution, without splitting them into
+  // separate rows (see OperationCard.tsx) - picking units in power order across the whole group
+  // matters more than which bucket each one happens to be in.
   //
   // drop-shadow, not a ring/box-shadow: character portraits are round art on a transparent square
   // image, so a ring/box-shadow (which outlines the element's rectangular box) would draw a square
@@ -15,11 +15,13 @@ interface IconProps {
   halo?: "required" | "optional";
 }
 
+// Ruby (#9B111E) and olive (#808000) - not Tailwind's red-500/orange-500, picked specifically for
+// a richer, less primary-colored pair.
 const HALO_FILTER: Record<"required" | "optional", string> = {
   required:
-    "drop-shadow(0 0 3px rgba(239,68,68,1)) drop-shadow(0 0 6px rgba(239,68,68,1)) drop-shadow(0 0 10px rgba(239,68,68,0.9))",
+    "drop-shadow(0 0 3px rgba(155,17,30,1)) drop-shadow(0 0 6px rgba(155,17,30,1)) drop-shadow(0 0 10px rgba(155,17,30,0.9))",
   optional:
-    "drop-shadow(0 0 3px rgba(249,115,22,1)) drop-shadow(0 0 6px rgba(249,115,22,1)) drop-shadow(0 0 10px rgba(249,115,22,0.9))",
+    "drop-shadow(0 0 3px rgba(128,128,0,1)) drop-shadow(0 0 6px rgba(128,128,0,1)) drop-shadow(0 0 10px rgba(128,128,0,0.9))",
 };
 
 export function Icon({ src, title, halo }: IconProps) {
