@@ -32,6 +32,18 @@ export function OperationCard({
   const dimmed = selectedExpeditionId !== null && selectedExpeditionId !== entry.expeditionId;
   const fulfillment = unavailable || solverReady ? getEntryFulfillment(entry, assignment, heroes) : null;
 
+  // One combined, power-sorted list instead of two separate required/optional rows - a glowing
+  // halo (see Icon.tsx) marks which bucket each character is in without breaking up the pick
+  // order across the whole suggested group.
+  const requiredIds = solution?.run ? solution.requiredCharacterIds : [];
+  const optionalIds = solution?.run ? solution.optionalCharacterIds : [];
+  const powerById = new Map(heroes.map((hero) => [hero.id, hero.power ?? null]));
+  const combinedIds = [...requiredIds, ...optionalIds].sort((a, b) => (powerById.get(b) ?? -Infinity) - (powerById.get(a) ?? -Infinity));
+  const haloById = new Map<string, "required" | "optional">([
+    ...requiredIds.map((id): [string, "required"] => [id, "required"]),
+    ...optionalIds.map((id): [string, "optional"] => [id, "optional"]),
+  ]);
+
   return (
     <OpsCardFrame
       entry={entry}
@@ -61,16 +73,10 @@ export function OperationCard({
           {unavailable ? (
             <DispatchedUnitsRow entry={entry} heroes={heroes} />
           ) : (
-            <>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium opacity-70">Required</span>
-                <PortraitList ids={solution?.run ? solution.requiredCharacterIds : []} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium opacity-70">Optional</span>
-                <PortraitList ids={solution?.run ? solution.optionalCharacterIds : []} />
-              </div>
-            </>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium opacity-70">Suggested characters</span>
+              <PortraitList ids={combinedIds} haloById={haloById} />
+            </div>
           )}
         </div>
         <div className="flex flex-col gap-2">

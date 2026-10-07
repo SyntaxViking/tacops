@@ -162,6 +162,10 @@ function SingleGraph({ axes, lines, timeTicks, times }: { axes: AxisSpec[]; line
       height={VIEWBOX_HEIGHT}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setHoverIndex(null)}
+      // Stops a card-level onClick (see GraphCard/MonitorTab) from firing when the click actually
+      // lands on the graph itself - that's reserved for hover (handleMouseMove above), not a click
+      // action, so a click here should do nothing rather than also triggering the card's.
+      onClick={(e) => e.stopPropagation()}
     >
       {axes.map(({ axis, side, color }) =>
         axis.ticks.map((tick) => {
@@ -211,9 +215,25 @@ function SingleGraph({ axes, lines, timeTicks, times }: { axes: AxisSpec[]; line
   );
 }
 
-function GraphCard({ title, caption, children }: { title: string; caption: string; children: ReactNode }) {
+function GraphCard({
+  title,
+  caption,
+  children,
+  onClick,
+}: {
+  title: string;
+  caption: string;
+  children: ReactNode;
+  // Fired for a click anywhere on the card except the graph itself (SingleGraph's own <svg> stops
+  // propagation - see above) - used by MonitorTab to open the sector map for this planet without
+  // fighting the graph's own hover handling.
+  onClick?: () => void;
+}) {
   return (
-    <div className="w-fit rounded-lg border border-black/10 bg-white/60 p-3 dark:border-white/15 dark:bg-white/5">
+    <div
+      className={`w-fit rounded-lg border border-black/10 bg-white/60 p-3 dark:border-white/15 dark:bg-white/5 ${onClick ? "cursor-pointer" : ""}`}
+      onClick={onClick}
+    >
       <div className="mb-1 flex items-center justify-between gap-2">
         <h3 className="font-medium">{title}</h3>
         <span className="text-xs opacity-70">{caption}</span>
@@ -235,16 +255,19 @@ interface PlanetTrackerGraphProps {
   // room (or need) for three graphs apiece. Also drops the "- Combined" title suffix, since there's
   // nothing left to disambiguate it from.
   onlyCombined?: boolean;
+  // Fired for a click anywhere on the (only, since this is onlyCombined-only) card except the
+  // graph itself - see GraphCard's own comment. Used by MonitorTab to open the sector map.
+  onCardClick?: () => void;
 }
 
-export function PlanetTrackerGraph({ state, planetName, nowMs, onlyCombined = false }: PlanetTrackerGraphProps) {
+export function PlanetTrackerGraph({ state, planetName, nowMs, onlyCombined = false, onCardClick }: PlanetTrackerGraphProps) {
   const data = computeTrackerGraphData(state);
   const elapsedSeconds = Math.max(0, Math.round(((state.frozen ? state.samples[state.samples.length - 1]?.atMs ?? nowMs : nowMs) - state.startedAtMs) / 1000));
   const elapsedLabel = formatElapsedSeconds(elapsedSeconds);
   const caption = state.frozen ? `Captured at ${elapsedLabel}` : `${elapsedLabel} elapsed`;
 
   const combinedGraph = (
-    <GraphCard title={onlyCombined ? planetName : `${planetName} - Combined`} caption={caption}>
+    <GraphCard title={onlyCombined ? planetName : `${planetName} - Combined`} caption={caption} onClick={onlyCombined ? onCardClick : undefined}>
       <SingleGraph
         axes={[
           { axis: data.combined.axis, side: "left", color: IMPERIAL_COLOR },

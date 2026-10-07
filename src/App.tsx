@@ -1004,6 +1004,7 @@ export function App() {
                 planetRefreshState={planetRefreshState}
                 favoritedPlanetIds={favoritedPlanetIds}
                 error={crusadeError}
+                sectorMap={sectorMap}
                 historyByPlanet={planetHistoryByPlanet}
               />
             )}

@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { PlanetTrackerGraph } from "./PlanetTrackerGraph";
+import { PlanetSectorMapModal } from "./PlanetSectorMapModal";
 import { sortDominationPlanets } from "../crusade/crusade-domination-view-model";
+import { adjacentZone, computeAllSectorsMap, computeSectorMap, sectorZones } from "../crusade/crusade-sector-map-view-model";
 import { liveSnapshotSample, trackedStateFromHistory, type TrackedPlanetSample } from "../crusade/planet-tracker-view-model";
-import type { CrusadeData, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
+import type { CrusadeData, CrusadeSectorMap, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
 
 interface MonitorTabProps {
   crusadeData: CrusadeData | null;
   planetRefreshState: Map<string, PlanetRefreshEntry>;
   favoritedPlanetIds: ReadonlySet<string>;
   error: string | null;
+  sectorMap: CrusadeSectorMap;
   // Fetched and kept fresh by App.tsx (not by this component) so it survives switching away from
   // the Monitor tab and back - this tab is only ever mounted while active (see App.tsx's
   // activeTab === "monitor" check), so state owned in here would reset to empty and have to
@@ -27,8 +30,13 @@ const CAPTION_TICK_MS = 5_000;
 // per-planet history (see worker/planet-history.ts), not from any live polling of its own. A
 // planet with no history recorded yet still gets a (momentarily empty) card rather than being
 // skipped, so the set of cards shown doesn't shift around as data arrives.
-export function MonitorTab({ crusadeData, planetRefreshState, favoritedPlanetIds, error, historyByPlanet }: MonitorTabProps) {
+export function MonitorTab({ crusadeData, planetRefreshState, favoritedPlanetIds, error, sectorMap, historyByPlanet }: MonitorTabProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // Same "click a planet to open its sector map" pattern as CrusadeTab - see openSectorMap/
+  // closeSectorMap/sectorMapModal below, and PlanetTrackerGraph's onCardClick (a click anywhere on
+  // the card except the graph itself, which stops its own propagation).
+  const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
+  const [viewedZone, setViewedZone] = useState<number | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), CAPTION_TICK_MS);
@@ -70,25 +78,51 @@ export function MonitorTab({ crusadeData, planetRefreshState, favoritedPlanetIds
     return <p>No planet data loaded yet.</p>;
   }
 
+  const crusadePlanets = crusadeData.planets;
+  function openSectorMap(planetId: string) {
+    setSelectedPlanetId(planetId);
+    setViewedZone(crusadePlanets.find((p) => p.planetId === planetId)?.zone ?? null);
+  }
+  function closeSectorMap() {
+    setSelectedPlanetId(null);
+    setViewedZone(null);
+  }
+
+  const zones = sectorZones(sectorMap);
+  const sectorMapModal =
+    selectedPlanetId !== null && viewedZone !== null ? (
+      <PlanetSectorMapModal
+        sectorMapData={computeSectorMap(viewedZone, sectorMap, crusadePlanets)}
+        allSectorsMapData={computeAllSectorsMap(sectorMap, crusadePlanets)}
+        highlightPlanetId={selectedPlanetId}
+        onClose={closeSectorMap}
+        onChangeSector={zones.length > 1 ? (direction) => setViewedZone(adjacentZone(zones, viewedZone, direction)) : undefined}
+      />
+    ) : null;
+
   return (
-    <div className="flex flex-wrap gap-4">
-      {dominationPlanets.map((planet) => {
-        const history = historyByPlanet.get(planet.planetId) ?? [];
-        // No persisted history yet (just recontested, or the poller simply hasn't caught up) -
-        // fall back to a single live "right now" point so the card shows something immediately
-        // rather than sitting empty until the next poller tick.
-        const fallback = liveSnapshotSample(planet, nowMs);
-        const samples = history.length > 0 || !fallback ? history : [fallback];
-        return (
-          <PlanetTrackerGraph
-            key={planet.planetId}
-            state={trackedStateFromHistory(planet.planetId, samples, nowMs)}
-            planetName={planet.name}
-            nowMs={nowMs}
-            onlyCombined
-          />
-        );
-      })}
-    </div>
+    <>
+      <div className="flex flex-wrap gap-4">
+        {dominationPlanets.map((planet) => {
+          const history = historyByPlanet.get(planet.planetId) ?? [];
+          // No persisted history yet (just recontested, or the poller simply hasn't caught up) -
+          // fall back to a single live "right now" point so the card shows something immediately
+          // rather than sitting empty until the next poller tick.
+          const fallback = liveSnapshotSample(planet, nowMs);
+          const samples = history.length > 0 || !fallback ? history : [fallback];
+          return (
+            <PlanetTrackerGraph
+              key={planet.planetId}
+              state={trackedStateFromHistory(planet.planetId, samples, nowMs)}
+              planetName={planet.name}
+              nowMs={nowMs}
+              onlyCombined
+              onCardClick={() => openSectorMap(planet.planetId)}
+            />
+          );
+        })}
+      </div>
+      {sectorMapModal}
+    </>
   );
 }

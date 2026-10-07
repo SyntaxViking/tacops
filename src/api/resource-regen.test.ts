@@ -5,7 +5,22 @@ import {
   computeStaminaTimings,
   computeSurvivalTimings,
   computeWavesTimings,
+  PVP_BURN_CHECKPOINT_UTC_MINUTES,
 } from "./resource-regen";
+
+// 9 checkpoints, one every 2h40m (the arena regen interval) starting from the 03:20 CEST anchor
+// (arena's own daily regen-cycle end time) - confirmed directly by the user, replacing first an
+// earlier guess at only 3 checkpoints 8h apart, then a second guess that got the anchor itself 40
+// minutes late (04:00 CEST instead of the real 03:20 CEST).
+describe("PVP_BURN_CHECKPOINT_UTC_MINUTES", () => {
+  it("matches the user's own 9 confirmed CEST checkpoints exactly (CEST = UTC+2)", () => {
+    const cest = PVP_BURN_CHECKPOINT_UTC_MINUTES.map((m) => {
+      const shifted = (m + 120) % (24 * 60);
+      return `${String(Math.floor(shifted / 60)).padStart(2, "0")}${String(shifted % 60).padStart(2, "0")}`;
+    });
+    expect(cest.sort()).toEqual(["0040", "0320", "0600", "0840", "1120", "1400", "1640", "1920", "2200"]);
+  });
+});
 
 describe("computeStaminaTimings", () => {
   it("computes next/cap using the power-level-indexed cap", () => {
@@ -117,6 +132,9 @@ describe("computePvpTimings", () => {
       capAt: LAST_UPDATED + 9_600_000,
       pausesAt: null,
       stopped: false,
+      // capAt (10,600,000 = 02:56:40 UTC Jan 1 1970) falls between the 01:20 and 04:00 UTC
+      // checkpoints (every 2h40m from the 01:20 UTC/03:20 CEST anchor), so the next one is 04:00 UTC.
+      burnAt: Date.UTC(1970, 0, 1, 4, 0, 0),
     });
   });
 
@@ -130,6 +148,8 @@ describe("computePvpTimings", () => {
     expect(result.capAt).toBeNull();
     expect(result.pausesAt).toBe(staminaRegenUntil);
     expect(result.stopped).toBe(false);
+    // Under cap with no projected cap time (regen pauses first) - no burn risk to project.
+    expect(result.burnAt).toBeNull();
   });
 
   it("omits even the next-token time once the deadline has already passed that tick", () => {
@@ -139,6 +159,7 @@ describe("computePvpTimings", () => {
 
     expect(result.nextTokenAt).toBeNull();
     expect(result.pausesAt).toBe(staminaRegenUntil);
+    expect(result.burnAt).toBeNull();
   });
 
   it("reports stopped with no schedule once now is past the season deadline", () => {
@@ -150,13 +171,20 @@ describe("computePvpTimings", () => {
       staminaRegenUntil + 1,
     );
 
-    expect(result).toEqual({ nextTokenAt: null, capAt: null, pausesAt: null, stopped: true });
+    expect(result).toEqual({ nextTokenAt: null, capAt: null, pausesAt: null, stopped: true, burnAt: null });
   });
 
-  it("returns nulls when already at cap, regardless of the deadline", () => {
+  it("finds the next burn checkpoint from 'now' when already at cap, regardless of the deadline", () => {
     const result = computePvpTimings({ currentAmount: 15, lastUpdatedThreshold: LAST_UPDATED }, LAST_UPDATED - 1, NOW);
 
-    expect(result).toEqual({ nextTokenAt: null, capAt: null, pausesAt: null, stopped: false });
+    expect(result).toEqual({
+      nextTokenAt: null,
+      capAt: null,
+      pausesAt: null,
+      stopped: false,
+      // NOW (1,500,000 = 00:25:00 UTC Jan 1 1970) is before the first checkpoint of the day.
+      burnAt: Date.UTC(1970, 0, 1, 1, 20, 0),
+    });
   });
 
   it("falls back to normal next/cap math when no deadline is known at all", () => {
@@ -167,6 +195,36 @@ describe("computePvpTimings", () => {
       capAt: LAST_UPDATED + 9_600_000,
       pausesAt: null,
       stopped: false,
+      burnAt: Date.UTC(1970, 0, 1, 4, 0, 0),
     });
+  });
+
+  it("finds the next day's burn checkpoint when the projected cap time falls between the last checkpoint of one day and the first of the next", () => {
+    // currentAmount 14, missing 1 -> capAt lands at 00:00 UTC Jan 2, between Jan 1's last
+    // checkpoint (22:40) and Jan 2's first (01:20).
+    const lastUpdated = Date.UTC(2026, 0, 2, 0, 0, 0) - 9_600_000;
+    const result = computePvpTimings({ currentAmount: 14, lastUpdatedThreshold: lastUpdated }, null, lastUpdated);
+
+    expect(result.capAt).toBe(Date.UTC(2026, 0, 2, 0, 0, 0));
+    expect(result.burnAt).toBe(Date.UTC(2026, 0, 2, 1, 20, 0));
+  });
+
+  it("finds the same day's next checkpoint (every 2h40m, not just a handful a day) after 19:00 UTC", () => {
+    // currentAmount 14, missing 1 -> capAt lands at 19:00 UTC Jan 1, between that day's 17:20 and
+    // 20:00 checkpoints - still the same day, since checkpoints repeat every 2h40m all day long.
+    const lastUpdated = Date.UTC(2026, 0, 1, 19, 0, 0) - 9_600_000;
+    const result = computePvpTimings({ currentAmount: 14, lastUpdatedThreshold: lastUpdated }, null, lastUpdated);
+
+    expect(result.capAt).toBe(Date.UTC(2026, 0, 1, 19, 0, 0));
+    expect(result.burnAt).toBe(Date.UTC(2026, 0, 1, 20, 0, 0));
+  });
+
+  it("rolls over to the next day's 01:20 UTC checkpoint when the cap time is after that day's last one (22:40)", () => {
+    // currentAmount 14, missing 1 -> capAt lands at 23:30 UTC Jan 1, after the day's final checkpoint.
+    const lastUpdated = Date.UTC(2026, 0, 1, 23, 30, 0) - 9_600_000;
+    const result = computePvpTimings({ currentAmount: 14, lastUpdatedThreshold: lastUpdated }, null, lastUpdated);
+
+    expect(result.capAt).toBe(Date.UTC(2026, 0, 1, 23, 30, 0));
+    expect(result.burnAt).toBe(Date.UTC(2026, 0, 2, 1, 20, 0));
   });
 });
