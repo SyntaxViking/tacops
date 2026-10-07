@@ -1,18 +1,39 @@
 interface IconProps {
   src: string;
   title?: string;
-  // A small glowing ring around the icon - used by PortraitList to mark a character as required
-  // (red) or optional (orange) for an expedition's suggested solution, without splitting them into
-  // separate rows (see OperationCard.tsx) - picking units in power order across the whole group
-  // matters more than which bucket each one happens to be in.
+  // A small glow around the icon - used by PortraitList to mark a character as required (red) or
+  // optional (orange) for an expedition's suggested solution, without splitting them into separate
+  // rows (see OperationCard.tsx) - picking units in power order across the whole group matters
+  // more than which bucket each one happens to be in.
+  //
+  // drop-shadow, not a ring/box-shadow: character portraits are round art on a transparent square
+  // image, so a ring/box-shadow (which outlines the element's rectangular box) would draw a square
+  // nowhere near the visible round icon. drop-shadow follows the image's own alpha shape instead,
+  // so the glow actually hugs the round portrait regardless of how much transparent padding the
+  // source PNG has around it. Three stacked shadows at increasing blur radii for a real bloom
+  // that's actually visible at this icon's small (30px) size, not just a faint 1-2px edge.
   halo?: "required" | "optional";
 }
 
-const HALO_CLASS: Record<"required" | "optional", string> = {
-  required: "rounded-sm ring-2 ring-red-500 shadow-[0_0_4px_2px_rgba(239,68,68,0.8)]",
-  optional: "rounded-sm ring-2 ring-orange-500 shadow-[0_0_4px_2px_rgba(249,115,22,0.8)]",
+const HALO_FILTER: Record<"required" | "optional", string> = {
+  required:
+    "drop-shadow(0 0 3px rgba(239,68,68,1)) drop-shadow(0 0 6px rgba(239,68,68,1)) drop-shadow(0 0 10px rgba(239,68,68,0.9))",
+  optional:
+    "drop-shadow(0 0 3px rgba(249,115,22,1)) drop-shadow(0 0 6px rgba(249,115,22,1)) drop-shadow(0 0 10px rgba(249,115,22,0.9))",
 };
 
 export function Icon({ src, title, halo }: IconProps) {
-  return <img className={`block h-[30px] w-auto ${halo ? HALO_CLASS[halo] : ""}`} src={src} title={title} />;
+  if (!halo) {
+    return <img className="block h-[30px] w-auto" src={src} title={title} />;
+  }
+  // Wrapped in its own isolated, z-raised box: a drop-shadow's paint region can otherwise get
+  // clipped or painted-over at odd boundaries when a card grid stretches cards to match a row's
+  // tallest one (align-items: stretch, CSS Grid's default) - seen as a line cutting through the
+  // glow specifically in a grid's last row. `isolation: isolate` forces its own stacking context
+  // so neither the stretch nor a neighboring card's paint order can interfere with it.
+  return (
+    <span className="relative z-10 inline-block" style={{ isolation: "isolate" }}>
+      <img className="block h-[30px] w-auto" src={src} title={title} style={{ filter: HALO_FILTER[halo] }} />
+    </span>
+  );
 }
