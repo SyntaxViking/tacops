@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   appendTrackedSample,
+  captureUrgency,
   computeAxisScale,
+  computeHourlyAccruedRate,
   computeTrackerGraphData,
   createTrackedPlanetState,
   formatAxisValue,
@@ -11,6 +13,7 @@ import {
   restartIfRecontested,
   timeAxisStepSeconds,
   trackedStateFromHistory,
+  type TrackedPlanetSample,
   type TrackedPlanetState,
 } from "./planet-tracker-view-model";
 import type { CrusadePlanet } from "../api/types";
@@ -32,7 +35,17 @@ describe("appendTrackedSample", () => {
   it("appends a sample with each side's remaining points", () => {
     const state = createTrackedPlanetState("planet_001", 1000);
     const next = appendTrackedSample(state, liveContestedPlanet(100, 200), 2000);
-    expect(next.samples).toEqual([{ atMs: 2000, imperialRemaining: 900, devastationRemaining: 800 }]);
+    expect(next.samples).toEqual([
+      {
+        atMs: 2000,
+        imperialRemaining: 900,
+        devastationRemaining: 800,
+        imperialAccrued: 100,
+        devastationAccrued: 200,
+        imperialThreshold: 1000,
+        devastationThreshold: 1000,
+      },
+    ]);
     expect(next.frozen).toBe(false);
   });
 
@@ -52,7 +65,15 @@ describe("appendTrackedSample", () => {
     const next = appendTrackedSample(state, liveContestedPlanet(1000, 400), 2000);
     expect(next.frozen).toBe(true);
     expect(next.samples).toHaveLength(1);
-    expect(next.samples[0]).toEqual({ atMs: 2000, imperialRemaining: 0, devastationRemaining: 600 });
+    expect(next.samples[0]).toEqual({
+      atMs: 2000,
+      imperialRemaining: 0,
+      devastationRemaining: 600,
+      imperialAccrued: 1000,
+      devastationAccrued: 400,
+      imperialThreshold: 1000,
+      devastationThreshold: 1000,
+    });
   });
 
   it("freezes when a side has overshot its threshold (negative remaining)", () => {
@@ -171,7 +192,15 @@ describe("trackedStateFromHistory", () => {
 
 describe("liveSnapshotSample", () => {
   it("builds a sample from the planet's current remaining points, timestamped now", () => {
-    expect(liveSnapshotSample(liveContestedPlanet(100, 50), 5000)).toEqual({ atMs: 5000, imperialRemaining: 900, devastationRemaining: 950 });
+    expect(liveSnapshotSample(liveContestedPlanet(100, 50), 5000)).toEqual({
+      atMs: 5000,
+      imperialRemaining: 900,
+      devastationRemaining: 950,
+      imperialAccrued: 100,
+      devastationAccrued: 50,
+      imperialThreshold: 1000,
+      devastationThreshold: 1000,
+    });
   });
 
   it("returns null for a planet with no struggleData (pointsRemaining is Infinity)", () => {
@@ -486,5 +515,160 @@ describe("formatElapsedSeconds", () => {
     expect(formatElapsedSeconds(3600)).toBe("1:00:00");
     expect(formatElapsedSeconds(3665)).toBe("1:01:05");
     expect(formatElapsedSeconds(7384)).toBe("2:03:04");
+  });
+});
+
+describe("resolveRemaining (via computeTrackerGraphData)", () => {
+  it("prefers threshold - accrued over the legacy remaining field when both new fields are present", () => {
+    const state: TrackedPlanetState = {
+      planetId: "planet_001",
+      startedAtMs: 1000,
+      samples: [
+        // Legacy remaining says 900, but accrued/threshold say the honest value is 850 - the
+        // graph should plot 850, not 900, whenever both new fields are available.
+        { atMs: 1000, imperialRemaining: 900, devastationRemaining: 500, imperialAccrued: 150, imperialThreshold: 1000, devastationAccrued: 500, devastationThreshold: 1000 },
+      ],
+      frozen: false,
+    };
+    expect(computeTrackerGraphData(state).imperial.line.values).toEqual([850]);
+  });
+
+  it("falls back to the legacy remaining field when either new field is missing on a sample", () => {
+    const state: TrackedPlanetState = {
+      planetId: "planet_001",
+      startedAtMs: 1000,
+      samples: [{ atMs: 1000, imperialRemaining: 900, devastationRemaining: 500 }],
+      frozen: false,
+    };
+    expect(computeTrackerGraphData(state).imperial.line.values).toEqual([900]);
+  });
+
+  it("resolves each sample independently in a mixed array (legacy then new)", () => {
+    const state: TrackedPlanetState = {
+      planetId: "planet_001",
+      startedAtMs: 1000,
+      samples: [
+        { atMs: 1000, imperialRemaining: 900, devastationRemaining: 500 },
+        { atMs: 2000, imperialRemaining: 999, devastationRemaining: 500, imperialAccrued: 200, imperialThreshold: 1000, devastationAccrued: 500, devastationThreshold: 1000 },
+      ],
+      frozen: false,
+    };
+    // First sample has no new fields -> legacy 900. Second has both -> 1000 - 200 = 800, not 999.
+    expect(computeTrackerGraphData(state).imperial.line.values).toEqual([900, 800]);
+  });
+});
+
+describe("computeTrackerGraphData with a time window", () => {
+  const HOUR = 60 * 60 * 1000;
+  const samples: TrackedPlanetSample[] = [
+    { atMs: 0, imperialRemaining: 100, devastationRemaining: 100 },
+    { atMs: 2 * HOUR, imperialRemaining: 90, devastationRemaining: 90 },
+    { atMs: 3.9 * HOUR, imperialRemaining: 80, devastationRemaining: 80 },
+  ];
+  const state: TrackedPlanetState = { planetId: "planet_001", startedAtMs: 0, samples, frozen: false };
+
+  it("anchors the right edge to nowMs, not to the last sample's own (possibly stale) timestamp", () => {
+    // The last real sample is 6 minutes (0.1h) stale relative to "now" - without windowing, the
+    // axis would derive its bounds from that sample's own timestamp and plot it at x=1 (as if it
+    // were current). With the window anchored to the real nowMs, it must land short of the right
+    // edge instead, honestly reflecting that staleness.
+    const nowMs = 4 * HOUR;
+    const data = computeTrackerGraphData(state, { startMs: nowMs - 4 * HOUR, endMs: nowMs });
+    const lastPoint = data.imperial.line.points[data.imperial.line.points.length - 1];
+    expect(lastPoint.x).toBeCloseTo(3.9 / 4, 5);
+    expect(lastPoint.x).toBeLessThan(1);
+  });
+
+  it("drops samples outside the window entirely from the lines and axis scale", () => {
+    const nowMs = 3.9 * HOUR;
+    // A 1h window only reaches back to 2.9h - the 0h and 2h samples are both outside it.
+    const data = computeTrackerGraphData(state, { startMs: nowMs - HOUR, endMs: nowMs });
+    expect(data.imperial.line.points).toHaveLength(1);
+    expect(data.imperial.line.values).toEqual([80]);
+  });
+
+  it("still frames the axis to the exact window even when no samples fall inside it", () => {
+    const nowMs = 100 * HOUR; // far past every recorded sample
+    const data = computeTrackerGraphData(state, { startMs: nowMs - HOUR, endMs: nowMs });
+    expect(data.imperial.line.points).toEqual([]);
+    expect(data.imperial.line.label).toBeNull();
+    expect(data.timeTicks.length).toBeGreaterThan(0); // the 1h-wide frame itself still has ticks
+  });
+
+  it("falls back to natural sample-derived bounds when no window is given", () => {
+    const data = computeTrackerGraphData(state);
+    expect(data.imperial.line.points).toHaveLength(3);
+    expect(data.imperial.line.points[0].x).toBe(0);
+    expect(data.imperial.line.points[2].x).toBe(1);
+  });
+});
+
+describe("computeHourlyAccruedRate", () => {
+  it("interpolates the value exactly one hour ago from two bracketing samples (the common case)", () => {
+    const nowMs = 2 * 60 * 60 * 1000;
+    const samples = [
+      { atMs: 0, value: 0 },
+      { atMs: 60 * 60 * 1000, value: 100 }, // exactly 1h ago: value 100
+      { atMs: 90 * 60 * 1000, value: 150 },
+    ];
+    // currentValue 300, value 1h ago is 100 -> rate 200/hr.
+    expect(computeHourlyAccruedRate(samples, 300, nowMs)).toBe(200);
+  });
+
+  it("interpolates between two samples that aren't exactly an hour apart", () => {
+    const nowMs = 2 * 60 * 60 * 1000;
+    const samples = [
+      { atMs: 0, value: 0 },
+      { atMs: 90 * 60 * 1000, value: 90 }, // 90 minutes in, value 90 -> 1/min
+    ];
+    // 1h ago (60min) interpolates to 60 (linear from (0,0) to (90,90)).
+    expect(computeHourlyAccruedRate(samples, 160, nowMs)).toBe(100);
+  });
+
+  it("falls back to the since-start rate, scaled to a full hour, when under an hour of data exists", () => {
+    const nowMs = 30 * 60 * 1000; // only 30 minutes of history
+    const samples = [{ atMs: 0, value: 50 }];
+    // Gained 25 points in 30 minutes -> 50 points/hour.
+    expect(computeHourlyAccruedRate(samples, 75, nowMs)).toBe(50);
+  });
+
+  it("returns 0 for an empty sample array", () => {
+    expect(computeHourlyAccruedRate([], 100, 10_000)).toBe(0);
+  });
+
+  it("returns 0 rather than dividing by ~zero when elapsedMinutes is non-positive", () => {
+    const samples = [{ atMs: 10_000, value: 50 }];
+    expect(computeHourlyAccruedRate(samples, 60, 10_000)).toBe(0);
+  });
+});
+
+describe("captureUrgency", () => {
+  it("is 'imminent' when capture is at most an hour away", () => {
+    expect(captureUrgency(100, 100)).toBe("imminent"); // exactly 1h
+    expect(captureUrgency(50, 100)).toBe("imminent"); // 0.5h
+  });
+
+  it("is 'withinTwoHours' between one and two hours away", () => {
+    expect(captureUrgency(150, 100)).toBe("withinTwoHours"); // 1.5h
+    expect(captureUrgency(200, 100)).toBe("withinTwoHours"); // exactly 2h
+  });
+
+  it("is 'withinFourHours' between two and four hours away", () => {
+    expect(captureUrgency(300, 100)).toBe("withinFourHours"); // 3h
+    expect(captureUrgency(400, 100)).toBe("withinFourHours"); // exactly 4h
+  });
+
+  it("is 'normal' beyond four hours away", () => {
+    expect(captureUrgency(401, 100)).toBe("normal");
+  });
+
+  it("is 'normal' for a non-positive rate, regardless of pointsRemaining", () => {
+    expect(captureUrgency(100, 0)).toBe("normal");
+    expect(captureUrgency(100, -50)).toBe("normal");
+  });
+
+  it("is 'normal' once the planet is already captured (pointsRemaining <= 0)", () => {
+    expect(captureUrgency(0, 100)).toBe("normal");
+    expect(captureUrgency(-10, 100)).toBe("normal");
   });
 });

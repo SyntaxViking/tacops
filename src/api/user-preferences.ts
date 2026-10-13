@@ -1,5 +1,8 @@
+import { proxyWorkerPost, shouldUseProductionDataSource } from "./dev-data-source";
 import { sha256Hex } from "./sha256";
 import { capStarredPlanets } from "../crusade/starred-planets";
+
+const TIMEOUT_MS = 20_000;
 
 export interface UserPreferences {
   favoritedCharacters: string[];
@@ -9,13 +12,17 @@ export interface UserPreferences {
 
 export async function fetchUserPreferences(userId: string): Promise<UserPreferences> {
   const userHash = await sha256Hex(userId);
-  const response = await fetch("/api/preferences/get", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userHash }),
-  });
-  if (!response.ok) throw new Error(`fetchUserPreferences failed: ${response.status}`);
-  const preferences = (await response.json()) as UserPreferences;
+  const preferences = shouldUseProductionDataSource()
+    ? await proxyWorkerPost<UserPreferences>("/api/preferences/get", { userHash }, TIMEOUT_MS)
+    : await (async () => {
+        const response = await fetch("/api/preferences/get", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userHash }),
+        });
+        if (!response.ok) throw new Error(`fetchUserPreferences failed: ${response.status}`);
+        return (await response.json()) as UserPreferences;
+      })();
   // A saved list may predate the star cap - silently keep only the first ten as it's read.
   return { ...preferences, favoritedPlanets: capStarredPlanets(preferences.favoritedPlanets) };
 }
@@ -24,6 +31,10 @@ export async function fetchUserPreferences(userId: string): Promise<UserPreferen
 // track-usage.ts's privacy posture - the backend never sees raw credentials.
 async function setFavoritedIds(path: string, userId: string, clientSecret: string, ids: string[]): Promise<void> {
   const [userHash, secretHash] = await Promise.all([sha256Hex(userId), sha256Hex(clientSecret)]);
+  if (shouldUseProductionDataSource()) {
+    await proxyWorkerPost(path, { userHash, secretHash, ids }, TIMEOUT_MS);
+    return;
+  }
   const response = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -3,6 +3,7 @@ import {
   computeTrackerGraphData,
   formatElapsedSeconds,
   type GraphPoint,
+  type GraphTimeWindow,
   type LabeledPoint,
   type SideAxis,
   type TimeTick,
@@ -244,12 +245,22 @@ function GraphCard({
 }
 
 interface PlanetTrackerGraphProps {
+  // Always the full, untrimmed sample history - windowing for display is this component's own job
+  // (see hoursFilter below), not the caller's, so startedAtMs/frozen (derived from the FULL
+  // history by createTrackedPlanetState/mergeHistoryIntoTrackedPlanetState/trackedStateFromHistory)
+  // stay correct regardless of what the user currently has the graph zoomed to.
   state: TrackedPlanetState;
   planetName: string;
-  // Drives only the "elapsed" caption while live - the line/point positions come entirely from the
-  // samples themselves (see computeTrackerGraphData), so a stale nowMs never misdraws the lines, it
-  // just freezes the caption along with everything else once the parent stops re-passing it.
+  // Drives the "elapsed" caption while live, and (together with hoursFilter) the graph's time
+  // window - the line/point positions still come entirely from the samples themselves (see
+  // computeTrackerGraphData), so a stale nowMs never misdraws the lines, it just freezes the
+  // caption/window along with everything else once the parent stops re-passing it.
   nowMs: number;
+  // May be Infinity (the default - show the natural, sample-derived full range). When finite,
+  // clamps the x-axis to exactly [nowMs - hoursFilter hours, nowMs], regardless of where the
+  // actual samples land within it - see computeTrackerGraphData's own comment on why this can't
+  // just be "trim the samples array and let the axis follow."
+  hoursFilter?: number;
   // Renders only the Combined (both sides on one shared scale) graph, omitting the Imperial/
   // Devastation solo ones - used by the Monitor tab, which shows every planet at once and has no
   // room (or need) for three graphs apiece. Also drops the "- Combined" title suffix, since there's
@@ -260,8 +271,9 @@ interface PlanetTrackerGraphProps {
   onCardClick?: () => void;
 }
 
-export function PlanetTrackerGraph({ state, planetName, nowMs, onlyCombined = false, onCardClick }: PlanetTrackerGraphProps) {
-  const data = computeTrackerGraphData(state);
+export function PlanetTrackerGraph({ state, planetName, nowMs, hoursFilter = Infinity, onlyCombined = false, onCardClick }: PlanetTrackerGraphProps) {
+  const graphWindow: GraphTimeWindow | undefined = Number.isFinite(hoursFilter) ? { startMs: nowMs - hoursFilter * 60 * 60 * 1000, endMs: nowMs } : undefined;
+  const data = computeTrackerGraphData(state, graphWindow);
   const elapsedSeconds = Math.max(0, Math.round(((state.frozen ? state.samples[state.samples.length - 1]?.atMs ?? nowMs : nowMs) - state.startedAtMs) / 1000));
   const elapsedLabel = formatElapsedSeconds(elapsedSeconds);
   const caption = state.frozen ? `Captured at ${elapsedLabel}` : `${elapsedLabel} elapsed`;

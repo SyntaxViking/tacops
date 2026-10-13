@@ -5,6 +5,8 @@ import { CrusadeDominationCards } from "./CrusadeDominationCards";
 import { CrusadeDominationTable } from "./CrusadeDominationTable";
 import { DominationSortModeToggle } from "./DominationSortModeToggle";
 import { DominationTopTenFilter } from "./DominationTopTenFilter";
+import { GraphHoursFilter } from "./GraphHoursFilter";
+import { PlanetDefenseBadge } from "./PlanetDefenseBadge";
 import { PlanetSectorMapModal } from "./PlanetSectorMapModal";
 import { PlanetTrackerGraph } from "./PlanetTrackerGraph";
 import {
@@ -15,9 +17,9 @@ import {
   type DominationSortMode,
 } from "../crusade/crusade-domination-view-model";
 import { adjacentZone, computeAllSectorsMap, computeSectorMap, sectorZones } from "../crusade/crusade-sector-map-view-model";
-import type { TrackedPlanetState } from "../crusade/planet-tracker-view-model";
+import type { TrackedPlanetSample, TrackedPlanetState } from "../crusade/planet-tracker-view-model";
 import type { ViewMode } from "./ViewModeToggle";
-import type { CrusadeData, CrusadeSectorMap, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
+import type { CrusadeData, CrusadeSectorMap, PlanetDefenseCounts, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
 
 interface CrusadeTabProps {
   crusadeData: CrusadeData | null;
@@ -41,6 +43,11 @@ interface CrusadeTabProps {
   trackedPlanetId?: string | null;
   trackedPlanetState?: TrackedPlanetState | null;
   onToggleTrackPlanet?: (planetId: string) => void;
+  // Every planet's persisted history (same data MonitorTab.tsx already uses) - needed for the
+  // points/hour rate indicator next to each Domination planet's (X%), which is shown for every
+  // listed planet, not just whichever one is actively tracked/graphed above.
+  historyByPlanet?: Map<string, TrackedPlanetSample[]>;
+  planetDefenses?: Record<string, PlanetDefenseCounts>;
 }
 
 export function CrusadeTab({
@@ -56,6 +63,8 @@ export function CrusadeTab({
   trackedPlanetId = null,
   trackedPlanetState = null,
   onToggleTrackPlanet,
+  historyByPlanet,
+  planetDefenses,
 }: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   // The sector the map modal is showing - starts at the clicked planet's sector but can be stepped
@@ -65,6 +74,11 @@ export function CrusadeTab({
   const [maxSideInput, setMaxSideInput] = useState("");
   const [maxFactionInput, setMaxFactionInput] = useState("");
   const [planetSearch, setPlanetSearch] = useState("");
+  // Independent of Monitor's own hours filter (each tab remembers its own choice) - passed straight
+  // through to PlanetTrackerGraph, which owns the actual windowing/clamping (see
+  // computeTrackerGraphData's own comment); the rate indicator below always reads the untrimmed
+  // historyByPlanet instead, regardless of this value.
+  const [hoursFilter, setHoursFilter] = useState(Infinity);
 
   // defaultDominationSortMode's initial value (above) only ever applies on first mount - without
   // this, picking a different faction after the initial load wouldn't actually change sort order.
@@ -167,10 +181,31 @@ export function CrusadeTab({
 
     const trackedPlanet = trackedPlanetId ? crusadeData.planets.find((p) => p.planetId === trackedPlanetId) : undefined;
 
+    // Across every planet with defense data, not just whatever's currently visible under the
+    // side/faction filters above - a global "how defended is the map right now" figure.
+    const totalDefenses = Object.values(planetDefenses ?? {}).reduce(
+      (total, d) => ({ imperial: total.imperial + d.imperial, devastation: total.devastation + d.devastation }),
+      { imperial: 0, devastation: 0 },
+    );
+
+    // historyByPlanet only refreshes every 5 minutes from the Worker's bulk endpoint - the actively
+    // tracked planet (if any) has its own richer, continuously-updated timeline right here
+    // (trackedPlanetState, already seeded with that planet's own server history at track-start via
+    // mergeHistoryIntoTrackedPlanetState - see App.tsx), which the rate indicator below should use
+    // instead of letting it go stale. Only substitutes when there's actually something better to
+    // substitute - an empty/not-yet-seeded trackedPlanetState shouldn't blow away whatever
+    // historyByPlanet already had for this planet from the last bulk fetch.
+    const effectiveHistoryByPlanet =
+      trackedPlanetId && trackedPlanetState && trackedPlanetState.samples.length > 0
+        ? new Map(historyByPlanet ?? []).set(trackedPlanetId, trackedPlanetState.samples)
+        : historyByPlanet;
+
     return (
       <>
-        {trackedPlanetState && trackedPlanet && <PlanetTrackerGraph state={trackedPlanetState} planetName={trackedPlanet.name} nowMs={nowMs} />}
-        <DominationSortModeToggle value={dominationSortMode} onChange={setDominationSortMode} />
+        <div className="my-2 flex flex-wrap items-center justify-center gap-4">
+          <DominationSortModeToggle value={dominationSortMode} onChange={setDominationSortMode} />
+          <GraphHoursFilter value={hoursFilter} onChange={setHoursFilter} />
+        </div>
         <DominationTopTenFilter
           maxSideInput={maxSideInput}
           onChangeMaxSideInput={setMaxSideInput}
@@ -184,6 +219,12 @@ export function CrusadeTab({
           onChange={(e) => setPlanetSearch(e.target.value)}
           className="mt-2 w-64 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-blue-500 dark:border-neutral-600 dark:bg-neutral-900/60 dark:text-white"
         />
+        <div className="my-2 flex justify-center">
+          <PlanetDefenseBadge imperial={totalDefenses.imperial} devastation={totalDefenses.devastation} />
+        </div>
+        {trackedPlanetState && trackedPlanet && (
+          <PlanetTrackerGraph state={trackedPlanetState} planetName={trackedPlanet.name} nowMs={nowMs} hoursFilter={hoursFilter} />
+        )}
         {viewMode === "table" ? (
           <CrusadeDominationTable
             planets={visibleDominationPlanets}
@@ -194,6 +235,8 @@ export function CrusadeTab({
             onToggleFavoritePlanet={onToggleFavoritePlanet}
             trackedPlanetId={trackedPlanetId}
             onToggleTrackPlanet={onToggleTrackPlanet}
+            historyByPlanet={effectiveHistoryByPlanet}
+            planetDefenses={planetDefenses}
           />
         ) : (
           <CrusadeDominationCards
@@ -203,6 +246,8 @@ export function CrusadeTab({
             onRefreshPlanet={onRefreshPlanet}
             favoritedPlanetIds={favoritedPlanetIds}
             onToggleFavoritePlanet={onToggleFavoritePlanet}
+            historyByPlanet={effectiveHistoryByPlanet}
+            planetDefenses={planetDefenses}
             trackedPlanetId={trackedPlanetId}
             onToggleTrackPlanet={onToggleTrackPlanet}
           />

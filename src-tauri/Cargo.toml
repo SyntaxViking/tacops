@@ -33,4 +33,5 @@ dotenvy = "0.15.7"
 sha2 = "0.10"
 tauri-plugin-dialog = "2"
 md-5 = "0.10"
+base64 = "0.22"
 

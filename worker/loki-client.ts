@@ -367,6 +367,32 @@ export async function fetchCrusadeDataFromLoki(
   return parsed;
 }
 
+// Session-accepting variant, same reasoning as fetchCrusadeDataWithSession above.
+export async function fetchPvpStateWithSession(session: Session, userId: string, playerPosition: number): Promise<PostResult> {
+  const gameEventUrl = `${session.config.gameEventBaseUrl}/${userId}/sessionId/${session.sessionId}`;
+  // forceOpponentRefresh is hardcoded false - never a caller-settable parameter. Re-rolling the 3
+  // offered opponents may be a resource-costing in-game action, so this must never be exposed as
+  // a way to force a reroll from TacOps.
+  const body = gameEventEnvelope("GET_PVP_STATE", { playerPosition, leaguesVersion: null, forceOpponentRefresh: false });
+  return postGameEvent(gameEventUrl, body);
+}
+
+// GET_PVP_STATE returns the 3 opponents currently offered for the player's next Arena match -
+// each with their fielded characters/Machine of War, equipment, and the board they'll fight on.
+// playerPosition comes from the ordinary GET_PLAYER call (PlayerResources.pvpPosition) - not
+// re-derived here.
+export async function fetchPvpStateFromLoki(
+  environment: string,
+  userId: string,
+  clientSecret: string,
+  snowId: string,
+  playerPosition: number,
+): Promise<unknown> {
+  const session = await bootstrapSession(environment, userId, clientSecret, snowId);
+  const { parsed } = await fetchPvpStateWithSession(session, userId, playerPosition);
+  return parsed;
+}
+
 // GET_LEADERBOARD_2 reuses the ordinary playerEvent envelope (no "d" signature needed - only
 // game-event/game3 calls are signed) but needs the sessionId in the URL path, not just in the
 // body, or the server rejects it with "requires secured communication". leaderboardIds must

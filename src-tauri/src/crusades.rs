@@ -115,6 +115,40 @@ pub async fn fetch_crusade_data(
     post_game_event(&client, &game_event_url, &body).await
 }
 
+// GET_PVP_STATE returns the 3 opponents currently offered for the player's next Arena match -
+// each with their fielded characters/Machine of War, equipment, and the board they'll fight on.
+// force_opponent_refresh is hardcoded false, not a parameter - re-rolling the 3 offered opponents
+// may be a resource-costing in-game action, so this must never be exposed as a way to force a
+// reroll from TacOps. player_position comes from the ordinary GET_PLAYER call (resolved client-
+// side from PlayerResources.pvpPosition before this command is invoked).
+#[tauri::command]
+pub async fn fetch_pvp_state(
+    environment: String,
+    user_id: String,
+    client_secret: String,
+    snow_id: String,
+    player_position: i64,
+) -> Result<Value, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+
+    let (config, _base_url, session_id) =
+        bootstrap_session(&client, &environment, &user_id, &client_secret, &snow_id).await?;
+
+    let game_event_url = format!("{}/{user_id}/sessionId/{session_id}", config.game_event_base_url);
+    let body = game_event_envelope(
+        "GET_PVP_STATE",
+        json!({
+            "playerPosition": player_position,
+            "leaguesVersion": null,
+            "forceOpponentRefresh": false,
+        }),
+    );
+    post_game_event(&client, &game_event_url, &body).await
+}
+
 // GET_LEADERBOARD_2 reuses the ordinary playerEvent envelope (no "d" signature needed - only
 // game-event/game3 calls are signed) but needs the sessionId in the URL path, not just in the
 // body, or the server rejects it with "requires secured communication". leaderboard_ids must

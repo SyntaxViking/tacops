@@ -1,4 +1,4 @@
-import { fetchCrusadeDataFromLoki, fetchLeaderboardDataFromLoki, fetchPlayerDataFromLoki } from "./loki-client";
+import { fetchCrusadeDataFromLoki, fetchLeaderboardDataFromLoki, fetchPlayerDataFromLoki, fetchPvpStateFromLoki } from "./loki-client";
 import { recordSighting } from "./track";
 import { renderInsightsPage } from "./insights";
 import { getUserPreferences, setUserPreferenceColumn } from "./user-preferences";
@@ -25,6 +25,10 @@ interface RequestBody {
 
 interface LeaderboardRequestBody extends RequestBody {
   leaderboardIds: string[];
+}
+
+interface PvpStateRequestBody extends RequestBody {
+  playerPosition: number;
 }
 
 interface TrackRequestBody {
@@ -73,6 +77,23 @@ export default {
       if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
       try {
         const data = await fetchCrusadeDataFromLoki(body.environment, body.userId, body.clientSecret, body.snowId ?? "");
+        return Response.json(data);
+      } catch (error) {
+        return Response.json({ error: `${error}` }, { status: 502 });
+      }
+    }
+
+    if (url.pathname === "/api/fetch-pvp-state" && request.method === "POST") {
+      const body = (await request.json()) as PvpStateRequestBody;
+      if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
+      try {
+        const data = await fetchPvpStateFromLoki(
+          body.environment,
+          body.userId,
+          body.clientSecret,
+          body.snowId ?? "",
+          body.playerPosition,
+        );
         return Response.json(data);
       } catch (error) {
         return Response.json({ error: `${error}` }, { status: 502 });
