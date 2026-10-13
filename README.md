@@ -264,3 +264,5 @@ the rules only live in one place.
 - Use Tailwind CSS for styling instead of hand-written stylesheets, unless there's a really good
   reason not to.
 - Layout/rendering code goes in `.tsx` files. Logic goes in `.ts` files. No exceptions.
+
+<!-- auto-deploy pipeline test: 2026-10-13T12:02:22Z -->
