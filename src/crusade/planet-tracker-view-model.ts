@@ -1,11 +1,26 @@
 import type { CrusadePlanet } from "../api/types";
 import { isPlanetTrackable } from "./tracked-planet";
-import { pointsRemaining } from "./crusade-domination-view-model";
+import { computeConquestProgress, pointsRemaining } from "./crusade-domination-view-model";
 
 export interface TrackedPlanetSample {
   atMs: number;
   imperialRemaining: number;
   devastationRemaining: number;
+  // Raw accrued points and raw capture threshold at this moment, recorded alongside the legacy
+  // *Remaining fields above (not instead of them) starting 2026-10-13 - optional because older
+  // already-stored samples won't have them. imperialRemaining/devastationRemaining are threshold
+  // minus current, which silently conflates "the attacker lost ground" with "the defender raised
+  // the threshold" (a planetary-defenses powerup can do that even while fully uncontested) - these
+  // four let callers that need an honest rate-of-change (computeHourlyAccruedRate) or an honest
+  // historical remaining value (resolveRemaining) tell the two apart.
+  // TODO(2026-10-20): the current Domination season ends 2026-10-17 - once that's passed, every
+  // live era's history will have been recorded entirely after this change, so these can become
+  // required (drop the "?") and imperialRemaining/devastationRemaining/resolveRemaining's fallback
+  // can be deleted outright.
+  imperialAccrued?: number;
+  devastationAccrued?: number;
+  imperialThreshold?: number;
+  devastationThreshold?: number;
 }
 
 export interface TrackedPlanetState {
@@ -27,7 +42,18 @@ export function createTrackedPlanetState(planetId: string, nowMs: number): Track
 export function appendTrackedSample(state: TrackedPlanetState, planet: CrusadePlanet, nowMs: number): TrackedPlanetState {
   if (state.frozen) return state;
   const remaining = pointsRemaining(planet);
-  const sample: TrackedPlanetSample = { atMs: nowMs, imperialRemaining: remaining.imperial, devastationRemaining: remaining.devastation };
+  const progress = computeConquestProgress(planet);
+  // TODO(2026-10-20): stop writing imperialRemaining/devastationRemaining once the season ending
+  // 2026-10-17 is over - see TrackedPlanetSample's own comment.
+  const sample: TrackedPlanetSample = {
+    atMs: nowMs,
+    imperialRemaining: remaining.imperial,
+    devastationRemaining: remaining.devastation,
+    imperialAccrued: progress?.imperialCurrent,
+    devastationAccrued: progress?.devastationCurrent,
+    imperialThreshold: progress?.imperialThreshold,
+    devastationThreshold: progress?.devastationThreshold,
+  };
   const frozen = remaining.imperial <= 0 || remaining.devastation <= 0;
   return { ...state, samples: [...state.samples, sample], frozen };
 }
@@ -80,7 +106,16 @@ export function trackedStateFromHistory(planetId: string, history: readonly Trac
 export function liveSnapshotSample(planet: CrusadePlanet, nowMs: number): TrackedPlanetSample | null {
   const remaining = pointsRemaining(planet);
   if (!Number.isFinite(remaining.imperial) || !Number.isFinite(remaining.devastation)) return null;
-  return { atMs: nowMs, imperialRemaining: remaining.imperial, devastationRemaining: remaining.devastation };
+  const progress = computeConquestProgress(planet);
+  return {
+    atMs: nowMs,
+    imperialRemaining: remaining.imperial,
+    devastationRemaining: remaining.devastation,
+    imperialAccrued: progress?.imperialCurrent,
+    devastationAccrued: progress?.devastationCurrent,
+    imperialThreshold: progress?.imperialThreshold,
+    devastationThreshold: progress?.devastationThreshold,
+  };
 }
 
 export interface GraphPoint {
@@ -270,12 +305,11 @@ export function timeAxisStepSeconds(durationSeconds: number): number {
 }
 
 // One vertical grid line every timeAxisStepSeconds(...) starting at 0, up to (not necessarily
-// exactly reaching) the current elapsed duration - unlike the value axes, elapsed time isn't
-// logarithmic, so no significant-digit rounding applies here, just a compact "Ns" / "M:SS" format.
-// No ticks yet with fewer than two samples (no time range to divide).
-function computeTimeTicks(samples: readonly TrackedPlanetSample[]): TimeTick[] {
-  if (samples.length < 2) return [];
-  const durationMs = samples[samples.length - 1].atMs - samples[0].atMs;
+// exactly reaching) the given duration - unlike the value axes, elapsed time isn't logarithmic, so
+// no significant-digit rounding applies here, just a compact "Ns" / "M:SS" format. No ticks for a
+// non-positive duration (no time range to divide) - the natural (non-windowed) case this means
+// fewer than two samples exist yet, since firstMs === lastMs with only one.
+function computeTimeTicks(durationMs: number): TimeTick[] {
   if (durationMs <= 0) return [];
   const durationSeconds = durationMs / 1000;
   const step = timeAxisStepSeconds(durationSeconds);
@@ -298,12 +332,41 @@ function computeTimeTicks(samples: readonly TrackedPlanetSample[]): TimeTick[] {
 // live, or the freeze point once frozen), shared by all three graphs. y-clamping to at most 1 is a
 // defensive belt-and-braces guard against floating-point edge cases (ceilings only grow, so normal
 // data should never actually hit it).
-export function computeTrackerGraphData(state: TrackedPlanetState): TrackerGraphData {
-  const { samples } = state;
-  if (samples.length === 0) return EMPTY_GRAPH_DATA;
+// Prefers the honest threshold-minus-accrued value over the legacy stored *Remaining field,
+// falling back to the legacy field only when either new field is missing on this particular sample
+// (an older sample recorded before 2026-10-13). Used only for graph display - the rate calculation
+// below always wants raw accrued, never a derived remaining value.
+// TODO(2026-10-20): delete this fallback and read imperialThreshold - imperialAccrued (same for
+// devastation) unconditionally, once the season ending 2026-10-17 is over.
+function resolveRemaining(sample: TrackedPlanetSample, side: "imperial" | "devastation"): number {
+  const accrued = side === "imperial" ? sample.imperialAccrued : sample.devastationAccrued;
+  const threshold = side === "imperial" ? sample.imperialThreshold : sample.devastationThreshold;
+  if (accrued !== undefined && threshold !== undefined) return threshold - accrued;
+  return side === "imperial" ? sample.imperialRemaining : sample.devastationRemaining;
+}
 
-  const firstMs = samples[0].atMs;
-  const lastMs = samples[samples.length - 1].atMs;
+export interface GraphTimeWindow {
+  startMs: number;
+  endMs: number;
+}
+
+// Optional `window` clamps the x-axis to exactly [startMs, endMs] (e.g. "now - N hours" to "now"),
+// regardless of where the actual samples fall within it - without this, the axis was derived from
+// the samples' own min/max timestamps, which silently fell short of the requested window whenever
+// the nearest real sample didn't land exactly on the boundary (poll cadence, thinned-out older
+// samples, or simply a stale "now" argument) - "last N hours" should mean exactly that, not
+// "whatever span the surviving samples happen to cover." Samples outside the window are dropped
+// from the lines/axis-scale entirely (never just visually clipped), so a mostly-empty window still
+// renders truthfully (a short line against a full N-hour-wide, mostly blank plot) rather than
+// stretching sparse data to fill the space. No window (the default) preserves the natural,
+// sample-derived bounds this had before windowing existed.
+export function computeTrackerGraphData(state: TrackedPlanetState, window?: GraphTimeWindow): TrackerGraphData {
+  const { samples: allSamples } = state;
+  if (allSamples.length === 0) return EMPTY_GRAPH_DATA;
+
+  const samples = window ? allSamples.filter((s) => s.atMs >= window.startMs && s.atMs <= window.endMs) : allSamples;
+  const firstMs = window ? window.startMs : samples[0].atMs;
+  const lastMs = window ? window.endMs : samples[samples.length - 1].atMs;
   const durationMs = lastMs - firstMs;
 
   function toX(atMs: number): number {
@@ -314,15 +377,16 @@ export function computeTrackerGraphData(state: TrackedPlanetState): TrackerGraph
   }
 
   const xs = samples.map((s) => toX(s.atMs));
-  const imperialValues = samples.map((s) => s.imperialRemaining);
-  const devastationValues = samples.map((s) => s.devastationRemaining);
+  const imperialValues = samples.map((s) => resolveRemaining(s, "imperial"));
+  const devastationValues = samples.map((s) => resolveRemaining(s, "devastation"));
 
   function buildLine(values: readonly number[], ceiling: number): GraphLine {
     const points = values.map((v, i) => ({ x: xs[i], y: toY(v, ceiling) }));
+    const last = points.length > 0 ? points[points.length - 1] : null;
     return {
       points,
       values: [...values],
-      label: { x: points[points.length - 1].x, y: points[points.length - 1].y, value: values[values.length - 1] },
+      label: last ? { x: last.x, y: last.y, value: values[values.length - 1] } : null,
     };
   }
 
@@ -338,7 +402,113 @@ export function computeTrackerGraphData(state: TrackedPlanetState): TrackerGraph
       devastation: buildLine(devastationValues, combinedAxis.ceiling),
       axis: combinedAxis,
     },
-    timeTicks: computeTimeTicks(samples),
+    timeTicks: computeTimeTicks(durationMs),
     sampleElapsedSeconds: samples.map((s) => Math.round((s.atMs - firstMs) / 1000)),
   };
+}
+
+export interface TimedValue {
+  atMs: number;
+  value: number;
+}
+
+// Linear-interpolates the value at `atMs` from two bracketing samples (`samples` must be sorted
+// ascending by atMs, oldest first - every caller in this codebase already stores samples that way).
+// Null when `atMs` falls before the first sample (no data reaches that far back) or the array is
+// empty - the caller treats that as "use the fallback path" rather than a crash.
+function interpolateValueAt(samples: readonly TimedValue[], atMs: number): number | null {
+  if (samples.length === 0 || atMs < samples[0].atMs) return null;
+  for (let i = 1; i < samples.length; i++) {
+    if (samples[i].atMs >= atMs) {
+      const a = samples[i - 1];
+      const b = samples[i];
+      if (b.atMs === a.atMs) return a.value;
+      const t = (atMs - a.atMs) / (b.atMs - a.atMs);
+      return a.value + (b.value - a.value) * t;
+    }
+  }
+  // atMs is at or after the last sample - nothing to interpolate between, just use the latest value.
+  return samples[samples.length - 1].value;
+}
+
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+// Points/hour for one side, from its accrued-points history (NOT points-remaining - see
+// TrackedPlanetSample's own comment on why remaining can't be diffed reliably across time).
+// `samples` is the full, untrimmed accrued-points history for this side, oldest first.
+// `currentValue` is that side's LIVE accrued points right now (always fresher than the last stored
+// sample). Primary path: interpolate the value exactly one hour ago and diff against currentValue -
+// expected to be the common case, since the poller samples roughly every 5 minutes. Fallback (less
+// than an hour of history available): the rate since the earliest known sample, scaled up to a
+// per-hour figure via (60 / elapsedMinutes).
+export function computeHourlyAccruedRate(samples: readonly TimedValue[], currentValue: number, nowMs: number): number {
+  if (samples.length === 0) return 0;
+  const oneHourAgo = nowMs - MS_PER_HOUR;
+  const valueOneHourAgo = interpolateValueAt(samples, oneHourAgo);
+  if (valueOneHourAgo !== null) return currentValue - valueOneHourAgo;
+
+  const startedAtMs = samples[0].atMs;
+  const elapsedMinutes = (nowMs - startedAtMs) / 60_000;
+  if (elapsedMinutes <= 0) return 0;
+  const sinceStart = currentValue - samples[0].value;
+  return sinceStart * (60 / elapsedMinutes);
+}
+
+export type CaptureUrgency = "imminent" | "withinTwoHours" | "withinFourHours" | "normal";
+
+// How soon, at the current hourly rate, a side would cross its own capture threshold - drives the
+// points-rate indicator's color (see PointsRateIndicator.tsx). A non-positive rate (not gaining, or
+// actively losing ground) or an already-captured planet (pointsRemaining <= 0) is always "normal" -
+// there's no meaningful "time until capture" to project in either case.
+export function captureUrgency(pointsRemainingNow: number, hourlyRate: number): CaptureUrgency {
+  if (hourlyRate <= 0 || pointsRemainingNow <= 0) return "normal";
+  const hoursUntilCapture = pointsRemainingNow / hourlyRate;
+  if (hoursUntilCapture <= 1) return "imminent";
+  if (hoursUntilCapture <= 2) return "withinTwoHours";
+  if (hoursUntilCapture <= 4) return "withinFourHours";
+  return "normal";
+}
+
+// Map-wide "how fast is each side gaining right now" figure, next to RankedParticipantsCounter's
+// own headcount - the same per-planet computeHourlyAccruedRate used by the per-row δ indicator,
+// just summed across every planet with Domination data instead of shown one row at a time.
+// Planets with no struggleData (computeConquestProgress returns null) or no history yet simply
+// contribute 0, same "missing -> 0" convention as countRankedParticipants.
+export function computeTotalHourlyRate(
+  planets: readonly CrusadePlanet[],
+  historyByPlanet: ReadonlyMap<string, TrackedPlanetSample[]>,
+  nowMs: number,
+): { imperial: number; devastation: number } {
+  let imperial = 0;
+  let devastation = 0;
+  for (const planet of planets) {
+    const progress = computeConquestProgress(planet);
+    if (!progress) continue;
+    const history = historyByPlanet.get(planet.planetId) ?? [];
+    imperial += computeHourlyAccruedRate(
+      history.filter((s) => s.imperialAccrued !== undefined).map((s) => ({ atMs: s.atMs, value: s.imperialAccrued! })),
+      progress.imperialCurrent,
+      nowMs,
+    );
+    devastation += computeHourlyAccruedRate(
+      history.filter((s) => s.devastationAccrued !== undefined).map((s) => ({ atMs: s.atMs, value: s.devastationAccrued! })),
+      progress.devastationCurrent,
+      nowMs,
+    );
+  }
+  return { imperial, devastation };
+}
+
+// Compact "22M"/"765k"/"-3B" formatting for the map-wide points aggregate above - unlike
+// formatAxisValue (which rounds to a single significant digit for clean graph gridlines), this
+// keeps every digit at whatever tier it floors to, per the exact spec requested: 22,718,965 ->
+// "22M" (not "20M"), 765,987 -> "765k" (not "800k"). Always signed (+/-) since a losing side's
+// negative aggregate is just as meaningful here as a gaining one's.
+export function formatCompactSignedPoints(value: number): string {
+  const sign = value < 0 ? "-" : "+";
+  const abs = Math.floor(Math.abs(value));
+  if (abs >= 1_000_000_000) return `${sign}${Math.floor(abs / 1_000_000_000)}B`;
+  if (abs >= 1_000_000) return `${sign}${Math.floor(abs / 1_000_000)}M`;
+  if (abs >= 1_000) return `${sign}${Math.floor(abs / 1_000)}k`;
+  return `${sign}${abs}`;
 }

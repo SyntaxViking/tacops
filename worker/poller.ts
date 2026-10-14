@@ -1,20 +1,32 @@
 // Scheduled background poller (see worker/index.ts's `scheduled` export, wired to a 1-minute Cron
 // Trigger in wrangler.toml). Refreshes the public, account-agnostic crusade/leaderboard cache so
-// anonymous visitors (and logged-in users' first paint) never have to wait on a live Tacticus call.
+// anonymous visitors (and logged-in users' first paint) never have to wait on a live Tacticus call,
+// and records each Domination planet's points-remaining history (worker/planet-history.ts) on the
+// same cadence.
 //
-// Deliberately does NOT touch any Loki response before storing it - each tick stores the exact
-// response bytes fetchCrusadeDataWithSession/fetchLeaderboardDataWithSession received (their
-// `.text`), verbatim, as one TEXT column each - no JSON.stringify(parsed) re-serialization, which
-// would just redo (at real CPU cost) work fetch() already did once. Their `.parsed` twin is read
-// off in memory (phase/activeZone/crusadeId/seasonNumber) only to decide what to fetch next -
-// that's unavoidable control flow, never applied to the stored copy. All interpretation
-// (envelope-unwrapping, CrusadePlanet[] construction, building SideLeaderboardResult/
-// FactionLeaderboardResult from raw entries) happens client-side, in src/api/fetch-crusade-data.ts,
-// reused by src/api/crusade-cache-seed.ts - once per page load, not once per planet per minute.
+// Checkpointed, one atomic step per loop iteration - not "every tick does a fixed small batch of
+// planets and hopes the CPU budget holds". The old fixed-batch design still broke: on 2026-10-12,
+// 408 of 430 scheduled ticks failed with status: exceededResources (the CPU-limit hard-kill, which
+// never reaches a catch block, let alone a state write) for ~7 hours straight - every tick retried
+// the same doomed work from scratch with nothing checkpointed in between, so 7 hours of Domination
+// history silently went unrecorded. Here, each step (GET_CRUSADE + computing the relevant planet
+// list, or one planet's leaderboard fetch + history write) commits its own result AND the state
+// machine's "what's next" together in one atomic db.batch() - so a step that gets killed mid-work
+// just means the next tick resumes exactly where the last *completed* step left off, never losing
+// more than one step's worth of progress regardless of how long a bad stretch lasts. One invocation
+// loops through as many steps as it can: cheap planets, many steps fit in 10s of seconds; one slow
+// one, maybe just one.
+//
+// poller_lock (migrations/0008) guards against two overlapping invocations racing on the same
+// step - Cloudflare's Cron Triggers don't guarantee non-overlap, and a tick running long (exactly
+// when Loki itself is slow, the same condition that caused the 2026-10-12 incident) is a real way
+// to hit that. See tryAcquireLock's own comment for the exact mechanics.
 import { getPlanetData } from "../src/assets/seasons";
 import { FACTION_SIDE } from "../src/factions/faction-side";
 import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, fetchLeaderboardTextWithSession, type Session } from "./loki-client";
-import { rawPlanetToCrusadePlanet, recordHistoryTick } from "./planet-history";
+import { buildHistoryUpsertStatement, rawPlanetToCrusadePlanet } from "./planet-history";
+import { isInRolloverWindow } from "../src/rollover-window";
+import type { CrusadePlanet } from "../src/api/types";
 
 // The 22 faction ids, reused as-is (no Tauri/browser coupling in faction-side.ts, unlike
 // fetch-crusade-data.ts, so no need to duplicate this list).
@@ -22,17 +34,19 @@ const ALL_FACTION_IDS = Object.keys(FACTION_SIDE);
 
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // no documented Loki session TTL - defensive reuse window
 const CRUSADE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-// Real production data showed ~65% of ticks hitting the Workers Free plan's 10ms CPU cap
-// ("exceededResources") at 20 planets/tick, from JSON.parse-ing some planets' combined
-// 24-leaderboard-id response (seen up to 175KB). Per-planet fetches now use
-// fetchLeaderboardTextWithSession (loki-client.ts), which skips JSON.parse entirely on the common
-// success path (a cheap bounded prefix scan instead), but a live tail on 2026-09-27 showed ticks
-// still hitting "Exceeded CPU Limit" at 20/tick - and since that's a hard isolate kill (it never
-// reaches the catch block, let alone writePollerState), the cursor and last_crusade_refresh_at
-// were stuck for ~14 hours, with every tick redoing the same never-finished batch from scratch.
-// Back down to a smaller batch; re-check the real exceededResources rate after deploying and
-// adjust again if it's still meaningful.
-const PLANETS_PER_TICK = 5;
+// A single step's lock can't realistically run longer than one Loki call (capped at 20s by
+// loki-client.ts's own AbortSignal.timeout) plus a fast D1 write - 30s leaves real margin on top of
+// that worst case while still being short enough that a genuinely-dead holder (killed before
+// releasing) only blocks progress for a tick or two, not indefinitely.
+const LOCK_TTL_MS = 30_000;
+// The Workers Free plan caps outbound fetch() calls at 50 per invocation (unlike D1 queries, which
+// don't count against this) - stop looping with real headroom to spare rather than finding out by
+// hitting the cap mid-step.
+const MAX_FETCHES_PER_TICK = 45;
+// Purely defensive - every real iteration consumes fetch budget (capped well below this), so this
+// should never actually bind; it's just insurance against an unforeseen loop bug burning CPU
+// forever instead of a bounded number of steps.
+const MAX_ITERATIONS_PER_TICK = 200;
 
 interface RawCrusadePhase {
   phase: string;
@@ -87,170 +101,279 @@ export function allLeaderboardIdsForPlanet(crusadeId: string, seasonNumber: numb
   return ids;
 }
 
-// Rolling-cursor math: takes the next `batchSize` ids starting at cursorIndex (wrapping around),
-// and self-corrects if the relevant planet set shrank since the cursor was last saved (e.g. a
-// phase change from STRUGGLE's 146 planets down to a single CRUSADE zone's ~20-29).
-export function nextBatch(ids: string[], cursorIndex: number, batchSize: number): { batch: string[]; nextCursor: number } {
-  if (ids.length === 0) return { batch: [], nextCursor: 0 };
-  const start = cursorIndex % ids.length;
-  const batch = [...ids.slice(start), ...ids.slice(0, start)].slice(0, batchSize);
-  return { batch, nextCursor: (start + batch.length) % ids.length };
-}
+// See migrations/0008's own comment for what each phase means and when runOneStep transitions
+// between them.
+type EpochPhase = "awaiting_epoch" | "crusade_fetch" | "planets";
 
-interface PollerStateRow {
+interface EpochStateRow {
+  phase: EpochPhase;
+  epoch_started_at: number | null;
+  cursor: number;
+  crusade_id: string | null;
+  season_number: number | null;
   session_id: string | null;
   session_issued_at: number | null;
-  last_crusade_refresh_at: number | null;
-  cursor_index: number;
 }
 
-const DEFAULT_POLLER_STATE: PollerStateRow = { session_id: null, session_issued_at: null, last_crusade_refresh_at: null, cursor_index: 0 };
+// Mirrors poller_epoch_state's own column defaults (migrations/0008) - used only if the singleton
+// row is somehow missing (shouldn't happen once the migration's seed INSERT has run, but cheaper
+// to fall back correctly than to assume the row always exists).
+const DEFAULT_EPOCH_STATE: EpochStateRow = {
+  phase: "awaiting_epoch",
+  epoch_started_at: null,
+  cursor: 0,
+  crusade_id: null,
+  season_number: null,
+  session_id: null,
+  session_issued_at: null,
+};
 
-async function readPollerState(db: D1Database): Promise<PollerStateRow> {
+async function readEpochState(db: D1Database): Promise<EpochStateRow> {
   const row = await db
-    .prepare("SELECT session_id, session_issued_at, last_crusade_refresh_at, cursor_index FROM poller_state WHERE id = 1")
-    .first<PollerStateRow>();
-  return row ?? DEFAULT_POLLER_STATE;
+    .prepare("SELECT phase, epoch_started_at, cursor, crusade_id, season_number, session_id, session_issued_at FROM poller_epoch_state WHERE id = 1")
+    .first<EpochStateRow>();
+  return row ?? DEFAULT_EPOCH_STATE;
 }
 
-async function writePollerState(db: D1Database, state: PollerStateRow): Promise<void> {
-  await db
-    .prepare(
-      "INSERT INTO poller_state (id, session_id, session_issued_at, last_crusade_refresh_at, cursor_index) VALUES (1, ?, ?, ?, ?) " +
-        "ON CONFLICT(id) DO UPDATE SET session_id = excluded.session_id, session_issued_at = excluded.session_issued_at, " +
-        "last_crusade_refresh_at = excluded.last_crusade_refresh_at, cursor_index = excluded.cursor_index",
-    )
-    .bind(state.session_id, state.session_issued_at, state.last_crusade_refresh_at, state.cursor_index)
+// One row per poller_planet_queue read - see that table's own comment in migrations/0008 for why
+// this is a dedicated table (an indexed point-lookup by cursor_position) rather than a JSON blob
+// re-parsed on every planet step.
+interface PlanetQueueRow {
+  cursor_position: number;
+  planet_id: string;
+  side_owner: string | null;
+  owned_by_faction: string | null;
+  points_for: number | null;
+  points_against: number | null;
+  struggle_data: string | null;
+}
+
+// Acquire-or-bail: succeeds (returns a holderId) only if the lock is free or its holder's claim has
+// expired (judged by LOCK_TTL_MS, not by whether that holder is actually still running - a real
+// invocation that's simply slow looks the same as a dead one from here, which is the whole point:
+// no heartbeat to maintain, just a conservative expiry). Fails (returns null) if some other,
+// currently-valid holder has it - the caller's response to that is always "end this invocation,
+// let the next minute's tick try again", never a retry loop within the same invocation.
+async function tryAcquireLock(db: D1Database, nowMs: number): Promise<string | null> {
+  const holderId = crypto.randomUUID();
+  const result = await db
+    .prepare("UPDATE poller_lock SET locked_at = ?, holder_id = ? WHERE id = 1 AND (locked_at IS NULL OR locked_at < ?)")
+    .bind(nowMs, holderId, nowMs - LOCK_TTL_MS)
     .run();
+  return (result.meta.changes ?? 0) > 0 ? holderId : null;
 }
 
-interface SnapshotMeta {
-  crusadeId: string;
-  seasonNumber: number;
-  phase: string | null;
-  activeZone: number | null;
-}
-
-async function readSnapshotMeta(db: D1Database): Promise<SnapshotMeta> {
-  const row = await db
-    .prepare("SELECT crusade_id, season_number, phase, active_zone FROM crusade_snapshot_cache WHERE id = 1")
-    .first<{ crusade_id: string; season_number: number; phase: string | null; active_zone: number | null }>();
-  return row
-    ? { crusadeId: row.crusade_id, seasonNumber: row.season_number, phase: row.phase, activeZone: row.active_zone }
-    : { crusadeId: "", seasonNumber: 0, phase: null, activeZone: null };
-}
-
-// rawResponseText is the exact response body already received (PostResult.text from
-// loki-client.ts) - bound directly, never JSON.stringify'd. Re-serializing an already-parsed
-// object back into a string just to store it would redo (at real CPU cost) work already done once
-// by fetch(); storing the original bytes verbatim avoids that entirely.
-async function writeCrusadeSnapshot(db: D1Database, meta: SnapshotMeta, rawResponseText: string, fetchedAt: number): Promise<void> {
-  await db
-    .prepare(
-      "INSERT INTO crusade_snapshot_cache (id, crusade_id, season_number, phase, active_zone, raw_response, fetched_at) VALUES (1, ?, ?, ?, ?, ?, ?) " +
-        "ON CONFLICT(id) DO UPDATE SET crusade_id = excluded.crusade_id, season_number = excluded.season_number, phase = excluded.phase, " +
-        "active_zone = excluded.active_zone, raw_response = excluded.raw_response, fetched_at = excluded.fetched_at",
-    )
-    .bind(meta.crusadeId, meta.seasonNumber, meta.phase, meta.activeZone, rawResponseText, fetchedAt)
-    .run();
-}
-
-async function upsertPlanetLeaderboard(db: D1Database, planetId: string, rawLeaderboardsText: string, fetchedAt: number): Promise<void> {
-  await db
-    .prepare(
-      "INSERT INTO planet_leaderboard_cache (planet_id, raw_leaderboards, fetched_at) VALUES (?, ?, ?) " +
-        "ON CONFLICT(planet_id) DO UPDATE SET raw_leaderboards = excluded.raw_leaderboards, fetched_at = excluded.fetched_at",
-    )
-    .bind(planetId, rawLeaderboardsText, fetchedAt)
-    .run();
+// Only releases if this invocation still actually holds the lock (holder_id still matches) -
+// defensive guard against the rare case where this invocation's own claim already expired and got
+// re-acquired by someone else before this release runs; without the check this would release a
+// lock it no longer owns.
+function releaseLockStatement(db: D1Database, holderId: string): D1PreparedStatement {
+  return db.prepare("UPDATE poller_lock SET locked_at = NULL, holder_id = NULL WHERE id = 1 AND holder_id = ?").bind(holderId);
 }
 
 const POLLER_ENVIRONMENT = "prod"; // mirrors src/track-usage.ts's prod-only policy; QA isn't public-facing
 
-export async function runPollerTick(db: D1Database, userId: string, clientSecret: string): Promise<void> {
-  const now = Date.now();
-  const state = await readPollerState(db);
+interface ResolvedSession {
+  session: Session;
+  issuedAt: number;
+}
 
-  // Reconstructing a cached session is a pure local lookup (environmentConfig), no network call -
-  // this is what lets most ticks skip the 2-subrequest APP_START+CONNECT bootstrap entirely.
+// Reconstructing a cached session is a pure local lookup (environmentConfig), no network call -
+// this is what lets most steps skip the 2-fetch APP_START+CONNECT bootstrap entirely.
+async function resolveSession(
+  state: Pick<EpochStateRow, "session_id" | "session_issued_at">,
+  userId: string,
+  clientSecret: string,
+  nowMs: number,
+  countFetches: (n: number) => void,
+): Promise<ResolvedSession> {
   const config = environmentConfig(POLLER_ENVIRONMENT);
-  let session: Session | null =
-    state.session_id !== null && state.session_issued_at !== null && now - state.session_issued_at < SESSION_MAX_AGE_MS
-      ? { config, baseUrl: `${config.baseUrl}/${userId}`, sessionId: state.session_id }
-      : null;
-  let sessionIssuedAt = state.session_issued_at;
+  if (state.session_id && state.session_issued_at !== null && nowMs - state.session_issued_at < SESSION_MAX_AGE_MS) {
+    return { session: { config, baseUrl: `${config.baseUrl}/${userId}`, sessionId: state.session_id }, issuedAt: state.session_issued_at };
+  }
+  const session = await bootstrapSession(POLLER_ENVIRONMENT, userId, clientSecret, "");
+  countFetches(2); // APP_START + CONNECT
+  return { session, issuedAt: nowMs };
+}
 
-  async function ensureSession(): Promise<Session> {
-    if (session) return session;
-    session = await bootstrapSession(POLLER_ENVIRONMENT, userId, clientSecret, "");
-    sessionIssuedAt = now;
-    return session;
+// Runs exactly one checkpointed step (whichever the current phase calls for) under the lock
+// identified by holderId, committing the step's own work together with the epoch state's advance
+// and the lock release in one atomic db.batch(). Returns whether a step actually ran - false only
+// for the "still waiting on the 5-minute gate" no-op, which the caller treats as "nothing to do,
+// stop looping".
+async function runOneStep(
+  db: D1Database,
+  userId: string,
+  clientSecret: string,
+  holderId: string,
+  nowMs: number,
+  countFetches: (n: number) => void,
+): Promise<boolean> {
+  const release = releaseLockStatement(db, holderId);
+
+  // The game's own daily server reset/rollover (23:50-00:10 UTC) - do no work and release the
+  // lock, same no-op shape as the "gate not open" case below. Checked first, before even reading
+  // epoch state, so a tick that wakes up entirely within the window never does anything at all
+  // (see runPollerTick's own earlier bail-out for the "don't even attempt the lock" half of this).
+  // nowMs is re-read fresh at the top of every loop iteration in runPollerTick, so an invocation
+  // that's already mid-run when the window begins hits this on its very next step.
+  if (isInRolloverWindow(nowMs)) {
+    await db.batch([release]);
+    return false;
   }
 
-  // One re-bootstrap-and-retry on any failure - covers a session that expired despite the TTL
-  // heuristic, and the very first call of a tick with no cached session at all.
-  async function withSession<T>(fn: (s: Session) => Promise<T>): Promise<T> {
-    try {
-      return await fn(await ensureSession());
-    } catch (error) {
-      console.error("[poller] call failed, re-bootstrapping once", error);
-      session = null;
-      return fn(await ensureSession());
+  const state = await readEpochState(db);
+
+  if (state.phase === "awaiting_epoch") {
+    const gateOpen = state.epoch_started_at === null || nowMs - state.epoch_started_at >= CRUSADE_REFRESH_INTERVAL_MS;
+    if (!gateOpen) {
+      await db.batch([release]);
+      return false;
     }
+    // Pure phase transition, no fetch yet - the actual GET_CRUSADE call happens on the next
+    // acquired step, so a CPU kill between here and there just means retrying this (free, idempotent)
+    // transition, never losing real work.
+    await db.batch([db.prepare("UPDATE poller_epoch_state SET phase = 'crusade_fetch' WHERE id = 1"), release]);
+    return true;
+  }
+
+  const { session, issuedAt } = await resolveSession(state, userId, clientSecret, nowMs, countFetches);
+
+  if (state.phase === "crusade_fetch") {
+    let text: string;
+    let data: any;
+    try {
+      const result = await fetchCrusadeDataWithSession(session, userId);
+      countFetches(1);
+      text = result.text;
+      data = result.parsed?.eventResults?.[0]?.eventResponseData;
+    } catch (error) {
+      console.error("[poller] crusade fetch failed, will retry next tick", error);
+      await db.batch([
+        db.prepare("UPDATE poller_epoch_state SET session_id = NULL WHERE id = 1"), // force a fresh bootstrap next attempt
+        release,
+      ]);
+      return true;
+    }
+
+    const active = findActivePhase(data?.downtimePhase, data?.crusadePhases ?? [], data?.strugglePhase);
+    const crusadeId = data?.crusadeId ?? "";
+    const seasonNumber = data?.seasonNumber ?? 0;
+    const relevantIds = relevantPlanetIds(active.phase, active.activeZone);
+    const planetsById = new Map<string, { sideOwner?: string; ownedByFaction?: string; pointsFor?: number; pointsAgainst?: number; struggleData?: unknown }>(
+      ((data?.planetsData ?? []) as { planetId: string }[]).map((p: any) => [p.planetId, p]),
+    );
+
+    const statements: D1PreparedStatement[] = [
+      db
+        .prepare(
+          "INSERT INTO crusade_snapshot_cache (id, crusade_id, season_number, phase, active_zone, raw_response, fetched_at) VALUES (1, ?, ?, ?, ?, ?, ?) " +
+            "ON CONFLICT(id) DO UPDATE SET crusade_id = excluded.crusade_id, season_number = excluded.season_number, phase = excluded.phase, " +
+            "active_zone = excluded.active_zone, raw_response = excluded.raw_response, fetched_at = excluded.fetched_at",
+        )
+        .bind(crusadeId, seasonNumber, active.phase, active.activeZone, text, nowMs),
+      db.prepare("DELETE FROM poller_planet_queue"),
+      ...relevantIds.map((planetId, i) => {
+        const raw = planetsById.get(planetId);
+        return db
+          .prepare(
+            "INSERT INTO poller_planet_queue (cursor_position, planet_id, side_owner, owned_by_faction, points_for, points_against, struggle_data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .bind(i, planetId, raw?.sideOwner ?? null, raw?.ownedByFaction ?? null, raw?.pointsFor ?? null, raw?.pointsAgainst ?? null, raw?.struggleData ? JSON.stringify(raw.struggleData) : null);
+      }),
+      db
+        .prepare(
+          "UPDATE poller_epoch_state SET phase = ?, epoch_started_at = ?, cursor = 0, crusade_id = ?, season_number = ?, session_id = ?, session_issued_at = ? WHERE id = 1",
+        )
+        .bind(relevantIds.length > 0 ? "planets" : "awaiting_epoch", nowMs, crusadeId, seasonNumber, session.sessionId, issuedAt),
+      release,
+    ];
+    await db.batch(statements);
+    return true;
+  }
+
+  // state.phase === "planets"
+  const queueRow = await db.prepare("SELECT * FROM poller_planet_queue WHERE cursor_position = ?").bind(state.cursor).first<PlanetQueueRow>();
+  if (!queueRow) {
+    await db.batch([db.prepare("UPDATE poller_epoch_state SET phase = 'awaiting_epoch' WHERE id = 1"), release]);
+    return true;
+  }
+
+  const planet: CrusadePlanet = rawPlanetToCrusadePlanet({
+    planetId: queueRow.planet_id,
+    sideOwner: queueRow.side_owner ?? undefined,
+    ownedByFaction: queueRow.owned_by_faction ?? undefined,
+    pointsFor: queueRow.points_for ?? undefined,
+    pointsAgainst: queueRow.points_against ?? undefined,
+    struggleData: queueRow.struggle_data ? JSON.parse(queueRow.struggle_data) : undefined,
+  });
+
+  const statements: D1PreparedStatement[] = [];
+
+  // Isolated from the history write below (and from each other across planets) - one planet's bad
+  // leaderboard fetch never blocks its own history recording or any other planet's progress.
+  try {
+    const ids = allLeaderboardIdsForPlanet(state.crusade_id ?? "", state.season_number ?? 0, planet.planetId);
+    const text = await fetchLeaderboardTextWithSession(session, userId, ids);
+    countFetches(1);
+    statements.push(
+      db
+        .prepare(
+          "INSERT INTO planet_leaderboard_cache (planet_id, raw_leaderboards, fetched_at) VALUES (?, ?, ?) " +
+            "ON CONFLICT(planet_id) DO UPDATE SET raw_leaderboards = excluded.raw_leaderboards, fetched_at = excluded.fetched_at",
+        )
+        .bind(planet.planetId, text, nowMs),
+    );
+  } catch (error) {
+    console.error(`[poller] planet ${planet.planetId} leaderboard fetch failed`, error);
   }
 
   try {
-    let meta: SnapshotMeta;
-    const needsCrusadeRefresh = state.last_crusade_refresh_at === null || now - state.last_crusade_refresh_at >= CRUSADE_REFRESH_INTERVAL_MS;
-
-    if (needsCrusadeRefresh) {
-      // `text` is stored verbatim below (writeCrusadeSnapshot); `parsed` is only ever read in
-      // memory here to decide what to fetch next, never applied to the stored copy.
-      const { parsed, text } = await withSession((s) => fetchCrusadeDataWithSession(s, userId));
-      const data = parsed?.eventResults?.[0]?.eventResponseData;
-      const active = findActivePhase(data?.downtimePhase, data?.crusadePhases ?? [], data?.strugglePhase);
-      meta = { crusadeId: data?.crusadeId ?? "", seasonNumber: data?.seasonNumber ?? 0, phase: active.phase, activeZone: active.activeZone };
-      await writeCrusadeSnapshot(db, meta, text, now);
-
-      // Rides this same (already in-memory, already paid-for) call - no new upstream fetches.
-      // Domination-only: struggleData (and so points-remaining/cooldown) only exists during
-      // STRUGGLE; CRUSADE/DOWNTIME planets have nothing meaningful to record here.
-      if (meta.phase === "STRUGGLE") {
-        const planets = ((data?.planetsData ?? []) as { struggleData?: unknown }[])
-          .filter((p) => p.struggleData != null)
-          .map((p) => rawPlanetToCrusadePlanet(p as Parameters<typeof rawPlanetToCrusadePlanet>[0]));
-        try {
-          await recordHistoryTick(db, planets, now);
-        } catch (error) {
-          console.error("[poller] recordHistoryTick failed", error); // isolated - history is best-effort, never blocks the rest of the tick
-        }
-      }
-    } else {
-      meta = await readSnapshotMeta(db);
-    }
-
-    const relevantIds = relevantPlanetIds(meta.phase, meta.activeZone);
-    const { batch, nextCursor } = nextBatch(relevantIds, state.cursor_index, PLANETS_PER_TICK);
-
-    for (const planetId of batch) {
-      try {
-        const ids = allLeaderboardIdsForPlanet(meta.crusadeId, meta.seasonNumber, planetId);
-        const text = await withSession((s) => fetchLeaderboardTextWithSession(s, userId, ids));
-        await upsertPlanetLeaderboard(db, planetId, text, now);
-      } catch (error) {
-        console.error(`[poller] planet ${planetId} failed`, error); // isolated - one bad planet doesn't abort the tick
-      }
-    }
-
-    await writePollerState(db, {
-      session_id: session?.sessionId ?? null,
-      session_issued_at: sessionIssuedAt,
-      last_crusade_refresh_at: needsCrusadeRefresh ? now : state.last_crusade_refresh_at,
-      cursor_index: nextCursor,
-    });
+    const historyStatement = await buildHistoryUpsertStatement(db, planet, nowMs);
+    if (historyStatement) statements.push(historyStatement);
   } catch (error) {
-    console.error("[poller] tick failed", error);
-    // Force the next tick to re-bootstrap rather than retry a possibly-broken session.
-    await writePollerState(db, { ...state, session_id: null }).catch(() => {});
+    console.error(`[poller] planet ${planet.planetId} history write failed`, error);
+  }
+
+  statements.push(db.prepare("UPDATE poller_epoch_state SET cursor = ?, session_id = ?, session_issued_at = ? WHERE id = 1").bind(state.cursor + 1, session.sessionId, issuedAt));
+  statements.push(release);
+  await db.batch(statements);
+  return true;
+}
+
+export async function runPollerTick(db: D1Database, userId: string, clientSecret: string): Promise<void> {
+  // The game's own daily server reset/rollover (23:50-00:10 UTC) - if a tick wakes up entirely
+  // within the window, don't even attempt to acquire the lock (runOneStep's own check below
+  // already handles an invocation that's already mid-run when the window begins; this is the
+  // "just start up and shut right down" case for a fresh wake-up).
+  if (isInRolloverWindow(Date.now())) return;
+
+  let fetchesUsed = 0;
+  const countFetches = (n: number) => {
+    fetchesUsed += n;
+  };
+
+  for (let iteration = 0; iteration < MAX_ITERATIONS_PER_TICK; iteration++) {
+    if (fetchesUsed >= MAX_FETCHES_PER_TICK) return;
+
+    const now = Date.now();
+    const holderId = await tryAcquireLock(db, now);
+    if (!holderId) return; // another invocation is mid-step; wait for next tick, no retry loop here
+
+    try {
+      const didWork = await runOneStep(db, userId, clientSecret, holderId, now, countFetches);
+      if (!didWork) return; // awaiting_epoch, gate not open - lock already released inside runOneStep
+    } catch (error) {
+      console.error("[poller] step failed", error);
+      // A step that threw before committing its own batch never released the lock itself - do it
+      // here so a genuine error (as opposed to a hard CPU-limit kill, which never reaches this
+      // catch at all) doesn't block progress until the lock's own TTL expires.
+      await db
+        .prepare("UPDATE poller_lock SET locked_at = NULL, holder_id = NULL WHERE id = 1 AND holder_id = ?")
+        .bind(holderId)
+        .run()
+        .catch(() => {});
+      return;
+    }
   }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { GraphHoursFilter } from "./GraphHoursFilter";
 import { PlanetTrackerGraph } from "./PlanetTrackerGraph";
 import { PlanetSectorMapModal } from "./PlanetSectorMapModal";
 import { sortDominationPlanets } from "../crusade/crusade-domination-view-model";
@@ -37,6 +38,8 @@ export function MonitorTab({ crusadeData, planetRefreshState, favoritedPlanetIds
   // the card except the graph itself, which stops its own propagation).
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   const [viewedZone, setViewedZone] = useState<number | null>(null);
+  // Independent of the Crusade tab's own hours filter - each tab remembers its own choice.
+  const [hoursFilter, setHoursFilter] = useState(Infinity);
 
   useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), CAPTION_TICK_MS);
@@ -102,6 +105,9 @@ export function MonitorTab({ crusadeData, planetRefreshState, favoritedPlanetIds
 
   return (
     <>
+      <div className="my-2 flex justify-center">
+        <GraphHoursFilter value={hoursFilter} onChange={setHoursFilter} />
+      </div>
       <div className="flex flex-wrap gap-4">
         {dominationPlanets.map((planet) => {
           const history = historyByPlanet.get(planet.planetId) ?? [];
@@ -116,6 +122,7 @@ export function MonitorTab({ crusadeData, planetRefreshState, favoritedPlanetIds
               state={trackedStateFromHistory(planet.planetId, samples, nowMs)}
               planetName={planet.name}
               nowMs={nowMs}
+              hoursFilter={hoursFilter}
               onlyCombined
               onCardClick={() => openSectorMap(planet.planetId)}
             />

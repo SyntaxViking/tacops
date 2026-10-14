@@ -1,36 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allLeaderboardIdsForPlanet, findActivePhase, nextBatch, relevantPlanetIds } from "./poller";
-
-describe("nextBatch", () => {
-  it("takes the next batchSize ids starting at the cursor", () => {
-    const { batch, nextCursor } = nextBatch(["a", "b", "c", "d", "e"], 1, 2);
-    expect(batch).toEqual(["b", "c"]);
-    expect(nextCursor).toBe(3);
-  });
-
-  it("wraps around the end of the list", () => {
-    const { batch, nextCursor } = nextBatch(["a", "b", "c", "d", "e"], 4, 2);
-    expect(batch).toEqual(["e", "a"]);
-    expect(nextCursor).toBe(1);
-  });
-
-  it("self-corrects when the cursor is stale (relevant set shrank since it was saved)", () => {
-    const { batch, nextCursor } = nextBatch(["a", "b", "c"], 100, 2);
-    // 100 % 3 === 1
-    expect(batch).toEqual(["b", "c"]);
-    expect(nextCursor).toBe(0);
-  });
-
-  it("returns the whole list when batchSize exceeds it", () => {
-    const { batch, nextCursor } = nextBatch(["a", "b"], 0, 20);
-    expect(batch).toEqual(["a", "b"]);
-    expect(nextCursor).toBe(0);
-  });
-
-  it("returns an empty batch for an empty id list", () => {
-    expect(nextBatch([], 5, 20)).toEqual({ batch: [], nextCursor: 0 });
-  });
-});
+import { allLeaderboardIdsForPlanet, findActivePhase, relevantPlanetIds } from "./poller";
 
 describe("relevantPlanetIds", () => {
   it("returns all 146 planets during STRUGGLE", () => {

@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { Spinner } from "./components/Spinner";
 import { ErrorIcon } from "./components/ErrorIcon";
 import { EnvironmentToggle } from "./components/EnvironmentToggle";
+import { DataSourceToggle } from "./components/DataSourceToggle";
 import { ViewModeToggle, type ViewMode } from "./components/ViewModeToggle";
 import { Tabs } from "./components/Tabs";
 import { OperationsTable } from "./components/OperationsTable";
@@ -10,6 +11,8 @@ import { OperationsCards } from "./components/OperationsCards";
 import { CharactersTable } from "./components/CharactersTable";
 import { MowTable } from "./components/MowTable";
 import { GuildChatTab } from "./components/GuildChatTab";
+import { ArenaTab } from "./components/ArenaTab";
+import { OnslaughtTab } from "./components/OnslaughtTab";
 import { BoardCoverageTab } from "./components/BoardCoverageTab";
 import { CrusadeTab } from "./components/CrusadeTab";
 import { MonitorTab } from "./components/MonitorTab";
@@ -19,6 +22,8 @@ import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
 import { RankedParticipantsCounter } from "./components/RankedParticipantsCounter";
+import { RolloverCooldownModal } from "./components/RolloverCooldownModal";
+import { msUntilRolloverWindowEnds } from "./rollover-window";
 import { StaleVersionBanner } from "./components/StaleVersionBanner";
 import { Toast } from "./components/Toast";
 import { registerStaleVersionHandler, startVersionCheck } from "./version-check";
@@ -27,19 +32,20 @@ import { entryIsUnavailable } from "./board/board-view-model";
 import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
 import { storeWebCredential } from "./api/store-web-credential";
 import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
+import { getDevDataSource, setDevDataSource, type DevDataSource } from "./api/dev-data-source";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
 import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
 import { countRankedParticipants, isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
-import { appendTrackedSample, createTrackedPlanetState, mergeHistoryIntoTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
+import { appendTrackedSample, computeTotalHourlyRate, createTrackedPlanetState, mergeHistoryIntoTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
 import { fetchAllPlanetHistory, fetchPlanetHistory } from "./api/fetch-planet-history";
 import { AnonymousCrusadeSection } from "./components/AnonymousCrusadeSection";
 import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
 import type { SolveRequest, SolveResponse } from "./board/board-solver.worker";
 import type { PriorityKey } from "./board/reward-amount";
-import type { CrusadeData, CrusadeSectorMap, Environment, ExpeditionBoardEntry, PlanetLeaderboard, PlanetRefreshEntry, PlayerResources, RawUnit } from "./api/types";
+import type { CrusadeData, CrusadeSectorMap, Environment, ExpeditionBoardEntry, OnslaughtBoards, PlanetDefenseCounts, PlanetLeaderboard, PlanetRefreshEntry, PlayerResources, RawUnit } from "./api/types";
 import type { HeroQuestJar } from "./hero-quests/hero-quest-view-model";
 import type { TrackedPlanetSample, TrackedPlanetState } from "./crusade/planet-tracker-view-model";
 
@@ -48,6 +54,8 @@ const TABS = [
   { id: "crusade", label: "Crusade" },
   { id: "monitor", label: "Monitor" },
   { id: "guildchat", label: "Guild Chat" },
+  { id: "arena", label: "Arena" },
+  { id: "onslaught", label: "Onslaught" },
   { id: "characters", label: "Characters" },
   { id: "mows", label: "Machines of War" },
   { id: "coverage", label: "Board Coverage" },
@@ -59,6 +67,13 @@ const SOLVER_COUNTDOWN_SECONDS = 70; // 7 lexicographic passes x the 10s-per-pas
 
 export function App() {
   const [environment, setEnvironment] = useState<Environment>("prod");
+  // Tauri-only (see dev-data-source.ts) - initialized from localStorage so the choice survives
+  // app restarts; meaningless/always "local" on the web build.
+  const [devDataSource, setDevDataSourceState] = useState<DevDataSource>(() => getDevDataSource());
+  function changeDevDataSource(source: DevDataSource) {
+    setDevDataSource(source);
+    setDevDataSourceState(source);
+  }
   const [activeTab, setActiveTab] = useState(TABS[0].id);
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [selectedExpeditionId, setSelectedExpeditionId] = useState<string | null>(null);
@@ -72,6 +87,7 @@ export function App() {
   const [status, setStatus] = useState("");
   const [fetchState, setFetchState] = useState<"idle" | "loading" | "error" | "success">("idle");
   const [secondsRemaining, setSecondsRemaining] = useState(FETCH_COUNTDOWN_SECONDS);
+  const [rolloverMsRemaining, setRolloverMsRemaining] = useState(() => msUntilRolloverWindowEnds(Date.now()));
   const [board, setBoard] = useState<ExpeditionBoardEntry[]>([]);
   const [heroes, setHeroes] = useState<RawUnit[]>([]);
   const [favoritedCharacterIds, setFavoritedCharacterIds] = useState<Set<string>>(new Set());
@@ -84,6 +100,8 @@ export function App() {
   const [resources, setResources] = useState<PlayerResources | null>(null);
   const [heroQuestJars, setHeroQuestJars] = useState<HeroQuestJar[]>([]);
   const [sectorMap, setSectorMap] = useState<CrusadeSectorMap>({ planets: [], connections: [] });
+  const [planetDefenses, setPlanetDefenses] = useState<Record<string, PlanetDefenseCounts>>({});
+  const [onslaughtBoards, setOnslaughtBoards] = useState<OnslaughtBoards>({ Imperial: [], Chaos: [], Xenos: [] });
   const [rawPlayerData, setRawPlayerData] = useState<unknown>(null);
   const [crusadeData, setCrusadeData] = useState<CrusadeData | null>(null);
   // Mirrors crusadeData for the dedicated tracker loop below (see the tracker effect) - that loop
@@ -318,6 +336,19 @@ export function App() {
     return () => clearInterval(interval);
   }, [solverState]);
 
+  // Drives RolloverCooldownModal - unconditional (not gated on login/fetch state, unlike the two
+  // countdowns above) since the modal needs to cover the pre-login screen too (see its own
+  // comment). This is purely the *visual* half of the rollover guarantee - the actual traffic
+  // block is enforced independently at the transport layer (rollover-guard.ts,
+  // invoke-with-timeout.ts) and server-side (worker/index.ts), so a clock that's merely a few
+  // seconds off here never lets real traffic through, it just mis-times when the overlay shows.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRolloverMsRemaining(msUntilRolloverWindowEnds(Date.now()));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   function toggleSelection(expeditionId: string) {
     setSelectedExpeditionId((current) => (current === expeditionId ? null : expeditionId));
   }
@@ -367,6 +398,8 @@ export function App() {
       setResources(data.resources);
       setHeroQuestJars(data.heroQuestJars);
       setSectorMap(data.sectorMap);
+      setPlanetDefenses(data.planetDefenses);
+      setOnslaughtBoards(data.onslaughtBoards);
       setRawPlayerData(data.raw);
       setFetchState("success");
       if (!isTauri()) {
@@ -817,14 +850,23 @@ export function App() {
   // render, same as the rest of this component's derived-from-state values; planetRefreshState is
   // small enough (dozens of planets) that memoizing this would be premature.
   const rankedParticipantCounts = countRankedParticipants(planetRefreshState);
+  const totalHourlyRate = computeTotalHourlyRate(crusadeData?.planets ?? [], planetHistoryByPlanet, Date.now());
 
   return (
     <main
       onClick={() => setSelectedExpeditionId(null)}
       className="mx-auto flex min-h-screen w-full flex-col items-center bg-neutral-100 px-4 py-[5vh] text-center text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
     >
+      {rolloverMsRemaining > 0 && <RolloverCooldownModal msRemaining={rolloverMsRemaining} />}
       <BuildTimestamp />
-      {devModeEnabled && <RankedParticipantsCounter imperial={rankedParticipantCounts.imperial} devastation={rankedParticipantCounts.devastation} />}
+      {devModeEnabled && (
+        <RankedParticipantsCounter
+          imperial={rankedParticipantCounts.imperial}
+          devastation={rankedParticipantCounts.devastation}
+          imperialRate={totalHourlyRate.imperial}
+          devastationRate={totalHourlyRate.devastation}
+        />
+      )}
       {staleVersionDetected && <StaleVersionBanner onReloadNow={() => window.location.reload()} />}
       {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />}
       <h1 className="cursor-pointer text-2xl font-semibold select-none" onClick={handleTitleTap}>
@@ -845,6 +887,7 @@ export function App() {
           </p>
 
           {devModeEnabled && <EnvironmentToggle value={environment} onChange={setEnvironment} />}
+          {devModeEnabled && isTauri() && <DataSourceToggle value={devDataSource} onChange={changeDevDataSource} />}
           {devModeEnabled && <ViewModeToggle value={viewMode} onChange={setViewMode} />}
 
           {activeTab !== "guildchat" && (
@@ -981,6 +1024,14 @@ export function App() {
             )}
             {activeTab === "mows" && <MowTable machinesOfWar={machinesOfWar} />}
             {activeTab === "guildchat" && <GuildChatTab environment={environment} />}
+            {activeTab === "arena" && (
+              <ArenaTab
+                environment={environment}
+                pvpPosition={resources?.pvpPosition ?? null}
+                webCredentials={{ userId, clientSecret }}
+              />
+            )}
+            {activeTab === "onslaught" && <OnslaughtTab onslaughtBoards={onslaughtBoards} />}
             {activeTab === "coverage" && <BoardCoverageTab />}
             {activeTab === "heroquests" && <HeroQuestsTab jars={heroQuestJars} />}
             {activeTab === "crusade" && (
@@ -996,6 +1047,8 @@ export function App() {
                 trackedPlanetId={trackedPlanetId}
                 trackedPlanetState={trackedPlanetState}
                 onToggleTrackPlanet={toggleTrackedPlanet}
+                historyByPlanet={planetHistoryByPlanet}
+                planetDefenses={planetDefenses}
               />
             )}
             {activeTab === "monitor" && (

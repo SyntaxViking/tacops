@@ -2,7 +2,8 @@ import { isStarDisabled } from "../crusade/starred-planets";
 import { isTrackDisabled } from "../crusade/tracked-planet";
 import { CrusadeDominationCard } from "./CrusadeDominationCard";
 import { EMPTY_REFRESH_ENTRY } from "./planet-refresh-defaults";
-import type { CrusadePlanet, PlanetRefreshEntry } from "../api/types";
+import type { TrackedPlanetSample } from "../crusade/planet-tracker-view-model";
+import type { CrusadePlanet, PlanetDefenseCounts, PlanetRefreshEntry } from "../api/types";
 
 interface CrusadeDominationCardsProps {
   planets: CrusadePlanet[];
@@ -13,6 +14,8 @@ interface CrusadeDominationCardsProps {
   onToggleFavoritePlanet?: (planetId: string) => void;
   trackedPlanetId?: string | null;
   onToggleTrackPlanet?: (planetId: string) => void;
+  historyByPlanet?: Map<string, TrackedPlanetSample[]>;
+  planetDefenses?: Record<string, PlanetDefenseCounts>;
 }
 
 export function CrusadeDominationCards({
@@ -24,6 +27,8 @@ export function CrusadeDominationCards({
   onToggleFavoritePlanet,
   trackedPlanetId = null,
   onToggleTrackPlanet,
+  historyByPlanet,
+  planetDefenses,
 }: CrusadeDominationCardsProps) {
   const trackedPlanetName = trackedPlanetId ? planets.find((p) => p.planetId === trackedPlanetId)?.name : undefined;
   return (
@@ -43,6 +48,8 @@ export function CrusadeDominationCards({
           trackDisabled={isTrackDisabled(trackedPlanetId, planet)}
           trackDisabledTitle="Not currently available to track (already captured or in cooldown)"
           otherTrackedPlanetName={trackedPlanetName}
+          history={historyByPlanet?.get(planet.planetId)}
+          defenses={planetDefenses?.[planet.planetId]}
         />
       ))}
     </div>
