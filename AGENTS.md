@@ -22,6 +22,25 @@ ship with this number left alone - bumping it on an ordinary change would force-
 tab for no reason. It only goes up for a genuine breaking change, where old clients must not keep
 talking to the new backend (or vice versa) until they update.
 
+## Rollover cooldown (`src/rollover-window.ts`)
+
+The game's own daily server reset/rollover happens around UTC midnight, and hammering a real
+account's session with requests close to that time has caused account issues. `src/rollover-window.ts`
+is the single source of truth for the resulting cooldown window (23:50-00:10 UTC), during which the
+client refuses to send traffic (`src/rollover-guard.ts`'s global `fetch` wrap,
+`src/api/invoke-with-timeout.ts`'s `ROLLOVER_GATED_COMMANDS` set) and the Worker refuses to serve it
+(`worker/index.ts`), on top of the background poller doing no work during the same window
+(`worker/poller.ts`).
+
+**Whenever a new Worker route is added that makes a live call to the game's own servers on a real
+account's credentials** (not just reading/writing tacops's own D1 cache) **, add the same
+`isInRolloverWindow`/`ROLLOVER_WINDOW_RESPONSE` check** (`worker/index.ts`) that the existing
+`/api/fetch-*` routes already have, mirroring how they're also version-gated. Same for any new
+Tauri command that reaches the game's servers directly (not just tacops's own Worker) - add it to
+`ROLLOVER_GATED_COMMANDS` in `src/api/invoke-with-timeout.ts`. Routes/commands that only touch
+tacops's own D1 cache or local disk don't need this - gating those would degrade unrelated
+functionality during the window for no account-safety benefit.
+
 ## Deploying the Worker (`board-assets/`)
 
 `board-assets/` (PVP board background images + spawn-point manifest, used by the Arena tab) is

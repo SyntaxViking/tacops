@@ -6,6 +6,7 @@ import { getCrusadeCache } from "./crusade-cache";
 import { getAllPlanetHistory, getPlanetHistory } from "./planet-history";
 import { runPollerTick } from "./poller";
 import { isClientVersionAcceptable, STALE_CLIENT_MESSAGE } from "./client-version";
+import { isInRolloverWindow, msUntilRolloverWindowEnds } from "../src/rollover-window";
 
 interface Env {
   DB: D1Database;
@@ -49,6 +50,20 @@ interface SetPreferenceRequestBody {
 // upgrade (reload) to continue". Shared across every /api/fetch-* route below.
 const STALE_CLIENT_RESPONSE = () => Response.json({ error: STALE_CLIENT_MESSAGE }, { status: 426 });
 
+// 503 Service Unavailable + Retry-After - the standard HTTP convention for "deliberately not
+// serving you right now, try later" (more semantically correct here than reusing 426, which is
+// specifically about client-version mismatch). Only applied to the 4 routes below that actually
+// proxy a live call to the game's own servers on a real account's credentials - the other routes
+// here only ever read/write tacops's own D1 cache and never touch the account, so gating them
+// would degrade unrelated public/cached functionality for no safety benefit.
+// Any NEW route added here that makes a live call to the game's own servers must get this same
+// check - see AGENTS.md.
+const ROLLOVER_WINDOW_RESPONSE = (nowMs: number) =>
+  Response.json(
+    { error: "Game-server reset window is in progress - TacOps isn't sending account traffic right now. Try again in a few minutes." },
+    { status: 503, headers: { "Retry-After": String(Math.ceil(msUntilRolloverWindowEnds(nowMs) / 1000)) } },
+  );
+
 // Cloudflare serves a matching file out of the [assets] directory before this Worker ever runs
 // (the default when both `main` and `[assets]` are configured), so this only needs to handle the
 // routes that aren't static files - everything else falling through here is a genuine 404.
@@ -58,6 +73,7 @@ export default {
 
     if (url.pathname === "/api/fetch-player-data" && request.method === "POST") {
       const body = (await request.json()) as RequestBody;
+      if (isInRolloverWindow(Date.now())) return ROLLOVER_WINDOW_RESPONSE(Date.now());
       if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
       try {
         const data = await fetchPlayerDataFromLoki(
@@ -74,6 +90,7 @@ export default {
 
     if (url.pathname === "/api/fetch-crusade-data" && request.method === "POST") {
       const body = (await request.json()) as RequestBody;
+      if (isInRolloverWindow(Date.now())) return ROLLOVER_WINDOW_RESPONSE(Date.now());
       if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
       try {
         const data = await fetchCrusadeDataFromLoki(body.environment, body.userId, body.clientSecret, body.snowId ?? "");
@@ -85,6 +102,7 @@ export default {
 
     if (url.pathname === "/api/fetch-pvp-state" && request.method === "POST") {
       const body = (await request.json()) as PvpStateRequestBody;
+      if (isInRolloverWindow(Date.now())) return ROLLOVER_WINDOW_RESPONSE(Date.now());
       if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
       try {
         const data = await fetchPvpStateFromLoki(
@@ -102,6 +120,7 @@ export default {
 
     if (url.pathname === "/api/fetch-leaderboard-data" && request.method === "POST") {
       const body = (await request.json()) as LeaderboardRequestBody;
+      if (isInRolloverWindow(Date.now())) return ROLLOVER_WINDOW_RESPONSE(Date.now());
       if (!isClientVersionAcceptable(body.apiVersion)) return STALE_CLIENT_RESPONSE();
       try {
         const data = await fetchLeaderboardDataFromLoki(

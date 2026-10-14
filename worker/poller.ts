@@ -25,6 +25,7 @@ import { getPlanetData } from "../src/assets/seasons";
 import { FACTION_SIDE } from "../src/factions/faction-side";
 import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, fetchLeaderboardTextWithSession, type Session } from "./loki-client";
 import { buildHistoryUpsertStatement, rawPlanetToCrusadePlanet } from "./planet-history";
+import { isInRolloverWindow } from "../src/rollover-window";
 import type { CrusadePlanet } from "../src/api/types";
 
 // The 22 faction ids, reused as-is (no Tauri/browser coupling in faction-side.ts, unlike
@@ -208,8 +209,20 @@ async function runOneStep(
   nowMs: number,
   countFetches: (n: number) => void,
 ): Promise<boolean> {
-  const state = await readEpochState(db);
   const release = releaseLockStatement(db, holderId);
+
+  // The game's own daily server reset/rollover (23:50-00:10 UTC) - do no work and release the
+  // lock, same no-op shape as the "gate not open" case below. Checked first, before even reading
+  // epoch state, so a tick that wakes up entirely within the window never does anything at all
+  // (see runPollerTick's own earlier bail-out for the "don't even attempt the lock" half of this).
+  // nowMs is re-read fresh at the top of every loop iteration in runPollerTick, so an invocation
+  // that's already mid-run when the window begins hits this on its very next step.
+  if (isInRolloverWindow(nowMs)) {
+    await db.batch([release]);
+    return false;
+  }
+
+  const state = await readEpochState(db);
 
   if (state.phase === "awaiting_epoch") {
     const gateOpen = state.epoch_started_at === null || nowMs - state.epoch_started_at >= CRUSADE_REFRESH_INTERVAL_MS;
@@ -329,6 +342,12 @@ async function runOneStep(
 }
 
 export async function runPollerTick(db: D1Database, userId: string, clientSecret: string): Promise<void> {
+  // The game's own daily server reset/rollover (23:50-00:10 UTC) - if a tick wakes up entirely
+  // within the window, don't even attempt to acquire the lock (runOneStep's own check below
+  // already handles an invocation that's already mid-run when the window begins; this is the
+  // "just start up and shut right down" case for a fresh wake-up).
+  if (isInRolloverWindow(Date.now())) return;
+
   let fetchesUsed = 0;
   const countFetches = (n: number) => {
     fetchesUsed += n;

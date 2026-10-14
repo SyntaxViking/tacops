@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeWithTimeout } from "./invoke-with-timeout";
 import type { Credentials, Environment } from "./types";
 
 export type ChannelName = "guild" | "guildchat";
@@ -36,7 +36,7 @@ export interface GuildFeedInit {
 export async function findCredentials(
   environment: Environment,
 ): Promise<Credentials> {
-  return invoke<Credentials>("find_credentials", { environment });
+  return invokeWithTimeout<Credentials>("find_credentials", { environment });
 }
 
 export async function guildFeedInit(
@@ -44,7 +44,7 @@ export async function guildFeedInit(
   credentials: Credentials,
   guildId?: string,
 ): Promise<GuildFeedInit> {
-  return invoke<GuildFeedInit>("guild_feed_init", {
+  return invokeWithTimeout<GuildFeedInit>("guild_feed_init", {
     environment,
     ...credentials,
     guildId: guildId ?? null,
@@ -73,7 +73,7 @@ export async function uploadReplay(
   guildId: string,
   replayId: string,
 ): Promise<ReplayUploadResult> {
-  return invoke<ReplayUploadResult>("upload_replay", {
+  return invokeWithTimeout<ReplayUploadResult>("upload_replay", {
     environment,
     ...credentials,
     guildId,
@@ -88,7 +88,7 @@ export async function readChannelWindow(
   channel: ChannelName,
   seq: number,
 ): Promise<RawChannelEvent[]> {
-  return invoke<RawChannelEvent[]>("read_channel_window", {
+  return invokeWithTimeout<RawChannelEvent[]>("read_channel_window", {
     environment,
     ...credentials,
     guildId,
