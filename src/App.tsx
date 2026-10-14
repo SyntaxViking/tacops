@@ -22,6 +22,8 @@ import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
 import { RankedParticipantsCounter } from "./components/RankedParticipantsCounter";
+import { RolloverCooldownModal } from "./components/RolloverCooldownModal";
+import { msUntilRolloverWindowEnds } from "./rollover-window";
 import { StaleVersionBanner } from "./components/StaleVersionBanner";
 import { Toast } from "./components/Toast";
 import { registerStaleVersionHandler, startVersionCheck } from "./version-check";
@@ -85,6 +87,7 @@ export function App() {
   const [status, setStatus] = useState("");
   const [fetchState, setFetchState] = useState<"idle" | "loading" | "error" | "success">("idle");
   const [secondsRemaining, setSecondsRemaining] = useState(FETCH_COUNTDOWN_SECONDS);
+  const [rolloverMsRemaining, setRolloverMsRemaining] = useState(() => msUntilRolloverWindowEnds(Date.now()));
   const [board, setBoard] = useState<ExpeditionBoardEntry[]>([]);
   const [heroes, setHeroes] = useState<RawUnit[]>([]);
   const [favoritedCharacterIds, setFavoritedCharacterIds] = useState<Set<string>>(new Set());
@@ -332,6 +335,19 @@ export function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [solverState]);
+
+  // Drives RolloverCooldownModal - unconditional (not gated on login/fetch state, unlike the two
+  // countdowns above) since the modal needs to cover the pre-login screen too (see its own
+  // comment). This is purely the *visual* half of the rollover guarantee - the actual traffic
+  // block is enforced independently at the transport layer (rollover-guard.ts,
+  // invoke-with-timeout.ts) and server-side (worker/index.ts), so a clock that's merely a few
+  // seconds off here never lets real traffic through, it just mis-times when the overlay shows.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRolloverMsRemaining(msUntilRolloverWindowEnds(Date.now()));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   function toggleSelection(expeditionId: string) {
     setSelectedExpeditionId((current) => (current === expeditionId ? null : expeditionId));
@@ -841,6 +857,7 @@ export function App() {
       onClick={() => setSelectedExpeditionId(null)}
       className="mx-auto flex min-h-screen w-full flex-col items-center bg-neutral-100 px-4 py-[5vh] text-center text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
     >
+      {rolloverMsRemaining > 0 && <RolloverCooldownModal msRemaining={rolloverMsRemaining} />}
       <BuildTimestamp />
       {devModeEnabled && (
         <RankedParticipantsCounter
