@@ -26,7 +26,7 @@ talking to the new backend (or vice versa) until they update.
 
 The game's own daily server reset/rollover happens around UTC midnight, and hammering a real
 account's session with requests close to that time has caused account issues. `src/rollover-window.ts`
-is the single source of truth for the resulting cooldown window (23:50-00:10 UTC), during which the
+is the single source of truth for the resulting cooldown window (23:30-00:30 UTC), during which the
 client refuses to send traffic (`src/rollover-guard.ts`'s global `fetch` wrap,
 `src/api/invoke-with-timeout.ts`'s `ROLLOVER_GATED_COMMANDS` set) and the Worker refuses to serve it
 (`worker/index.ts`), on top of the background poller doing no work during the same window
