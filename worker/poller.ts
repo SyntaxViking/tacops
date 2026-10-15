@@ -211,7 +211,7 @@ async function runOneStep(
 ): Promise<boolean> {
   const release = releaseLockStatement(db, holderId);
 
-  // The game's own daily server reset/rollover (23:50-00:10 UTC) - do no work and release the
+  // The game's own daily server reset/rollover (23:30-00:30 UTC) - do no work and release the
   // lock, same no-op shape as the "gate not open" case below. Checked first, before even reading
   // epoch state, so a tick that wakes up entirely within the window never does anything at all
   // (see runPollerTick's own earlier bail-out for the "don't even attempt the lock" half of this).
@@ -342,7 +342,7 @@ async function runOneStep(
 }
 
 export async function runPollerTick(db: D1Database, userId: string, clientSecret: string): Promise<void> {
-  // The game's own daily server reset/rollover (23:50-00:10 UTC) - if a tick wakes up entirely
+  // The game's own daily server reset/rollover (23:30-00:30 UTC) - if a tick wakes up entirely
   // within the window, don't even attempt to acquire the lock (runOneStep's own check below
   // already handles an invocation that's already mid-run when the window begins; this is the
   // "just start up and shut right down" case for a fresh wake-up).

@@ -16,7 +16,7 @@ const originalFetch = window.fetch.bind(window);
 
 window.fetch = (...args: Parameters<typeof fetch>) => {
   if (isInRolloverWindow(Date.now())) {
-    return Promise.reject(new Error("Blocked: game-server rollover cooldown window (23:50-00:10 UTC) - no account traffic is sent during this time."));
+    return Promise.reject(new Error("Blocked: game-server rollover cooldown window (23:30-00:30 UTC) - no account traffic is sent during this time."));
   }
   return originalFetch(...args);
 };

@@ -31,7 +31,7 @@ export async function invokeWithTimeout<T>(
   timeoutMs: number = DEFAULT_RPC_TIMEOUT_MS,
 ): Promise<T> {
   if (ROLLOVER_GATED_COMMANDS.has(command) && isInRolloverWindow(Date.now())) {
-    throw new Error("Blocked: game-server rollover cooldown window (23:50-00:10 UTC) - no account traffic is sent during this time.");
+    throw new Error("Blocked: game-server rollover cooldown window (23:30-00:30 UTC) - no account traffic is sent during this time.");
   }
   return Promise.race([
     invoke<T>(command, args),
