@@ -60,10 +60,14 @@ export function CrusadeDominationTable({
           <th className={cellClass}>Owner</th>
           <th className={cellClass}>Imperial</th>
           <th className={cellClass}>Devastation</th>
-          <th className={cellClass}>Side Leaderboard</th>
-          <th className={cellClass}>Faction Leaderboard</th>
+          {onRefreshPlanet && (
+            <>
+              <th className={cellClass}>Side Leaderboard</th>
+              <th className={cellClass}>Faction Leaderboard</th>
+            </>
+          )}
           <th className={cellClass}>Defenses</th>
-          <th className={cellClass}>Fetched</th>
+          {onRefreshPlanet && <th className={cellClass}>Fetched</th>}
         </tr>
       </thead>
       <tbody>
@@ -148,21 +152,27 @@ export function CrusadeDominationTable({
                   </div>
                 )}
               </td>
-              <td className={cellClass}>
-                <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
-              </td>
-              <td className={cellClass}>
-                <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
-              </td>
+              {onRefreshPlanet && (
+                <>
+                  <td className={cellClass}>
+                    <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
+                  </td>
+                  <td className={cellClass}>
+                    <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
+                  </td>
+                </>
+              )}
               <td className={cellClass}>
                 <PlanetDefenseBadge imperial={defenses.imperial} devastation={defenses.devastation} />
               </td>
-              <td className={cellClass}>
-                <div className="flex items-center gap-1">
-                  {refreshEntry.isLoading ? <Spinner size={20} /> : <PlanetFetchTimestamp entry={refreshEntry} />}
-                  {onRefreshPlanet && <RefreshIconButton onRefresh={() => onRefreshPlanet(planet.planetId)} isLoading={refreshEntry.isLoading} />}
-                </div>
-              </td>
+              {onRefreshPlanet && (
+                <td className={cellClass}>
+                  <div className="flex items-center gap-1">
+                    {refreshEntry.isLoading ? <Spinner size={20} /> : <PlanetFetchTimestamp entry={refreshEntry} />}
+                    <RefreshIconButton onRefresh={() => onRefreshPlanet(planet.planetId)} isLoading={refreshEntry.isLoading} />
+                  </div>
+                </td>
+              )}
             </tr>
           );
         })}

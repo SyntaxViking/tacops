@@ -109,10 +109,12 @@ export function CrusadeDominationCard({
         </div>
         <div className="flex items-start justify-between gap-2">
           <span className="text-xs opacity-70">Sector {(planet.zone ?? 0) + 1}</span>
-          <div className="flex items-center gap-1">
-            <PlanetFetchTimestamp entry={refreshEntry} />
-            {onRefresh && <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />}
-          </div>
+          {onRefresh && (
+            <div className="flex items-center gap-1">
+              <PlanetFetchTimestamp entry={refreshEntry} />
+              <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />
+            </div>
+          )}
         </div>
         {progress && (
           <div className="flex flex-col gap-0.5 text-sm">
@@ -132,16 +134,18 @@ export function CrusadeDominationCard({
             {cooldownEndLocal && <span className="text-xs opacity-70">Available again at {cooldownEndLocal}</span>}
           </div>
         )}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex flex-col gap-1">
-            <span className={labelClass}>Side Leaderboard</span>
-            <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
+        {onRefresh && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1">
+              <span className={labelClass}>Side Leaderboard</span>
+              <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className={labelClass}>Faction Leaderboard</span>
+              <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
+            </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <span className={labelClass}>Faction Leaderboard</span>
-            <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
