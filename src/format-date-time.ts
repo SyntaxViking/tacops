@@ -23,6 +23,21 @@ export function formatDateTimeWithSeconds(epochMs: number): string {
   }).format(new Date(epochMs));
 }
 
+// Staleness display for "how long since we last successfully polled this" (PlanetFetchTimestamp) -
+// always at least mm:ss (zero-padded), with an unpadded hh: prefix once elapsed time reaches an
+// hour. Unlike planet-tracker-view-model.ts's formatElapsedSeconds (which shows a bare "45s" under
+// a minute, for a graph's tick labels), this never drops to a bare-seconds form - mm:ss is the
+// floor, matching a conventional stopwatch display.
+export function formatStaleness(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(seconds).padStart(2, "0");
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
 const DEFAULT_CLASS = "text-neutral-500 dark:text-neutral-400";
 
 // Urgency tiers for a deadline-style timestamp (a cap being reached, a raid token about to burn):

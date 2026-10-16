@@ -41,6 +41,24 @@ Tauri command that reaches the game's servers directly (not just tacops's own Wo
 tacops's own D1 cache or local disk don't need this - gating those would degrade unrelated
 functionality during the window for no account-safety benefit.
 
+## Leaderboard data (`worker/poller.ts`, `src/crusade/crusade-domination-view-model.ts`)
+
+The background poller (`worker/poller.ts`, cron every minute) only fetches crusade data
+(GET_CRUSADE) - it deliberately never fetches per-planet leaderboard data (GET_LEADERBOARD_2).
+It used to, writing to D1's `planet_leaderboard_cache` on every planet every tick, which blew
+through D1's daily row-write quota (confirmed via a live `D1_ERROR: ... exceeded D1's free tier
+daily row write limit`). That table is still defined in the schema but permanently unused now -
+nothing reads or writes it.
+
+Leaderboard data is purely a client-driven, opt-in fetch instead (`fetchOnePlanet`/
+`fetchPlanetLeaderboard` in `src/App.tsx`/`src/api/fetch-crusade-data.ts`), gated by
+`isPlanetAutoRefreshable` in `src/crusade/crusade-domination-view-model.ts` - only starred
+planets auto-refresh (every ~5 minutes), the one live-tracked planet refreshes on its own much
+faster loop (~10s), and any other planet only ever gets fetched once, on a manual refresh click.
+**Don't widen `isPlanetAutoRefreshable`'s eligibility again** (e.g. back to "every unranked/
+never-loaded planet") without deliberately re-checking D1's write-quota headroom first - that's
+exactly the behavior that caused the original incident.
+
 ## Deploying the Worker (`board-assets/`)
 
 `board-assets/` (PVP board background images + spawn-point manifest, used by the Arena tab) is
