@@ -21,7 +21,7 @@ import { RewardPriorityPicker } from "./components/RewardPriorityPicker";
 import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
-import { RankedParticipantsCounter } from "./components/RankedParticipantsCounter";
+import { CrusadePointsRateIndicator } from "./components/CrusadePointsRateIndicator";
 import { RolloverCooldownModal } from "./components/RolloverCooldownModal";
 import { msUntilRolloverWindowEnds } from "./rollover-window";
 import { StaleVersionBanner } from "./components/StaleVersionBanner";
@@ -35,7 +35,7 @@ import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacter
 import { getDevDataSource, setDevDataSource, type DevDataSource } from "./api/dev-data-source";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
 import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
-import { countRankedParticipants, isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
+import { isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
 import { appendTrackedSample, computeTotalHourlyRate, createTrackedPlanetState, mergeHistoryIntoTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
@@ -567,9 +567,9 @@ export function App() {
   // slow round trip eats into the gap rather than stacking on top of it.
   const TRACKER_WEB_MIN_INTERVAL_MS = 10_000;
 
-  // Claims the most-overdue eligible planet (not currently loading, auto-refreshable - starred,
-  // ranked, or not yet successfully loaded, see isPlanetAutoRefreshable - and past its cadence
-  // threshold) by marking it isLoading synchronously - contains no `await`, so with up to 4 workers calling
+  // Claims the most-overdue eligible planet (not currently loading, auto-refreshable - starred
+  // only, see isPlanetAutoRefreshable - and past its cadence threshold) by marking it isLoading
+  // synchronously - contains no `await`, so with up to 4 workers calling
   // this "at once", each call fully completes (including the ref mutation) before the next one's
   // synchronous body can run, making the claim race-free without any extra locking.
   function claimEligiblePlanet(thresholdMs: number): string | null {
@@ -846,10 +846,6 @@ export function App() {
     }
   }
 
-  // Global ranked-participant headcount (see RankedParticipantsCounter) - summed fresh each
-  // render, same as the rest of this component's derived-from-state values; planetRefreshState is
-  // small enough (dozens of planets) that memoizing this would be premature.
-  const rankedParticipantCounts = countRankedParticipants(planetRefreshState);
   const totalHourlyRate = computeTotalHourlyRate(crusadeData?.planets ?? [], planetHistoryByPlanet, Date.now());
 
   return (
@@ -859,14 +855,7 @@ export function App() {
     >
       {rolloverMsRemaining > 0 && <RolloverCooldownModal msRemaining={rolloverMsRemaining} />}
       <BuildTimestamp />
-      {devModeEnabled && (
-        <RankedParticipantsCounter
-          imperial={rankedParticipantCounts.imperial}
-          devastation={rankedParticipantCounts.devastation}
-          imperialRate={totalHourlyRate.imperial}
-          devastationRate={totalHourlyRate.devastation}
-        />
-      )}
+      {devModeEnabled && <CrusadePointsRateIndicator imperialRate={totalHourlyRate.imperial} devastationRate={totalHourlyRate.devastation} />}
       {staleVersionDetected && <StaleVersionBanner onReloadNow={() => window.location.reload()} />}
       {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />}
       <h1 className="cursor-pointer text-2xl font-semibold select-none" onClick={handleTitleTap}>

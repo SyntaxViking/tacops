@@ -1,9 +1,9 @@
 // Ported 1:1 from src-tauri/src/loki.rs (and src-tauri/src/crusades.rs) - keep them in sync.
 // This is the CORS-workaround proxy the web build needs in place of that Rust code (a browser
 // can't call Snowprint directly). The *WithSession exports (fetchCrusadeDataWithSession,
-// fetchLeaderboardDataWithSession, fetchLeaderboardTextWithSession) and the exported
-// bootstrapSession/Session/environmentConfig are TypeScript-only, used by worker/poller.ts to reuse
-// one session across many calls - no Rust equivalent needed since Tauri never runs the poller.
+// fetchLeaderboardDataWithSession) and the exported bootstrapSession/Session/environmentConfig are
+// TypeScript-only, used by worker/poller.ts to reuse one session across many calls - no Rust
+// equivalent needed since Tauri never runs the poller.
 import md5 from "js-md5";
 
 // Confirmed via real Proxyman captures: the actual game client reuses this exact trio unchanged
@@ -110,53 +110,6 @@ async function post(url: string, body: unknown): Promise<PostResult> {
     throw new Error(`${url} returned an application error: ${JSON.stringify(parsed)}`);
   }
   return { parsed, text };
-}
-
-// A real capture confirmed "eventResultType":"SUCCESS" sits at ~character 35 of a GET_LEADERBOARD_2
-// response - well before the (potentially 100KB+) leaderboard data that follows. Scanning only a
-// bounded prefix for this exact marker is far cheaper than a full JSON.parse of the whole response,
-// which matters here because postForTextOnly (below) is the hot path: called once per planet per
-// poller tick, for a caller that never reads the parsed object at all (only stores the text).
-// Exported for direct unit testing.
-const SUCCESS_PREFIX_SCAN_CHARS = 300;
-export function looksLikeSuccess(text: string): boolean {
-  return text.slice(0, SUCCESS_PREFIX_SCAN_CHARS).includes('"eventResultType":"SUCCESS"');
-}
-
-// Text-only sibling of post() - skips JSON.parse entirely on the (common) success path, since the
-// caller (fetchLeaderboardTextWithSession, used only by worker/poller.ts's per-planet loop) never
-// needs the parsed object. Falls back to a real parse only on the rare path where the cheap prefix
-// check doesn't confirm success - that fallback re-does the exact check post() performs, so a false
-// negative from the cheap scan (an unusual response shape) still resolves to success correctly
-// rather than wrongly failing a genuinely successful call.
-async function postForTextOnly(url: string, body: unknown): Promise<string> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(20_000),
-  }).catch((e) => {
-    throw new Error(`request to ${url} failed: ${e}`);
-  });
-
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`${url} returned HTTP ${res.status}: ${text.slice(0, 300)}`);
-  }
-  if (looksLikeSuccess(text)) {
-    return text;
-  }
-
-  let parsed: any;
-  try {
-    parsed = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`failed to parse JSON response from ${url}: ${e}`);
-  }
-  if (parsed?.eventResult?.eventResultType === "SUCCESS") {
-    return text;
-  }
-  throw new Error(`${url} returned an application error: ${JSON.stringify(parsed)}`);
 }
 
 export interface Session {
@@ -416,16 +369,4 @@ export async function fetchLeaderboardDataWithSession(session: Session, userId: 
   const leaderboards = leaderboardIds.map((leaderboardId) => ({ leaderboardId, participantId: userId }));
   const body = envelope("GET_LEADERBOARD_2", { leaderboards }, session.config);
   return post(sessionUrl, body);
-}
-
-// Text-only variant for worker/poller.ts's per-planet loop specifically - that caller only ever
-// stores the response (never reads a parsed object out of it), so this skips JSON.parse entirely
-// on the common success path via postForTextOnly/looksLikeSuccess above. Every other caller of a
-// leaderboard fetch (the live per-user path, fetchLeaderboardDataFromLoki/WithSession) keeps full
-// parsing, since it genuinely needs the parsed object.
-export async function fetchLeaderboardTextWithSession(session: Session, userId: string, leaderboardIds: string[]): Promise<string> {
-  const sessionUrl = `${session.baseUrl}/sessionId/${session.sessionId}`;
-  const leaderboards = leaderboardIds.map((leaderboardId) => ({ leaderboardId, participantId: userId }));
-  const body = envelope("GET_LEADERBOARD_2", { leaderboards }, session.config);
-  return postForTextOnly(sessionUrl, body);
 }

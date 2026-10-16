@@ -8,7 +8,6 @@ import { proxyWorkerGet, shouldUseProductionDataSource } from "./dev-data-source
 export interface CrusadeCacheResponse {
   crusadeRaw: unknown | null;
   crusadeFetchedAt: number | null;
-  leaderboards: Record<string, { raw: unknown; fetchedAt: number }>;
 }
 
 const TIMEOUT_MS = 20_000;

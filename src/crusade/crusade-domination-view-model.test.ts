@@ -4,7 +4,6 @@ import {
   computeCaptureRace,
   computeConquestProgress,
   cooldownRemainingMs,
-  countRankedParticipants,
   formatCooldownEndLocalTime,
   formatPointsFromCapture,
   isDominationSunk,
@@ -298,61 +297,16 @@ describe("isPlanetAutoRefreshable", () => {
     return { leaderboard: leaderboard(), lastSuccessAt: 1000, lastAttemptAt: 1000, lastAttemptFailed: false, isLoading: false, ...overrides };
   }
 
-  it("is true for a starred planet even when it's already loaded and unranked", () => {
+  it("is true for a starred planet, regardless of its load/rank state", () => {
     expect(isPlanetAutoRefreshable(entry(), true)).toBe(true);
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptAt: null }), true)).toBe(true);
   });
 
-  it("is true for a ranked planet that isn't starred", () => {
-    expect(isPlanetAutoRefreshable(entry({ leaderboard: ranked }), false)).toBe(true);
-  });
-
-  it("is false for a loaded, unranked, unstarred planet - it only updates via manual refresh", () => {
+  it("is false for an unstarred planet even when it's ranked or never successfully loaded - only starring, live-tracking, or a manual refresh fetches it", () => {
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: ranked }), false)).toBe(false);
     expect(isPlanetAutoRefreshable(entry(), false)).toBe(false);
-  });
-
-  it("is true until the first successful load, so every planet gets loaded once (and a rank can be discovered)", () => {
-    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptAt: null }), false)).toBe(true);
-  });
-
-  it("keeps retrying an unstarred planet whose only attempts so far failed", () => {
-    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptFailed: true }), false)).toBe(true);
-  });
-});
-
-describe("countRankedParticipants", () => {
-  function entryWith(forParticipants: number | null, againstParticipants: number | null): PlanetRefreshEntry {
-    return {
-      leaderboard: leaderboard({ forParticipants, againstParticipants }),
-      lastSuccessAt: 1000,
-      lastAttemptAt: 1000,
-      lastAttemptFailed: false,
-      isLoading: false,
-    };
-  }
-
-  it("sums forParticipants (Imperial) and againstParticipants (Devastation) across every planet", () => {
-    const state = new Map([
-      ["planet_001", entryWith(500, 400)],
-      ["planet_002", entryWith(300, 900)],
-    ]);
-    expect(countRankedParticipants(state)).toEqual({ imperial: 800, devastation: 1300 });
-  });
-
-  it("treats a planet with no leaderboard loaded yet as contributing 0, not throwing", () => {
-    const state = new Map([
-      ["planet_001", { leaderboard: null, lastSuccessAt: null, lastAttemptAt: null, lastAttemptFailed: false, isLoading: false } as PlanetRefreshEntry],
-      ["planet_002", entryWith(300, 900)],
-    ]);
-    expect(countRankedParticipants(state)).toEqual({ imperial: 300, devastation: 900 });
-  });
-
-  it("treats a planet whose side leaderboard came back null (forParticipants/againstParticipants null) as 0", () => {
-    const state = new Map([["planet_001", entryWith(null, null)]]);
-    expect(countRankedParticipants(state)).toEqual({ imperial: 0, devastation: 0 });
-  });
-
-  it("returns zero for an empty map", () => {
-    expect(countRankedParticipants(new Map())).toEqual({ imperial: 0, devastation: 0 });
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptAt: null }), false)).toBe(false);
+    expect(isPlanetAutoRefreshable(entry({ leaderboard: null, lastSuccessAt: null, lastAttemptFailed: true }), false)).toBe(false);
   });
 });
 

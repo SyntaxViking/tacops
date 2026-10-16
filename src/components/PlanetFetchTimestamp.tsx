@@ -1,33 +1,24 @@
-import { formatDateTimeWithSeconds } from "../format-date-time";
+import { useEffect, useState } from "react";
+import { formatStaleness } from "../format-date-time";
 import type { PlanetRefreshEntry } from "../api/types";
 
-// Shared by the Crusades tab's cards and table. Shows a single timestamp when the last attempt
-// succeeded (or nothing's been attempted yet); when the last attempt failed, shows up to two -
-// the last known-good fetch (green check) and the failing attempt itself (red x) - so the user
-// can tell "stale but fine" apart from "actively failing" instead of one ambiguous timestamp.
+// Shared by the Crusades tab's cards and table. Shows how long it's been since the last
+// successful fetch, ticking live every second. A failed attempt in between doesn't reset or
+// otherwise change this display - it just keeps counting up until the next success, with no
+// separate failure indicator (per product decision, an ever-increasing staleness counter is
+// enough signal on its own).
 export function PlanetFetchTimestamp({ entry }: { entry: PlanetRefreshEntry }) {
   const textClass = "text-xs text-neutral-500 dark:text-neutral-400";
+  const [now, setNow] = useState(() => Date.now());
 
-  if (!entry.lastAttemptFailed) {
-    return <span className={textClass}>{entry.lastSuccessAt !== null ? formatDateTimeWithSeconds(entry.lastSuccessAt) : "Not yet loaded"}</span>;
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (entry.lastSuccessAt === null) {
+    return <span className={textClass}>Not yet loaded</span>;
   }
 
-  return (
-    <div className={`flex flex-col gap-0.5 ${textClass}`}>
-      {entry.lastSuccessAt !== null && (
-        <span className="inline-flex items-center gap-1">
-          <span className="text-green-600 dark:text-green-400" aria-hidden="true">
-            ✓
-          </span>
-          {formatDateTimeWithSeconds(entry.lastSuccessAt)}
-        </span>
-      )}
-      <span className="inline-flex items-center gap-1">
-        <span className="text-red-600 dark:text-red-400" aria-hidden="true">
-          ✕
-        </span>
-        {formatDateTimeWithSeconds(entry.lastAttemptAt!)}
-      </span>
-    </div>
-  );
+  return <span className={textClass}>{formatStaleness(now - entry.lastSuccessAt)}</span>;
 }

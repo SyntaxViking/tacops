@@ -1,8 +1,10 @@
 // Scheduled background poller (see worker/index.ts's `scheduled` export, wired to a 1-minute Cron
-// Trigger in wrangler.toml). Refreshes the public, account-agnostic crusade/leaderboard cache so
-// anonymous visitors (and logged-in users' first paint) never have to wait on a live Tacticus call,
-// and records each Domination planet's points-remaining history (worker/planet-history.ts) on the
-// same cadence.
+// Trigger in wrangler.toml). Refreshes the public, account-agnostic crusade cache so anonymous
+// visitors (and logged-in users' first paint) never have to wait on a live Tacticus call, and
+// records each Domination planet's points-remaining history (worker/planet-history.ts) on the same
+// cadence. Leaderboard data is deliberately NOT fetched here - it's fetched client-side, only for
+// starred/live-tracked/manually-refreshed planets, to keep this cron's D1 write volume low (see
+// AGENTS.md).
 //
 // Checkpointed, one atomic step per loop iteration - not "every tick does a fixed small batch of
 // planets and hopes the CPU budget holds". The old fixed-batch design still broke: on 2026-10-12,
@@ -10,27 +12,21 @@
 // never reaches a catch block, let alone a state write) for ~7 hours straight - every tick retried
 // the same doomed work from scratch with nothing checkpointed in between, so 7 hours of Domination
 // history silently went unrecorded. Here, each step (GET_CRUSADE + computing the relevant planet
-// list, or one planet's leaderboard fetch + history write) commits its own result AND the state
-// machine's "what's next" together in one atomic db.batch() - so a step that gets killed mid-work
-// just means the next tick resumes exactly where the last *completed* step left off, never losing
-// more than one step's worth of progress regardless of how long a bad stretch lasts. One invocation
-// loops through as many steps as it can: cheap planets, many steps fit in 10s of seconds; one slow
-// one, maybe just one.
+// list, or one planet's history write) commits its own result AND the state machine's "what's next"
+// together in one atomic db.batch() - so a step that gets killed mid-work just means the next tick
+// resumes exactly where the last *completed* step left off, never losing more than one step's worth
+// of progress regardless of how long a bad stretch lasts. One invocation loops through as many
+// steps as it can: cheap planets, many steps fit in 10s of seconds; one slow one, maybe just one.
 //
 // poller_lock (migrations/0008) guards against two overlapping invocations racing on the same
 // step - Cloudflare's Cron Triggers don't guarantee non-overlap, and a tick running long (exactly
 // when Loki itself is slow, the same condition that caused the 2026-10-12 incident) is a real way
 // to hit that. See tryAcquireLock's own comment for the exact mechanics.
 import { getPlanetData } from "../src/assets/seasons";
-import { FACTION_SIDE } from "../src/factions/faction-side";
-import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, fetchLeaderboardTextWithSession, type Session } from "./loki-client";
+import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, type Session } from "./loki-client";
 import { buildHistoryUpsertStatement, rawPlanetToCrusadePlanet } from "./planet-history";
 import { isInRolloverWindow } from "../src/rollover-window";
 import type { CrusadePlanet } from "../src/api/types";
-
-// The 22 faction ids, reused as-is (no Tauri/browser coupling in faction-side.ts, unlike
-// fetch-crusade-data.ts, so no need to duplicate this list).
-const ALL_FACTION_IDS = Object.keys(FACTION_SIDE);
 
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // no documented Loki session TTL - defensive reuse window
 const CRUSADE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -84,21 +80,6 @@ export function relevantPlanetIds(phase: string | null, activeZone: number | nul
   if (phase === "STRUGGLE") return planets.map((p) => p.planetId);
   if (phase === "CRUSADE" && activeZone !== null) return planets.filter((p) => p.zone === activeZone).map((p) => p.planetId);
   return [];
-}
-
-// Player-level leaderboard ids for one planet: the side leaderboard (all players on a side - not
-// account-specific once stripped of myRank/myPoints, so unlike fetch-crusade-data.ts's
-// leaderboardIdsForPlanet this poller DOES fetch these) plus one per-faction leaderboard for every
-// possible faction, since a visitor's pick isn't known at poll time - any of the 22 could be
-// picked, so all 22 need to be cached. Never the crusadeFaction:... aggregate-standings ids (that
-// was the "Leading Factions" list, dropped per product decision).
-export function allLeaderboardIdsForPlanet(crusadeId: string, seasonNumber: number, planetId: string): string[] {
-  const base = `${crusadeId}_${seasonNumber}_${planetId}`;
-  const ids = [`crusadePlayer:crusade_leaderboard_planet_side_players_${base}_for`, `crusadePlayer:crusade_leaderboard_planet_side_players_${base}_against`];
-  for (const factionId of ALL_FACTION_IDS) {
-    ids.push(`crusadePlayer:crusade_leaderboard_planet_faction_players_${base}_${factionId}`);
-  }
-  return ids;
 }
 
 // See migrations/0008's own comment for what each phase means and when runOneStep transitions
@@ -309,24 +290,6 @@ async function runOneStep(
   });
 
   const statements: D1PreparedStatement[] = [];
-
-  // Isolated from the history write below (and from each other across planets) - one planet's bad
-  // leaderboard fetch never blocks its own history recording or any other planet's progress.
-  try {
-    const ids = allLeaderboardIdsForPlanet(state.crusade_id ?? "", state.season_number ?? 0, planet.planetId);
-    const text = await fetchLeaderboardTextWithSession(session, userId, ids);
-    countFetches(1);
-    statements.push(
-      db
-        .prepare(
-          "INSERT INTO planet_leaderboard_cache (planet_id, raw_leaderboards, fetched_at) VALUES (?, ?, ?) " +
-            "ON CONFLICT(planet_id) DO UPDATE SET raw_leaderboards = excluded.raw_leaderboards, fetched_at = excluded.fetched_at",
-        )
-        .bind(planet.planetId, text, nowMs),
-    );
-  } catch (error) {
-    console.error(`[poller] planet ${planet.planetId} leaderboard fetch failed`, error);
-  }
 
   try {
     const historyStatement = await buildHistoryUpsertStatement(db, planet, nowMs);

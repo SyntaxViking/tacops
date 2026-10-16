@@ -469,11 +469,10 @@ export function captureUrgency(pointsRemainingNow: number, hourlyRate: number): 
   return "normal";
 }
 
-// Map-wide "how fast is each side gaining right now" figure, next to RankedParticipantsCounter's
-// own headcount - the same per-planet computeHourlyAccruedRate used by the per-row δ indicator,
-// just summed across every planet with Domination data instead of shown one row at a time.
-// Planets with no struggleData (computeConquestProgress returns null) or no history yet simply
-// contribute 0, same "missing -> 0" convention as countRankedParticipants.
+// Map-wide "how fast is each side gaining right now" figure, shown via CrusadePointsRateIndicator -
+// the same per-planet computeHourlyAccruedRate used by the per-row δ indicator, just summed across
+// every planet with Domination data instead of shown one row at a time. Planets with no
+// struggleData (computeConquestProgress returns null) or no history yet simply contribute 0.
 export function computeTotalHourlyRate(
   planets: readonly CrusadePlanet[],
   historyByPlanet: ReadonlyMap<string, TrackedPlanetSample[]>,
