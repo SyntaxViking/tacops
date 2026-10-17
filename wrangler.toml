@@ -17,8 +17,10 @@ database_id = "d5bea7cc-5bf3-461b-a056-97e1a3b1eaa2"
 enabled = true
 invocation_logs = true
 
-# Refreshes the public crusade/leaderboard cache (worker/poller.ts) - every minute is required to
-# approximate a ~5 minute rotation across all 146 planets under the Workers Free plan's
-# 50-subrequests-per-invocation cap; see the implementation plan for the full arithmetic.
+# TEMPORARILY DISABLED (2026-10-17): the account is out of D1's free-tier daily row-write quota
+# and the current season is basically over anyway - re-enable ("* * * * *") once
+# migrations/0009_planet_history_buckets.sql has been applied and the matching worker/poller.ts/
+# worker/planet-history.ts fix (see AGENTS.md) is deployed, so the cron doesn't immediately exhaust
+# the quota again under the old per-planet-row write pattern.
 [triggers]
-crons = ["* * * * *"]
+crons = []
