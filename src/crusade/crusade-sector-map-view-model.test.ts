@@ -8,7 +8,9 @@ import {
   computeDotScales,
   computeSectorMap,
   dotRadius,
+  planetPointsWorth,
   planetProgressBars,
+  planetResourceIcon,
   sectorZones,
 } from "./crusade-sector-map-view-model";
 import type { ConquestProgress } from "./crusade-domination-view-model";
@@ -63,6 +65,41 @@ describe("computeSectorMap", () => {
     expect(result.nodes.find((n) => n.planetId === "for-planet")?.color).toBe("imperial");
     expect(result.nodes.find((n) => n.planetId === "against-planet")?.color).toBe("devastation");
     expect(result.nodes.find((n) => n.planetId === "unowned-planet")?.color).toBe("neutral");
+  });
+
+  it("falls back to the static per-season name when a planet has no live CrusadePlanet entry yet", () => {
+    // planet_016 is "Steadfast" in the currently-active season's real planet-data.json (see
+    // src/assets/seasons) - crusadePlanets deliberately has no entry for it at all, matching a
+    // planet the live GET_CRUSADE response hasn't started including yet (e.g. a newly-added
+    // season planet) - the node should still get its real name, not the raw planetId.
+    const sectorMap: CrusadeSectorMap = {
+      planets: [{ planetId: "planet_016", zone: 0, type: "Fortress", positionX: 0, positionY: 0 }],
+      connections: [],
+    };
+    const result = computeSectorMap(0, sectorMap, []);
+    expect(result.nodes[0].name).toBe("Steadfast");
+  });
+
+  it("derives pointsWorth/resourceIcon from the static per-season planet type, not the sector map's own tile type", () => {
+    // planet_002 (Hive), planet_011 (Agri), planet_010 (Mining), planet_003 (Civilized) are real
+    // entries in the currently-active season's planet-data.json (see src/assets/seasons) - the
+    // sector map's own `type` ("Fortress" below, the visual tile category) is deliberately
+    // different from all of them, to prove pointsWorth/resourceIcon read the static type, not this
+    // field.
+    const sectorMap: CrusadeSectorMap = {
+      planets: [
+        { planetId: "planet_002", zone: 0, type: "Fortress", positionX: 0, positionY: 0 },
+        { planetId: "planet_011", zone: 0, type: "Fortress", positionX: 1, positionY: 0 },
+        { planetId: "planet_010", zone: 0, type: "Fortress", positionX: 2, positionY: 0 },
+        { planetId: "planet_003", zone: 0, type: "Fortress", positionX: 3, positionY: 0 },
+      ],
+      connections: [],
+    };
+    const result = computeSectorMap(0, sectorMap, []);
+    expect(result.nodes.find((n) => n.planetId === "planet_002")).toMatchObject({ pointsWorth: 3, resourceIcon: null });
+    expect(result.nodes.find((n) => n.planetId === "planet_011")).toMatchObject({ pointsWorth: 1, resourceIcon: "energy" });
+    expect(result.nodes.find((n) => n.planetId === "planet_010")).toMatchObject({ pointsWorth: 1, resourceIcon: "gold" });
+    expect(result.nodes.find((n) => n.planetId === "planet_003")).toMatchObject({ pointsWorth: 1, resourceIcon: null });
   });
 
   it("only includes planets from the requested zone", () => {
@@ -153,6 +190,27 @@ describe("computeSectorMap progress", () => {
     const result = computeSectorMap(0, sectorMap, [crusadePlanet({ planetId: "no-struggle" })]);
     expect(result.nodes.find((n) => n.planetId === "no-struggle")!.progress).toBeNull();
     expect(result.nodes.find((n) => n.planetId === "not-in-crusade-data")!.progress).toBeNull();
+  });
+});
+
+describe("planetPointsWorth", () => {
+  it("is 3 for a Hive world, 1 for every other type (including unknown/missing)", () => {
+    expect(planetPointsWorth("Hive")).toBe(3);
+    expect(planetPointsWorth("Fortress")).toBe(1);
+    expect(planetPointsWorth("Civilized")).toBe(1);
+    expect(planetPointsWorth("Agri")).toBe(1);
+    expect(planetPointsWorth("Mining")).toBe(1);
+    expect(planetPointsWorth(undefined)).toBe(1);
+  });
+});
+
+describe("planetResourceIcon", () => {
+  it("is energy for Agri, gold for Mining, null for every other type (including unknown/missing)", () => {
+    expect(planetResourceIcon("Agri")).toBe("energy");
+    expect(planetResourceIcon("Mining")).toBe("gold");
+    expect(planetResourceIcon("Hive")).toBeNull();
+    expect(planetResourceIcon("Fortress")).toBeNull();
+    expect(planetResourceIcon(undefined)).toBeNull();
   });
 });
 

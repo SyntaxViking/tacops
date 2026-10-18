@@ -2,6 +2,10 @@ export function staminaIconUrl(): string {
   return new URL("./assets/resources/ui_icon_resource_stamina_large.png", import.meta.url).href;
 }
 
+export function goldIconUrl(): string {
+  return new URL("./assets/resources/gold.png", import.meta.url).href;
+}
+
 export function treasureBeachIconUrl(): string {
   return new URL("./assets/resources/ui_icon_resource_token_battle_treasureBeach.png", import.meta.url).href;
 }

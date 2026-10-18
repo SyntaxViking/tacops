@@ -26,8 +26,13 @@ export interface SeasonScheduleEntry {
 // endsAt (resolveActiveSeason stops at the first one that's null or still in the future, so a null
 // entry followed by more entries would make those later ones unreachable).
 export const SEASON_SCHEDULE: readonly SeasonScheduleEntry[] = [
-  // Season 1.41 ends 2026-10-19T00:00:00Z - season 1.43 takes over automatically at that instant.
-  { season: "1.41", endsAt: new Date("2026-10-19T00:00:00Z").getTime() },
+  // Season 1.41 ends 2026-10-18T00:00:00Z - season 1.43 takes over automatically at that instant.
+  // Matches the real live transition confirmed via a live GET_PLAYER export: season 1.43's
+  // crusadeEvent module (crusade_20261018_0000_s2) starts exactly when 1.41's own
+  // (crusade_20260722_1636_s1) ends, and GET_CRUSADE's own seasonNumber/points reset in lockstep at
+  // the same instant - no observed cooldown/delay in the live data itself, so this schedule tracks
+  // it directly rather than padding it.
+  { season: "1.41", endsAt: new Date("2026-10-18T00:00:00Z").getTime() },
   { season: "1.43", endsAt: null },
 ];
 

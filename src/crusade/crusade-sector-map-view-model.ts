@@ -1,5 +1,36 @@
 import { computeConquestProgress, type ConquestProgress } from "./crusade-domination-view-model";
+import { getPlanetData } from "../assets/seasons";
 import type { CrusadePlanet, CrusadeSectorMap } from "../api/types";
+
+// Built fresh on every call, not hoisted to a module-level constant - same reasoning as
+// fetch-crusade-data.ts's own planetNameById: getPlanetData() can resolve to a different season at
+// any moment (see src/season.ts), and this module can stay imported across that boundary.
+function planetNameById(): Map<string, string> {
+  return new Map((getPlanetData() as { planetId: string; name: string }[]).map((p) => [p.planetId, p.name]));
+}
+
+// The static per-season "type" field (Civilized/Fortress/Mining/Hive/Agri/Feral/Dead/Sun) - what
+// actually determines a planet's crusade point value and bonus resource, not to be confused with
+// SectorMapNode's own `type` (the live map's visual tile category, from the sector map's own data -
+// see buildMap below). Undefined for season 1.41 (captured before this field existed) - every
+// reader here treats that the same as "no special value," i.e. worth 1, no resource.
+function planetTypeById(): Map<string, string | undefined> {
+  return new Map((getPlanetData() as { planetId: string; type?: string }[]).map((p) => [p.planetId, p.type]));
+}
+
+// Hive worlds are worth 3 crusade points on capture, every other playable type is worth 1.
+export function planetPointsWorth(planetType: string | undefined): number {
+  return planetType === "Hive" ? 3 : 1;
+}
+
+export type PlanetResourceType = "energy" | "gold" | null;
+
+// Agri worlds yield energy, Mining worlds yield coins - every other type has no bonus resource.
+export function planetResourceIcon(planetType: string | undefined): PlanetResourceType {
+  if (planetType === "Agri") return "energy";
+  if (planetType === "Mining") return "gold";
+  return null;
+}
 
 export type SectorMapColor = "imperial" | "devastation" | "neutral";
 
@@ -15,6 +46,10 @@ export interface SectorMapNode {
   // How big to draw the dot, from 0 (smallest - the highest capture requirement on the whole map)
   // to 1 (largest - the lowest). null = no requirement known, so it keeps the full-size dot.
   dotScale: number | null;
+  // Crusade points this planet is worth on capture, and the bonus resource (if any) it yields -
+  // both derived from the static per-season planet type, see planetPointsWorth/planetResourceIcon.
+  pointsWorth: number;
+  resourceIcon: PlanetResourceType;
 }
 
 export interface SectorMapEdge {
@@ -121,18 +156,27 @@ function buildMap(
 ): SectorMapData {
   const crusadePlanetById = new Map(crusadePlanets.map((p) => [p.planetId, p]));
   const dotScales = crusadeDotScales(sectorMap, crusadePlanetById);
+  // Falls back to the static per-season name lookup (not just the raw planetId) when a planet has
+  // no live CrusadePlanet entry yet - the live GET_CRUSADE response doesn't always cover every
+  // planet in the static sector map (e.g. a newly-added season planet the server hasn't started
+  // including yet), but the static planet-data.json always has every planet's real name.
+  const nameById = planetNameById();
+  const typeById = planetTypeById();
 
   const nodeById = new Map<string, SectorMapNode>();
   for (const p of planets) {
     const crusadePlanet = crusadePlanetById.get(p.planetId);
+    const planetType = typeById.get(p.planetId);
     nodeById.set(p.planetId, {
       planetId: p.planetId,
-      name: crusadePlanet?.name ?? p.planetId,
+      name: crusadePlanet?.name ?? nameById.get(p.planetId) ?? p.planetId,
       type: p.type,
       ...place(p),
       color: colorFor(crusadePlanet?.sideOwner),
       progress: crusadePlanet ? computeConquestProgress(crusadePlanet) : null,
       dotScale: dotScales.get(p.planetId) ?? null,
+      pointsWorth: planetPointsWorth(planetType),
+      resourceIcon: planetResourceIcon(planetType),
     });
   }
 
