@@ -6,17 +6,18 @@
 // starred/live-tracked/manually-refreshed planets, to keep this cron's D1 write volume low (see
 // AGENTS.md).
 //
-// Checkpointed, one atomic step per loop iteration - not "every tick does a fixed small batch of
-// planets and hopes the CPU budget holds". The old fixed-batch design still broke: on 2026-10-12,
-// 408 of 430 scheduled ticks failed with status: exceededResources (the CPU-limit hard-kill, which
-// never reaches a catch block, let alone a state write) for ~7 hours straight - every tick retried
-// the same doomed work from scratch with nothing checkpointed in between, so 7 hours of Domination
-// history silently went unrecorded. Here, each step (GET_CRUSADE + computing the relevant planet
-// list, or one planet's history write) commits its own result AND the state machine's "what's next"
-// together in one atomic db.batch() - so a step that gets killed mid-work just means the next tick
-// resumes exactly where the last *completed* step left off, never losing more than one step's worth
-// of progress regardless of how long a bad stretch lasts. One invocation loops through as many
-// steps as it can: cheap planets, many steps fit in 10s of seconds; one slow one, maybe just one.
+// Checkpointed: the step's own result and the state machine's "what's next" commit together in one
+// atomic db.batch(), so a step killed mid-work (e.g. by the CPU limit) never leaves partial state -
+// the next tick just redoes that one step. Originally this checkpointed a *per-planet* walk too
+// (one planet's leaderboard fetch + history write per step, via poller_planet_queue/cursor - see
+// migrations/0008), because on 2026-10-12, 408 of 430 scheduled ticks failed with status:
+// exceededResources (the CPU-limit hard-kill) for ~7 hours straight, and every tick had retried the
+// same doomed full-batch work from scratch with nothing checkpointed in between. That per-planet
+// queue/cursor machinery is now dead code (kept but never invoked - see the "planets" phase branch
+// below) now that there's no per-planet network fetch left to checkpoint against: GET_CRUSADE plus
+// every relevant planet's history write (now plain local D1 reads/writes, no network call at all)
+// happen together in ONE step's batch, atomic with each other - there's nothing left that benefits
+// from being spread across multiple ticks.
 //
 // poller_lock (migrations/0008) guards against two overlapping invocations racing on the same
 // step - Cloudflare's Cron Triggers don't guarantee non-overlap, and a tick running long (exactly
@@ -24,7 +25,7 @@
 // to hit that. See tryAcquireLock's own comment for the exact mechanics.
 import { getPlanetData } from "../src/assets/seasons";
 import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, type Session } from "./loki-client";
-import { buildHistoryUpsertStatement, rawPlanetToCrusadePlanet } from "./planet-history";
+import { buildBucketUpsertStatements, rawPlanetToCrusadePlanet } from "./planet-history";
 import { isInRolloverWindow } from "../src/rollover-window";
 import type { CrusadePlanet } from "../src/api/types";
 
@@ -245,6 +246,26 @@ async function runOneStep(
       ((data?.planetsData ?? []) as { planetId: string }[]).map((p: any) => [p.planetId, p]),
     );
 
+    // History writes go straight to planet_history_buckets (grouped PLANETS_PER_BUCKET-per-row,
+    // see worker/planet-history.ts's top-of-file comment and AGENTS.md) from the planetsById map
+    // above - never through poller_planet_queue/the "planets" phase below (now permanently dead
+    // code, kept but never reached). That queue/cursor machinery existed only to checkpoint a
+    // per-planet *leaderboard fetch* (a slow, fallible network call) across many ticks; now that
+    // each planet's step is purely local D1 reads/writes, rebuilding and walking a queue is pure
+    // D1-operation waste with no benefit.
+    const relevantPlanets: CrusadePlanet[] = relevantIds.map((planetId) => {
+      const raw = planetsById.get(planetId);
+      return rawPlanetToCrusadePlanet({
+        planetId,
+        sideOwner: raw?.sideOwner,
+        ownedByFaction: raw?.ownedByFaction,
+        pointsFor: raw?.pointsFor,
+        pointsAgainst: raw?.pointsAgainst,
+        struggleData: raw?.struggleData as CrusadePlanet["struggleData"],
+      });
+    });
+    const historyStatements = await buildBucketUpsertStatements(db, relevantPlanets, nowMs);
+
     const statements: D1PreparedStatement[] = [
       db
         .prepare(
@@ -253,27 +274,24 @@ async function runOneStep(
             "active_zone = excluded.active_zone, raw_response = excluded.raw_response, fetched_at = excluded.fetched_at",
         )
         .bind(crusadeId, seasonNumber, active.phase, active.activeZone, text, nowMs),
-      db.prepare("DELETE FROM poller_planet_queue"),
-      ...relevantIds.map((planetId, i) => {
-        const raw = planetsById.get(planetId);
-        return db
-          .prepare(
-            "INSERT INTO poller_planet_queue (cursor_position, planet_id, side_owner, owned_by_faction, points_for, points_against, struggle_data) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          )
-          .bind(i, planetId, raw?.sideOwner ?? null, raw?.ownedByFaction ?? null, raw?.pointsFor ?? null, raw?.pointsAgainst ?? null, raw?.struggleData ? JSON.stringify(raw.struggleData) : null);
-      }),
+      ...historyStatements,
       db
-        .prepare(
-          "UPDATE poller_epoch_state SET phase = ?, epoch_started_at = ?, cursor = 0, crusade_id = ?, season_number = ?, session_id = ?, session_issued_at = ? WHERE id = 1",
-        )
-        .bind(relevantIds.length > 0 ? "planets" : "awaiting_epoch", nowMs, crusadeId, seasonNumber, session.sessionId, issuedAt),
+        .prepare("UPDATE poller_epoch_state SET phase = 'awaiting_epoch', epoch_started_at = ?, crusade_id = ?, season_number = ?, session_id = ?, session_issued_at = ? WHERE id = 1")
+        .bind(nowMs, crusadeId, seasonNumber, session.sessionId, issuedAt),
       release,
     ];
     await db.batch(statements);
     return true;
   }
 
-  // state.phase === "planets"
+  // state.phase === "planets" - DEAD CODE, kept but never reached: the crusade_fetch step above
+  // always transitions straight back to "awaiting_epoch" now, never to "planets", so
+  // poller_epoch_state.phase can no longer actually hold "planets" and this branch never runs.
+  // Deliberately left in place rather than deleted/merged into the step above - see
+  // poller_planet_queue's own comment in migrations/0008 and AGENTS.md for why this per-planet
+  // queue/cursor walk (built to checkpoint a slow per-planet *network fetch* that no longer exists)
+  // must never be called again: rebuilding and walking it would just be D1-operation cost with zero
+  // benefit now that every planet's step is a plain local D1 read/write.
   const queueRow = await db.prepare("SELECT * FROM poller_planet_queue WHERE cursor_position = ?").bind(state.cursor).first<PlanetQueueRow>();
   if (!queueRow) {
     await db.batch([db.prepare("UPDATE poller_epoch_state SET phase = 'awaiting_epoch' WHERE id = 1"), release]);

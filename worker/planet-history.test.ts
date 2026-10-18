@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   appendToHistoryCache,
+  buildBucketAssignments,
   buildHistoryRow,
   collapseIdenticalRuns,
   compressHistorySamples,
   enforceHardCap,
   isEraReset,
+  isVisibleThisSeason,
+  PLANETS_PER_BUCKET,
   rawPlanetToCrusadePlanet,
+  resolveExistingForAppend,
   thinOlderSamples,
   truncateAtLastReopen,
   type PlanetHistoryRow,
   type PlanetHistorySample,
+  type StoredPlanetHistory,
 } from "./planet-history";
 
 describe("rawPlanetToCrusadePlanet", () => {
@@ -33,6 +38,74 @@ describe("rawPlanetToCrusadePlanet", () => {
       pointsAgainst: 50,
       struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
     });
+  });
+});
+
+describe("buildBucketAssignments", () => {
+  it("assigns every known planet to a bucket, with no bucket holding more than PLANETS_PER_BUCKET planets", () => {
+    const assignments = buildBucketAssignments();
+    expect(assignments.size).toBeGreaterThan(0);
+
+    const counts = new Map<number, number>();
+    for (const bucketId of assignments.values()) {
+      counts.set(bucketId, (counts.get(bucketId) ?? 0) + 1);
+    }
+    for (const count of counts.values()) {
+      expect(count).toBeLessThanOrEqual(PLANETS_PER_BUCKET);
+    }
+  });
+
+  it("is deterministic across calls (same planet always lands in the same bucket)", () => {
+    const first = buildBucketAssignments();
+    const second = buildBucketAssignments();
+    expect(second).toEqual(first);
+  });
+
+  it("packs buckets densely - only the very last bucket may be under PLANETS_PER_BUCKET", () => {
+    const assignments = buildBucketAssignments();
+    const counts = new Map<number, number>();
+    for (const bucketId of assignments.values()) {
+      counts.set(bucketId, (counts.get(bucketId) ?? 0) + 1);
+    }
+    const sortedBucketIds = [...counts.keys()].sort((a, b) => a - b);
+    const lastBucketId = sortedBucketIds[sortedBucketIds.length - 1];
+    for (const bucketId of sortedBucketIds) {
+      if (bucketId !== lastBucketId) expect(counts.get(bucketId)).toBe(PLANETS_PER_BUCKET);
+    }
+  });
+});
+
+function storedHistory(overrides: Partial<StoredPlanetHistory> = {}): StoredPlanetHistory {
+  return { samples: [{ atMs: 1000, imperialRemaining: 900, devastationRemaining: 800 }], lastSunk: false, season: "1.41", ...overrides };
+}
+
+describe("resolveExistingForAppend", () => {
+  it("returns the stored entry as-is when its season matches the current one", () => {
+    const stored = storedHistory({ season: "1.41" });
+    expect(resolveExistingForAppend(stored, "1.41")).toEqual(stored);
+  });
+
+  it("returns null when the stored entry's season doesn't match - a reused planet id from a past season must never be appended to", () => {
+    const stored = storedHistory({ season: "1.41" });
+    expect(resolveExistingForAppend(stored, "1.43")).toBeNull();
+  });
+
+  it("returns null when there's no stored entry at all", () => {
+    expect(resolveExistingForAppend(undefined, "1.41")).toBeNull();
+  });
+});
+
+describe("isVisibleThisSeason", () => {
+  it("is true when the stored entry's season matches the current one", () => {
+    expect(isVisibleThisSeason(storedHistory({ season: "1.43" }), "1.43")).toBe(true);
+  });
+
+  it("is false when the stored entry belongs to a past season - a reader must never see stale cross-season history", () => {
+    expect(isVisibleThisSeason(storedHistory({ season: "1.41" }), "1.43")).toBe(false);
+  });
+
+  it("is false when there's no stored entry at all", () => {
+    expect(isVisibleThisSeason(undefined, "1.41")).toBe(false);
   });
 });
 
