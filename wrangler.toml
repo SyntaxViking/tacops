@@ -17,10 +17,9 @@ database_id = "d5bea7cc-5bf3-461b-a056-97e1a3b1eaa2"
 enabled = true
 invocation_logs = true
 
-# TEMPORARILY DISABLED (2026-10-17): the account is out of D1's free-tier daily row-write quota
-# and the current season is basically over anyway - re-enable ("* * * * *") once
-# migrations/0009_planet_history_buckets.sql has been applied and the matching worker/poller.ts/
-# worker/planet-history.ts fix (see AGENTS.md) is deployed, so the cron doesn't immediately exhaust
-# the quota again under the old per-planet-row write pattern.
+# Refreshes the public crusade cache and Domination planet history (worker/poller.ts) on its own
+# internal 5-minute gate - see AGENTS.md's "Leaderboard data" section for the D1 write-volume
+# history behind this cron's design (bucketed history rows, no per-planet leaderboard fetch, no
+# poller_planet_queue walk).
 [triggers]
-crons = []
+crons = ["* * * * *"]
