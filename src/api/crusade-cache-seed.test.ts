@@ -22,7 +22,7 @@ function crusadeRaw(overrides: Record<string, unknown> = {}) {
           crusadePhases: [{ phase: "CRUSADE", zone: "zone1", startsOn: now - 1000, endsOn: now + 1_000_000 }],
           strugglePhase: { phase: "STRUGGLE", startsOn: now + 2_000_000, endsOn: now + 3_000_000 },
           planetsData: [
-            { planetId: "planet_001", sideOwner: "for", ownedByFaction: "Ultramarines", pointsFor: 100, pointsAgainst: 50 },
+            { planetId: "planet_003", sideOwner: "for", ownedByFaction: "Ultramarines", pointsFor: 100, pointsAgainst: 50 },
             { planetId: "planet_002", sideOwner: "for", ownedByFaction: "Ultramarines", pointsFor: 80, pointsAgainst: 20 },
           ],
           ...overrides,
@@ -45,10 +45,10 @@ describe("seedPlanetRefreshStateFromCache", () => {
     const result = seedPlanetRefreshStateFromCache(cache);
     expect(result.crusadeData?.phase).toBe("CRUSADE");
     // "zone1" (1-based, from the raw phase schedule) maps to activeZone 0 (0-based, findActivePhase's
-    // convention) - planet_001/planet_002 are both zone 0 in planet-data.json, so both are active.
-    expect(result.planetRefreshState.has("planet_001")).toBe(true);
+    // convention) - planet_003/planet_002 are both zone 0 in planet-data.json, so both are active.
+    expect(result.planetRefreshState.has("planet_003")).toBe(true);
     expect(result.planetRefreshState.has("planet_002")).toBe(true);
-    const entry = result.planetRefreshState.get("planet_001");
+    const entry = result.planetRefreshState.get("planet_003");
     expect(entry?.leaderboard).toBeNull();
     expect(entry?.lastSuccessAt).toBeNull();
     expect(entry?.lastAttemptAt).toBeNull();
@@ -66,7 +66,7 @@ describe("seedPlanetRefreshStateFromCache", () => {
     };
     const result = seedPlanetRefreshStateFromCache(cache);
     expect(result.crusadeData?.phase).toBe("STRUGGLE");
-    expect(result.planetRefreshState.has("planet_001")).toBe(true);
+    expect(result.planetRefreshState.has("planet_003")).toBe(true);
     expect(result.planetRefreshState.has("planet_002")).toBe(true);
   });
 });

@@ -7,7 +7,7 @@ import { DominationSortModeToggle } from "./DominationSortModeToggle";
 import { DominationTopTenFilter } from "./DominationTopTenFilter";
 import { GraphHoursFilter } from "./GraphHoursFilter";
 import { PlanetDefenseBadge } from "./PlanetDefenseBadge";
-import { PlanetSectorMapModal } from "./PlanetSectorMapModal";
+import { PlanetSectorMapModal, SectorSvg } from "./PlanetSectorMapModal";
 import { PlanetTrackerGraph } from "./PlanetTrackerGraph";
 import {
   parsePositiveIntFilter,
@@ -241,7 +241,18 @@ export function CrusadeTab({
   }
 
   if (crusadeData.activeZone === null) {
-    return <p>No crusade zone is currently active (between phases).</p>;
+    // Between phases (Downtime, or any other gap with no active Expansion zone or Domination) -
+    // still worth showing the map itself rather than just a text message, so a visitor can see the
+    // overall crusade layout and whichever planets still carry a side from before the gap. No
+    // single sector is "active" here, so this always shows every sector at once (same data as the
+    // per-planet modal's own "Expand" view), with no particular planet highlighted.
+    const allSectorsMapData = computeAllSectorsMap(sectorMap, crusadePlanets);
+    return (
+      <>
+        <p className="mt-2 text-sm opacity-70">No crusade zone is currently active (between phases) - here's the current map:</p>
+        <SectorSvg sectorMapData={allSectorsMapData} showPointValues className="mt-2 h-auto w-full" />
+      </>
+    );
   }
 
   // Starred, then ranked, then everyone else (see sortPlanetsRankedFirst), each group ordered
