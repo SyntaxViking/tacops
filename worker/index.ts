@@ -12,6 +12,11 @@ interface Env {
   DB: D1Database;
   POLLER_USER_ID: string;
   POLLER_CLIENT_SECRET: string;
+  // Gates /debug/poller-identity below - a fixed, generated UUID (not a per-user secret), set the
+  // same way as the poller creds (`wrangler secret put DEBUG_SECRET`). Required because that route
+  // makes a real, account-authenticated GET_PLAYER call on the poller's own credentials - without
+  // this gate, anyone who found the URL could trigger that call for free.
+  DEBUG_SECRET: string;
 }
 
 interface RequestBody {
@@ -186,6 +191,22 @@ export default {
 
     if (url.pathname === "/insights" && request.method === "GET") {
       return renderInsightsPage(env.DB);
+    }
+
+    // Confirms which account the poller's configured credentials actually belong to - a real
+    // GET_PLAYER call on env.POLLER_USER_ID/POLLER_CLIENT_SECRET, returning only the account's own
+    // display name/power level (never the credentials themselves). Gated on DEBUG_SECRET (see Env
+    // above) since this makes a real, credentialed call to the game's own servers.
+    if (url.pathname === "/debug/poller-identity" && request.method === "GET") {
+      if (request.headers.get("X-Debug-Secret") !== env.DEBUG_SECRET) return new Response("Not found", { status: 404 });
+      if (isInRolloverWindow(Date.now())) return ROLLOVER_WINDOW_RESPONSE(Date.now());
+      try {
+        const data = (await fetchPlayerDataFromLoki("prod", env.POLLER_USER_ID, env.POLLER_CLIENT_SECRET, "")) as any;
+        const player = data?.eventResult?.eventResponseData?.player?.hero?.player;
+        return Response.json({ name: player?.name ?? null, powerLevel: player?.powerLevel ?? null });
+      } catch (error) {
+        return Response.json({ error: `${error}` }, { status: 502 });
+      }
     }
 
     return new Response("Not found", { status: 404 });
