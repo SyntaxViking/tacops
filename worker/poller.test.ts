@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { allLeaderboardIdsForPlanet, findActivePhase, relevantPlanetIds } from "./poller";
+import { findActivePhase, relevantPlanetIds } from "./poller";
 
 describe("relevantPlanetIds", () => {
-  it("returns all 146 planets during STRUGGLE", () => {
-    expect(relevantPlanetIds("STRUGGLE", null)).toHaveLength(146);
+  it("returns all 143 planets during STRUGGLE", () => {
+    expect(relevantPlanetIds("STRUGGLE", null)).toHaveLength(143);
   });
 
   it("returns just the active zone's planets during CRUSADE, matching planet-data.json's real zone sizes", () => {
-    const zoneSizes = [24, 24, 20, 23, 26, 29];
+    const zoneSizes = [24, 24, 24, 24, 23, 24];
     zoneSizes.forEach((size, zone) => {
       expect(relevantPlanetIds("CRUSADE", zone)).toHaveLength(size);
     });
@@ -44,18 +44,5 @@ describe("findActivePhase", () => {
   it("returns phase: null when nothing brackets now", () => {
     const result = findActivePhase({ phase: "DOWNTIME", startsOn: now - 2000, endsOn: now - 1000 }, [], undefined);
     expect(result).toEqual({ phase: null, activeZone: null });
-  });
-});
-
-describe("allLeaderboardIdsForPlanet", () => {
-  it("builds the side-player ids plus one per-faction player id for every faction, never the crusadeFaction aggregate ids", () => {
-    const ids = allLeaderboardIdsForPlanet("crusade1", 3, "planet_042");
-    expect(ids[0]).toBe("crusadePlayer:crusade_leaderboard_planet_side_players_crusade1_3_planet_042_for");
-    expect(ids[1]).toBe("crusadePlayer:crusade_leaderboard_planet_side_players_crusade1_3_planet_042_against");
-    expect(ids).toContain("crusadePlayer:crusade_leaderboard_planet_faction_players_crusade1_3_planet_042_Custodes");
-    expect(ids).toContain("crusadePlayer:crusade_leaderboard_planet_faction_players_crusade1_3_planet_042_Necrons");
-    expect(ids.some((id) => id.startsWith("crusadeFaction:"))).toBe(false);
-    // 2 side ids + one per faction (22 factions)
-    expect(ids).toHaveLength(24);
   });
 });

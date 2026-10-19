@@ -21,7 +21,9 @@ import { RewardPriorityPicker } from "./components/RewardPriorityPicker";
 import { RequiredCharacterPool } from "./components/RequiredCharacterPool";
 import { ResourceTokens } from "./components/ResourceTokens";
 import { BuildTimestamp } from "./components/BuildTimestamp";
-import { RankedParticipantsCounter } from "./components/RankedParticipantsCounter";
+import { CrusadePointsRateIndicator } from "./components/CrusadePointsRateIndicator";
+import { RolloverCooldownModal } from "./components/RolloverCooldownModal";
+import { msUntilRolloverWindowEnds } from "./rollover-window";
 import { StaleVersionBanner } from "./components/StaleVersionBanner";
 import { Toast } from "./components/Toast";
 import { registerStaleVersionHandler, startVersionCheck } from "./version-check";
@@ -38,13 +40,10 @@ import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacter
 import { getDevDataSource, setDevDataSource, type DevDataSource } from "./api/dev-data-source";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
 import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
-import {
-  countRankedParticipants,
-  isPlanetAutoRefreshable,
-} from "./crusade/crusade-domination-view-model";
+import { isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
-import { appendTrackedSample, createTrackedPlanetState, mergeHistoryIntoTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
+import { appendTrackedSample, computeTotalHourlyRate, createTrackedPlanetState, mergeHistoryIntoTrackedPlanetState, restartIfRecontested } from "./crusade/planet-tracker-view-model";
 import { fetchAllPlanetHistory, fetchPlanetHistory } from "./api/fetch-planet-history";
 import { AnonymousCrusadeSection } from "./components/AnonymousCrusadeSection";
 import { trackUsage } from "./track-usage";
@@ -113,12 +112,9 @@ export function App() {
   });
   const [showClientSecret, setShowClientSecret] = useState(false);
   const [status, setStatus] = useState("");
-  const [fetchState, setFetchState] = useState<
-    "idle" | "loading" | "error" | "success"
-  >("idle");
-  const [secondsRemaining, setSecondsRemaining] = useState(
-    FETCH_COUNTDOWN_SECONDS,
-  );
+  const [fetchState, setFetchState] = useState<"idle" | "loading" | "error" | "success">("idle");
+  const [secondsRemaining, setSecondsRemaining] = useState(FETCH_COUNTDOWN_SECONDS);
+  const [rolloverMsRemaining, setRolloverMsRemaining] = useState(() => msUntilRolloverWindowEnds(Date.now()));
   const [board, setBoard] = useState<ExpeditionBoardEntry[]>([]);
   const [heroes, setHeroes] = useState<RawUnit[]>([]);
   const [favoritedCharacterIds, setFavoritedCharacterIds] = useState<
@@ -401,6 +397,19 @@ export function App() {
     return () => clearInterval(interval);
   }, [solverState]);
 
+  // Drives RolloverCooldownModal - unconditional (not gated on login/fetch state, unlike the two
+  // countdowns above) since the modal needs to cover the pre-login screen too (see its own
+  // comment). This is purely the *visual* half of the rollover guarantee - the actual traffic
+  // block is enforced independently at the transport layer (rollover-guard.ts,
+  // invoke-with-timeout.ts) and server-side (worker/index.ts), so a clock that's merely a few
+  // seconds off here never lets real traffic through, it just mis-times when the overlay shows.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRolloverMsRemaining(msUntilRolloverWindowEnds(Date.now()));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   function toggleSelection(expeditionId: string) {
     setSelectedExpeditionId((current) =>
       current === expeditionId ? null : expeditionId,
@@ -669,9 +678,9 @@ export function App() {
   // slow round trip eats into the gap rather than stacking on top of it.
   const TRACKER_WEB_MIN_INTERVAL_MS = 10_000;
 
-  // Claims the most-overdue eligible planet (not currently loading, auto-refreshable - starred,
-  // ranked, or not yet successfully loaded, see isPlanetAutoRefreshable - and past its cadence
-  // threshold) by marking it isLoading synchronously - contains no `await`, so with up to 4 workers calling
+  // Claims the most-overdue eligible planet (not currently loading, auto-refreshable - starred
+  // only, see isPlanetAutoRefreshable - and past its cadence threshold) by marking it isLoading
+  // synchronously - contains no `await`, so with up to 4 workers calling
   // this "at once", each call fully completes (including the ref mutation) before the next one's
   // synchronous body can run, making the claim race-free without any extra locking.
   function claimEligiblePlanet(thresholdMs: number): string | null {
@@ -1007,18 +1016,16 @@ export function App() {
     }
   }
 
-  // Global ranked-participant headcount (see RankedParticipantsCounter) - summed fresh each
-  // render, same as the rest of this component's derived-from-state values; planetRefreshState is
-  // small enough (dozens of planets) that memoizing this would be premature.
-  const rankedParticipantCounts = countRankedParticipants(planetRefreshState);
+  const totalHourlyRate = computeTotalHourlyRate(crusadeData?.planets ?? [], planetHistoryByPlanet, Date.now());
 
   return (
     <main
       onClick={() => setSelectedExpeditionId(null)}
       className="mx-auto flex min-h-screen w-full flex-col items-center bg-neutral-100 px-4 py-[5vh] text-center text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
     >
+      {rolloverMsRemaining > 0 && <RolloverCooldownModal msRemaining={rolloverMsRemaining} />}
       <BuildTimestamp />
-      {devModeEnabled && <RankedParticipantsCounter imperial={rankedParticipantCounts.imperial} devastation={rankedParticipantCounts.devastation} />}
+      {devModeEnabled && <CrusadePointsRateIndicator imperialRate={totalHourlyRate.imperial} devastationRate={totalHourlyRate.devastation} />}
       {staleVersionDetected && <StaleVersionBanner onReloadNow={() => window.location.reload()} />}
       {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />}
       <h1 className="cursor-pointer text-2xl font-semibold select-none" onClick={handleTitleTap}>

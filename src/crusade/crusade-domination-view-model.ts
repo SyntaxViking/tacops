@@ -37,34 +37,12 @@ export function isPlanetRanked(leaderboard: PlanetLeaderboard | undefined): bool
   return leaderboard?.side?.myRank != null || leaderboard?.faction?.myRank != null;
 }
 
-// Background polling is reserved for planets the user cares about: starred or ranked ones. Any
-// other planet still gets loaded once (that first fetch is also how a rank is discovered) - i.e.
-// until it has a successful fetch, it stays eligible (still subject to the caller's cadence
-// threshold, so a failing load retries at the normal pace rather than hot-looping) - and after that
-// only updates via its manual refresh button.
-export function isPlanetAutoRefreshable(entry: PlanetRefreshEntry, isStarred: boolean): boolean {
-  return isStarred || entry.lastSuccessAt === null || isPlanetRanked(entry.leaderboard ?? undefined);
-}
-
-export interface RankedParticipantCounts {
-  imperial: number;
-  devastation: number;
-}
-
-// Global headcount, not per-planet - sums each loaded planet's own forParticipants/
-// againstParticipants (see PlanetLeaderboard) across the whole map. "For" is Imperial,
-// "Against" is Devastation, matching the codebase's established side convention. A planet whose
-// leaderboard hasn't loaded yet (or that side's leaderboard came back empty) simply contributes 0,
-// not a special-cased skip - so the total climbs as more planets finish loading, same as every
-// other rolling aggregate in this feature.
-export function countRankedParticipants(planetRefreshState: ReadonlyMap<string, PlanetRefreshEntry>): RankedParticipantCounts {
-  let imperial = 0;
-  let devastation = 0;
-  for (const entry of planetRefreshState.values()) {
-    imperial += entry.leaderboard?.forParticipants ?? 0;
-    devastation += entry.leaderboard?.againstParticipants ?? 0;
-  }
-  return { imperial, devastation };
+// Background polling is reserved for planets the user cares about: starred ones only. Every other
+// planet's leaderboard data is never auto-fetched - it only loads via the live-tracked planet's own
+// dedicated loop, or a manual refresh - keeping leaderboard request volume (and the game-server load
+// it causes) proportional to what the user actually cares about, not every planet on the map.
+export function isPlanetAutoRefreshable(_entry: PlanetRefreshEntry, isStarred: boolean): boolean {
+  return isStarred;
 }
 
 export interface CaptureRace {

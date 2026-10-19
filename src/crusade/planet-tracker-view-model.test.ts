@@ -4,9 +4,11 @@ import {
   captureUrgency,
   computeAxisScale,
   computeHourlyAccruedRate,
+  computeTotalHourlyRate,
   computeTrackerGraphData,
   createTrackedPlanetState,
   formatAxisValue,
+  formatCompactSignedPoints,
   formatElapsedSeconds,
   liveSnapshotSample,
   mergeHistoryIntoTrackedPlanetState,
@@ -670,5 +672,66 @@ describe("captureUrgency", () => {
   it("is 'normal' once the planet is already captured (pointsRemaining <= 0)", () => {
     expect(captureUrgency(0, 100)).toBe("normal");
     expect(captureUrgency(-10, 100)).toBe("normal");
+  });
+});
+
+describe("formatCompactSignedPoints", () => {
+  it("floors to the exact k/M/B tier rather than rounding to one significant digit", () => {
+    expect(formatCompactSignedPoints(22_718_965)).toBe("+22M");
+    expect(formatCompactSignedPoints(765_987)).toBe("+765k");
+  });
+
+  it("signs negative values with a leading -", () => {
+    expect(formatCompactSignedPoints(-765_987)).toBe("-765k");
+  });
+
+  it("handles billions and sub-thousand values", () => {
+    expect(formatCompactSignedPoints(2_500_000_000)).toBe("+2B");
+    expect(formatCompactSignedPoints(42)).toBe("+42");
+  });
+});
+
+describe("computeTotalHourlyRate", () => {
+  const HOUR = 60 * 60 * 1000;
+  const nowMs = 2 * HOUR;
+
+  it("sums each planet's own hourly rate per side across the whole map", () => {
+    const planets = [liveContestedPlanet(200, 100), liveContestedPlanet(150, 50)];
+    planets[0].planetId = "planet_a";
+    planets[1].planetId = "planet_b";
+    // Two real samples each, bracketing the 1h-ago mark cleanly (atMs=0 and atMs=2h, matching
+    // nowMs) so computeHourlyAccruedRate takes its primary interpolation path, not the
+    // since-start fallback - avoids the single-sample edge case entirely for a predictable sum.
+    const historyByPlanet = new Map<string, TrackedPlanetSample[]>([
+      [
+        "planet_a",
+        [
+          { atMs: 0, imperialRemaining: 1000, devastationRemaining: 1000, imperialAccrued: 0, devastationAccrued: 0, imperialThreshold: 1000, devastationThreshold: 1000 },
+          { atMs: 2 * HOUR, imperialRemaining: 800, devastationRemaining: 900, imperialAccrued: 200, devastationAccrued: 100, imperialThreshold: 1000, devastationThreshold: 1000 },
+        ],
+      ],
+      [
+        "planet_b",
+        [
+          { atMs: 0, imperialRemaining: 1000, devastationRemaining: 1000, imperialAccrued: 0, devastationAccrued: 0, imperialThreshold: 1000, devastationThreshold: 1000 },
+          { atMs: 2 * HOUR, imperialRemaining: 850, devastationRemaining: 950, imperialAccrued: 150, devastationAccrued: 50, imperialThreshold: 1000, devastationThreshold: 1000 },
+        ],
+      ],
+    ]);
+    // Interpolated value 1h ago is the midpoint of each pair (linear between t=0 and t=2h):
+    // planet_a imperial: 0 -> 200 interpolates to 100 at 1h -> rate = currentValue(200) - 100 = 100/hr.
+    // planet_b imperial: 0 -> 150 interpolates to 75 at 1h -> rate = currentValue(150) - 75 = 75/hr.
+    // Summed: 175/hr imperial. Devastation: (100-50)+(50-25) = 50+25 = 75/hr.
+    const result = computeTotalHourlyRate(planets, historyByPlanet, nowMs);
+    expect(result.imperial).toBe(175);
+    expect(result.devastation).toBe(75);
+  });
+
+  it("contributes 0 for a planet with no struggleData or no history", () => {
+    const noStruggle = planet({ planetId: "planet_c" });
+    const noHistory = liveContestedPlanet(100, 100);
+    noHistory.planetId = "planet_d";
+    const result = computeTotalHourlyRate([noStruggle, noHistory], new Map(), nowMs);
+    expect(result).toEqual({ imperial: 0, devastation: 0 });
   });
 });

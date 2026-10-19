@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { seedPlanetRefreshStateFromCache } from "./crusade-cache-seed";
-import { factionPlayerLeaderboardId, leaderboardIdsForPlanet } from "./fetch-crusade-data";
 import type { CrusadeCacheResponse } from "./fetch-crusade-cache";
 
 const CRUSADE_ID = "crusade1";
 const SEASON = 3;
 const now = Date.now();
 
-// The cache stores each Loki response completely untouched (see worker/poller.ts) - these fixtures
-// mirror the real envelope shape, not the already-unwrapped eventResponseData.
+// The cache stores the crusade snapshot completely untouched (see worker/poller.ts) - this fixture
+// mirrors the real envelope shape, not the already-unwrapped eventResponseData.
 function crusadeRaw(overrides: Record<string, unknown> = {}) {
   return {
     eventResults: [
@@ -23,7 +22,7 @@ function crusadeRaw(overrides: Record<string, unknown> = {}) {
           crusadePhases: [{ phase: "CRUSADE", zone: "zone1", startsOn: now - 1000, endsOn: now + 1_000_000 }],
           strugglePhase: { phase: "STRUGGLE", startsOn: now + 2_000_000, endsOn: now + 3_000_000 },
           planetsData: [
-            { planetId: "planet_001", sideOwner: "for", ownedByFaction: "Ultramarines", pointsFor: 100, pointsAgainst: 50 },
+            { planetId: "planet_003", sideOwner: "for", ownedByFaction: "Ultramarines", pointsFor: 100, pointsAgainst: 50 },
             { planetId: "planet_002", sideOwner: "for", ownedByFaction: "Ultramarines", pointsFor: 80, pointsAgainst: 20 },
           ],
           ...overrides,
@@ -33,138 +32,27 @@ function crusadeRaw(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function leaderboardsRawFor(planetId: string) {
-  const ids = leaderboardIdsForPlanet(CRUSADE_ID, SEASON, planetId);
-  const custodesId = factionPlayerLeaderboardId(CRUSADE_ID, SEASON, planetId, "Custodes");
-  return {
-    eventResult: {
-      eventResponseData: {
-        leaderboards: {
-          [ids.playerFor]: { numParticipants: 500, topEntries: [{ position: 0, points: 9000, participantId: "p1" }] },
-          [ids.playerAgainst]: { numParticipants: 400, topEntries: [{ position: 0, points: 8000, participantId: "p2" }] },
-          [custodesId]: { numParticipants: 50, topEntries: [{ position: 0, points: 3000, participantId: "p3" }] },
-        },
-      },
-    },
-  };
-}
-
-// Mirrors what the real server actually sends: since the poller authenticates as a real personal
-// Tacticus account (not a placeholder), myRank/myPoints on these raw entries are that account's own
-// placement - present regardless of the "" myUserId this module always reads with.
-function leaderboardsRawWithMyRank(planetId: string) {
-  const ids = leaderboardIdsForPlanet(CRUSADE_ID, SEASON, planetId);
-  const custodesId = factionPlayerLeaderboardId(CRUSADE_ID, SEASON, planetId, "Custodes");
-  return {
-    eventResult: {
-      eventResponseData: {
-        leaderboards: {
-          [ids.playerFor]: {
-            numParticipants: 500,
-            myRank: 41,
-            myPoints: 4000,
-            topEntries: [{ position: 0, points: 9000 }],
-            // Falls within the myRank(42) +/-2 window (40-44) - buildNearMe would surface this if
-            // it weren't for stripMyRank clearing nearMe on the anonymous path.
-            localEntries: [{ position: 41, points: 4200 }],
-          },
-          [ids.playerAgainst]: { numParticipants: 400, topEntries: [{ position: 0, points: 8000 }] },
-          [custodesId]: { numParticipants: 50, myRank: 3, myPoints: 2500, topEntries: [{ position: 0, points: 3000 }] },
-        },
-      },
-    },
-  };
-}
-
 describe("seedPlanetRefreshStateFromCache", () => {
   it("returns an empty seed when there's no cached crusade snapshot yet", () => {
-    const cache: CrusadeCacheResponse = { crusadeRaw: null, crusadeFetchedAt: null, leaderboards: {} };
+    const cache: CrusadeCacheResponse = { crusadeRaw: null, crusadeFetchedAt: null };
     const result = seedPlanetRefreshStateFromCache(cache);
     expect(result.crusadeData).toBeNull();
     expect(result.planetRefreshState.size).toBe(0);
   });
 
-  it("seeds only the active zone's planets during CRUSADE, with empty topFactions (no longer cached) and null side/faction when no faction is picked", () => {
-    const cache: CrusadeCacheResponse = {
-      crusadeRaw: crusadeRaw(),
-      crusadeFetchedAt: now,
-      leaderboards: { planet_001: { raw: leaderboardsRawFor("planet_001"), fetchedAt: now } },
-    };
+  it("seeds only the active zone's planets during CRUSADE, each with no leaderboard loaded yet", () => {
+    const cache: CrusadeCacheResponse = { crusadeRaw: crusadeRaw(), crusadeFetchedAt: now };
     const result = seedPlanetRefreshStateFromCache(cache);
     expect(result.crusadeData?.phase).toBe("CRUSADE");
     // "zone1" (1-based, from the raw phase schedule) maps to activeZone 0 (0-based, findActivePhase's
-    // convention) - planet_001/planet_002 are both zone 0 in planet-data.json, so both are active.
-    expect(result.planetRefreshState.has("planet_001")).toBe(true);
-    const entry = result.planetRefreshState.get("planet_001");
-    expect(entry?.leaderboard?.topFactionsFor).toEqual([]);
-    expect(entry?.leaderboard?.topFactionsAgainst).toEqual([]);
-    expect(entry?.leaderboard?.side).toBeNull();
-    expect(entry?.leaderboard?.faction).toBeNull();
-    // Unlike side/faction above, forParticipants/againstParticipants aren't gated on a picked
-    // faction - they're not personal data, just a raw headcount, so they're already populated here.
-    expect(entry?.leaderboard?.forParticipants).toBe(500);
-    expect(entry?.leaderboard?.againstParticipants).toBe(400);
-  });
-
-  it("populates the Side and Faction Leaderboards with benchmarks when a 'for' faction is picked", () => {
-    const cache: CrusadeCacheResponse = {
-      crusadeRaw: crusadeRaw(),
-      crusadeFetchedAt: now,
-      leaderboards: { planet_001: { raw: leaderboardsRawFor("planet_001"), fetchedAt: now } },
-    };
-    const result = seedPlanetRefreshStateFromCache(cache, "Custodes");
-    const entry = result.planetRefreshState.get("planet_001");
-    // Custodes is Imperium ("for") - mergeSideLeaderboard falls back to the "for" side since there's
-    // no personal identity to match (myUserId is always "").
-    expect(entry?.leaderboard?.side?.numParticipants).toBe(500);
-    expect(entry?.leaderboard?.side?.myRank).toBeNull();
-    expect(entry?.leaderboard?.side?.benchmarks.length).toBeGreaterThan(0);
-    expect(entry?.leaderboard?.faction?.numParticipants).toBe(50);
-    expect(entry?.leaderboard?.faction?.benchmarks.length).toBeGreaterThan(0);
-  });
-
-  it("strips myRank/myPoints even when the raw response has them - that's the poller's own personal account, not the visitor's", () => {
-    const cache: CrusadeCacheResponse = {
-      crusadeRaw: crusadeRaw(),
-      crusadeFetchedAt: now,
-      leaderboards: { planet_001: { raw: leaderboardsRawWithMyRank("planet_001"), fetchedAt: now } },
-    };
-    const result = seedPlanetRefreshStateFromCache(cache, "Custodes");
-    const entry = result.planetRefreshState.get("planet_001");
-    expect(entry?.leaderboard?.side?.myRank).toBeNull();
-    expect(entry?.leaderboard?.side?.myPoints).toBeNull();
-    expect(entry?.leaderboard?.faction?.myRank).toBeNull();
-    expect(entry?.leaderboard?.faction?.myPoints).toBeNull();
-    // Benchmarks (the actual public leaderboard content) survive the stripping untouched.
-    expect(entry?.leaderboard?.side?.numParticipants).toBe(500);
-    expect(entry?.leaderboard?.faction?.numParticipants).toBe(50);
-    // nearMe (the expanded view's "rank +/-2" window) is emptied too - it's built from that same
-    // raw myRank, so leaving it would still show a narrow band of rows centered on the poller's
-    // real rank even with myRank/myPoints themselves hidden.
-    expect(entry?.leaderboard?.side?.nearMe).toEqual([]);
-    expect(entry?.leaderboard?.faction?.nearMe).toEqual([]);
-  });
-
-  it("falls back to the 'against' side leaderboard when an against-side faction is picked", () => {
-    const cache: CrusadeCacheResponse = {
-      crusadeRaw: crusadeRaw(),
-      crusadeFetchedAt: now,
-      leaderboards: { planet_001: { raw: leaderboardsRawFor("planet_001"), fetchedAt: now } },
-    };
-    const result = seedPlanetRefreshStateFromCache(cache, "Necrons");
-    const entry = result.planetRefreshState.get("planet_001");
-    expect(entry?.leaderboard?.side?.numParticipants).toBe(400);
-    // No cached leaderboard entry exists for "Necrons" in this fixture (only Custodes) - faction
-    // should gracefully come back null rather than throwing.
-    expect(entry?.leaderboard?.faction).toBeNull();
-  });
-
-  it("marks an active planet with no cache entry yet as not-yet-loaded rather than omitting it", () => {
-    const cache: CrusadeCacheResponse = { crusadeRaw: crusadeRaw(), crusadeFetchedAt: now, leaderboards: {} };
-    const result = seedPlanetRefreshStateFromCache(cache);
-    const entry = result.planetRefreshState.get("planet_001");
-    expect(entry).toBeDefined();
+    // convention) - planet_003/planet_002 are both zone 0 in planet-data.json, so both are active.
+    expect(result.planetRefreshState.has("planet_003")).toBe(true);
+    expect(result.planetRefreshState.has("planet_002")).toBe(true);
+    const entry = result.planetRefreshState.get("planet_003");
     expect(entry?.leaderboard).toBeNull();
+    expect(entry?.lastSuccessAt).toBeNull();
+    expect(entry?.lastAttemptAt).toBeNull();
+    expect(entry?.lastAttemptFailed).toBe(false);
     expect(entry?.isLoading).toBe(false);
   });
 
@@ -175,11 +63,10 @@ describe("seedPlanetRefreshStateFromCache", () => {
         strugglePhase: { phase: "STRUGGLE", startsOn: now - 1000, endsOn: now + 1_000_000 },
       }),
       crusadeFetchedAt: now,
-      leaderboards: {},
     };
     const result = seedPlanetRefreshStateFromCache(cache);
     expect(result.crusadeData?.phase).toBe("STRUGGLE");
-    expect(result.planetRefreshState.has("planet_001")).toBe(true);
+    expect(result.planetRefreshState.has("planet_003")).toBe(true);
     expect(result.planetRefreshState.has("planet_002")).toBe(true);
   });
 });

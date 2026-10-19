@@ -468,3 +468,46 @@ export function captureUrgency(pointsRemainingNow: number, hourlyRate: number): 
   if (hoursUntilCapture <= 4) return "withinFourHours";
   return "normal";
 }
+
+// Map-wide "how fast is each side gaining right now" figure, shown via CrusadePointsRateIndicator -
+// the same per-planet computeHourlyAccruedRate used by the per-row δ indicator, just summed across
+// every planet with Domination data instead of shown one row at a time. Planets with no
+// struggleData (computeConquestProgress returns null) or no history yet simply contribute 0.
+export function computeTotalHourlyRate(
+  planets: readonly CrusadePlanet[],
+  historyByPlanet: ReadonlyMap<string, TrackedPlanetSample[]>,
+  nowMs: number,
+): { imperial: number; devastation: number } {
+  let imperial = 0;
+  let devastation = 0;
+  for (const planet of planets) {
+    const progress = computeConquestProgress(planet);
+    if (!progress) continue;
+    const history = historyByPlanet.get(planet.planetId) ?? [];
+    imperial += computeHourlyAccruedRate(
+      history.filter((s) => s.imperialAccrued !== undefined).map((s) => ({ atMs: s.atMs, value: s.imperialAccrued! })),
+      progress.imperialCurrent,
+      nowMs,
+    );
+    devastation += computeHourlyAccruedRate(
+      history.filter((s) => s.devastationAccrued !== undefined).map((s) => ({ atMs: s.atMs, value: s.devastationAccrued! })),
+      progress.devastationCurrent,
+      nowMs,
+    );
+  }
+  return { imperial, devastation };
+}
+
+// Compact "22M"/"765k"/"-3B" formatting for the map-wide points aggregate above - unlike
+// formatAxisValue (which rounds to a single significant digit for clean graph gridlines), this
+// keeps every digit at whatever tier it floors to, per the exact spec requested: 22,718,965 ->
+// "22M" (not "20M"), 765,987 -> "765k" (not "800k"). Always signed (+/-) since a losing side's
+// negative aggregate is just as meaningful here as a gaining one's.
+export function formatCompactSignedPoints(value: number): string {
+  const sign = value < 0 ? "-" : "+";
+  const abs = Math.floor(Math.abs(value));
+  if (abs >= 1_000_000_000) return `${sign}${Math.floor(abs / 1_000_000_000)}B`;
+  if (abs >= 1_000_000) return `${sign}${Math.floor(abs / 1_000_000)}M`;
+  if (abs >= 1_000) return `${sign}${Math.floor(abs / 1_000)}k`;
+  return `${sign}${abs}`;
+}

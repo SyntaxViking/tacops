@@ -1,16 +1,28 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Modal } from "./Modal";
 import { dotRadius, MAX_DOT_RADIUS, planetProgressBars, type SectorMapColor, type SectorMapData } from "../crusade/crusade-sector-map-view-model";
+import { goldIconUrl, staminaIconUrl } from "../resource-icons";
 
 // Imperial/Devastation match the codebase's established side-color intent from the map's own
 // legend; the highlight ring reuses this codebase's existing "complete/target" green
-// (OpsCardFrame.tsx/OperationsTable.tsx use green-700/green-500 the same way).
+// (OpsCardFrame.tsx/OperationsTable.tsx use green-700/green-500 the same way). Neutral (unclaimed)
+// is a true medium gray (L=50%) deliberately picked to match imperial/devastation's own lightness
+// (blue-600 L=53%, red-600 L=51%) rather than a lighter/fainter UI gray like gray-400 (L=65%,
+// S=11%) - an unclaimed planet should read with the same visual weight as a claimed one, not fade
+// into the background next to them.
 const NODE_COLOR: Record<SectorMapColor, string> = {
   imperial: "#2563eb",
   devastation: "#dc2626",
-  neutral: "#9ca3af",
+  neutral: "#808080",
 };
 const HIGHLIGHT_COLOR = "#15803d";
+// Resource icon shown centered in an Agri/Mining world's hollow circle, in place of its point
+// value (see showPointValues below) - sized to fill most of the ring without touching its stroke.
+const RESOURCE_ICON_URL: Record<"energy" | "gold", string> = {
+  energy: staminaIconUrl(),
+  gold: goldIconUrl(),
+};
+const RESOURCE_ICON_SIZE = 3;
 // Darker shades of the same two colors, for the progress arc's outline (blue-900/red-900 vs. the
 // blue-600/red-600 fill above).
 const ARC_OUTLINE_COLOR: Record<"imperial" | "devastation", string> = {
@@ -25,6 +37,19 @@ const VIEWBOX_SIZE = 100;
 const SPAN = VIEWBOX_SIZE - MARGIN * 2;
 function toSvg(normalized: number): number {
   return MARGIN + normalized * SPAN;
+}
+
+// Pulls both ends of a connection line in by the connected planet's own dot radius, so the line
+// stops at the circle's edge instead of running straight through its (now hollow, see
+// showPointValues) middle and crossing out the point-value text drawn there.
+function clipLineEnd(x1: number, y1: number, x2: number, y2: number, r1: number, r2: number): { x1: number; y1: number; x2: number; y2: number } {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return { x1, y1, x2, y2 };
+  const ux = dx / length;
+  const uy = dy / length;
+  return { x1: x1 + ux * r1, y1: y1 + uy * r1, x2: x2 - ux * r2, y2: y2 - uy * r2 };
 }
 
 // Geometry in viewBox units, relative to a planet's center: the name sits below the highlight
@@ -95,7 +120,28 @@ function SideArc({
 const ARROW_BUTTON_CLASS =
   "flex h-8 w-8 items-center justify-center rounded-full text-2xl leading-none text-neutral-600 outline-none transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white";
 
-function SectorSvg({ sectorMapData, highlightPlanetId, className, style }: { sectorMapData: SectorMapData; highlightPlanetId: string; className: string; style?: CSSProperties }) {
+// Exported for CrusadeTab.tsx's own "between phases" map (no modal, no particular planet
+// highlighted - see its own comment).
+export function SectorSvg({
+  sectorMapData,
+  highlightPlanetId,
+  showPointValues = false,
+  className,
+  style,
+}: {
+  sectorMapData: SectorMapData;
+  highlightPlanetId?: string;
+  // Hollow ring instead of a solid ownership-colored dot, with the planet's capture point value
+  // centered inside it - or, for an Agri/Mining world, its resource icon instead of the point value
+  // (every world is worth the same 1 point there; the icon says why it's worth grabbing). Used for
+  // CRUSADE/Downtime views, where there's no active capture race to show progress arcs for (see
+  // CrusadeTab.tsx's "between phases" map). Off by default so the per-planet modal's STRUGGLE
+  // (Domination) view, which always has real conquest progress to show, keeps today's
+  // solid-dot-plus-arcs rendering.
+  showPointValues?: boolean;
+  className: string;
+  style?: CSSProperties;
+}) {
   return (
     <svg viewBox={`0 0 ${VIEWBOX_SIZE + (sectorMapData.aspect - 1) * SPAN} ${VIEWBOX_SIZE}`} className={className} style={style}>
       <defs>
@@ -114,17 +160,19 @@ function SectorSvg({ sectorMapData, highlightPlanetId, className, style }: { sec
           </linearGradient>
         ))}
       </defs>
-      {sectorMapData.edges.map((edge, i) => (
-        <line
-          key={i}
-          x1={toSvg(edge.from.x)}
-          y1={toSvg(edge.from.y)}
-          x2={toSvg(edge.to.x)}
-          y2={toSvg(edge.to.y)}
-          stroke={`url(#sector-map-edge-${i})`}
-          strokeWidth={0.5}
-        />
-      ))}
+      {sectorMapData.edges.map((edge, i) => {
+        // Gradient stays anchored to the full center-to-center span (set above) so its color
+        // interpolation is unaffected - only the visible stroke itself gets pulled in.
+        const clipped = clipLineEnd(
+          toSvg(edge.from.x),
+          toSvg(edge.from.y),
+          toSvg(edge.to.x),
+          toSvg(edge.to.y),
+          dotRadius(edge.from.dotScale),
+          dotRadius(edge.to.dotScale),
+        );
+        return <line key={i} {...clipped} stroke={`url(#sector-map-edge-${i})`} strokeWidth={0.5} />;
+      })}
       {sectorMapData.sectorBoundaries.map((x) => (
         <line key={x} x1={toSvg(x)} y1={0} x2={toSvg(x)} y2={VIEWBOX_SIZE} stroke="currentColor" strokeOpacity={0.4} strokeWidth={0.3} strokeDasharray="1.5 1.5" />
       ))}
@@ -141,7 +189,25 @@ function SectorSvg({ sectorMapData, highlightPlanetId, className, style }: { sec
         return (
           <g key={node.planetId}>
             {node.planetId === highlightPlanetId && <circle cx={cx} cy={cy} r={4} fill="none" stroke={HIGHLIGHT_COLOR} strokeWidth={0.7} />}
-            <circle cx={cx} cy={cy} r={dotRadius(node.dotScale)} fill={NODE_COLOR[node.color]} />
+            {showPointValues ? (
+              <circle cx={cx} cy={cy} r={dotRadius(node.dotScale)} fill="none" stroke={NODE_COLOR[node.color]} strokeWidth={0.6} />
+            ) : (
+              <circle cx={cx} cy={cy} r={dotRadius(node.dotScale)} fill={NODE_COLOR[node.color]} />
+            )}
+            {showPointValues &&
+              (node.resourceIcon ? (
+                <image
+                  href={RESOURCE_ICON_URL[node.resourceIcon]}
+                  x={cx - RESOURCE_ICON_SIZE / 2}
+                  y={cy - RESOURCE_ICON_SIZE / 2}
+                  width={RESOURCE_ICON_SIZE}
+                  height={RESOURCE_ICON_SIZE}
+                />
+              ) : (
+                <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={2.2} fontWeight="bold" fill={NODE_COLOR[node.color]}>
+                  {node.pointsWorth}
+                </text>
+              ))}
             {/* Dots can shrink to ~1px, far too small to hover - this invisible full-size target
                 keeps the name tooltip reachable. */}
             <circle cx={cx} cy={cy} r={MAX_DOT_RADIUS} fill="transparent">

@@ -17,8 +17,9 @@ database_id = "ea154efc-5a0c-4e18-9119-6cbad3b8a61d"
 enabled = true
 invocation_logs = true
 
-# Refreshes the public crusade/leaderboard cache (worker/poller.ts) - every minute is required to
-# approximate a ~5 minute rotation across all 146 planets under the Workers Free plan's
-# 50-subrequests-per-invocation cap; see the implementation plan for the full arithmetic.
+# Refreshes the public crusade cache and Domination planet history (worker/poller.ts) on its own
+# internal 5-minute gate - see AGENTS.md's "Leaderboard data" section for the D1 write-volume
+# history behind this cron's design (bucketed history rows, no per-planet leaderboard fetch, no
+# poller_planet_queue walk).
 [triggers]
 crons = ["* * * * *"]

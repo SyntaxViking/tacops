@@ -1,33 +1,34 @@
 // Persists a rolling, append-only points-remaining history for every Domination planet, written by
 // the poller (worker/poller.ts) on its existing once-every-5-minutes crusade-refresh cadence - see
-// migrations/0007_planet_history_cache.sql. Read back by GET /api/planet-history (one planet) and
+// migrations/0009_planet_history_buckets.sql. Read back by GET /api/planet-history (one planet) and
 // GET /api/planet-history-all (every planet, for the Monitor tab) in worker/index.ts, to seed a
 // freshly-tracked planet's graph (src/App.tsx) and Monitor's graphs with everything recorded since
 // the current capture cycle began, not just the window the user happened to be watching.
 //
-// One row per planet (planet_history_cache), holding its whole current-era history as a single
-// JSON-encoded array - NOT one row per planet per tick, which is what migrations/0005 originally
-// shipped. That first version worked but didn't scale: by 2026-10-05 the old per-sample table had
-// grown large enough that the Monitor tab's bulk read (one full-table scan per call) alone burned
-// through ~83% of the account's entire 5-million-rows-read/day D1 budget in under 6 hours, from
-// perfectly normal use (one or two people with Monitor open, each auto-refreshing every 5 minutes -
-// see MonitorTab.tsx's HISTORY_REFRESH_MS). A bulk read here is now a fixed ~100-row read (one row
-// per planet) no matter how much history has accumulated, and the once-every-5-minutes write is a
-// single-row upsert per planet instead of 2-3 new rows (base table + its indexes) per planet, which
-// also roughly halves the write-side cost the 2026-10-03 investigation addressed. migrations/0007
-// backfills this table from the old planet_history/planet_history_state tables (left in place,
-// unused, as a safety net) so no accumulated history was lost in the switch.
+// One row per PLANETS_PER_BUCKET-sized bucket of planets (planet_history_buckets), not one row per
+// planet (planet_history_cache, migrations/0007 - left in place, unused, as a safety net, same
+// precedent as that migration's own predecessor tables). A 146-planet Domination map meant up to
+// 146 row-writes every 5-minute cycle with the old one-row-per-planet design - even after removing
+// the per-planet leaderboard fetch and poller_planet_queue (see AGENTS.md), that alone was still
+// enough D1 write-row volume to threaten the daily quota, and the problem doesn't shrink just
+// because fewer planets happen to have changed that cycle (a fully-contested map changes most of
+// them every time). Bucketing fixes this at the root: write volume becomes a flat function of
+// bucket COUNT (NUM_BUCKETS writes every cycle, always), never of how many planets or how much
+// contention there is. See buildBucketAssignments/buildBucketUpsertStatements below, and
+// migrations/0009's own comment for the exact size math behind PLANETS_PER_BUCKET = 8.
 //
-// A single row growing one sample per tick forever just moves the same unbounded-growth problem
-// somewhere else, though: real production data had a planet with 1400+ samples after 11 days of a
-// stalemate, and every write re-parses/re-serializes the WHOLE array - cost that scales with how
-// long the current era has run, not with the planet count. compressHistorySamples (lossless run
+// A single bucket row growing forever just moves the same unbounded-growth problem somewhere else,
+// though: real production data had a planet with 1400+ samples after 11 days of a stalemate, and
+// every write re-parses/re-serializes the WHOLE bucket (not just one planet's array) - cost that
+// scales with how long every era in that bucket has run. compressHistorySamples (lossless run
 // collapsing, then a 5-minute floor on older samples, then a hard ~999-sample ceiling, applied on
-// every append in appendToHistoryCache) keeps that bounded regardless of era length - see each
-// function's own comment for the exact rules. This was a real contributor to a ~7-hour stretch on
-// 2026-10-12 where 408 of 430 scheduled poller ticks failed with status: exceededResources (the
-// CPU-limit hard-kill) - see worker/poller.ts's own top-of-file comment for the other half of that
-// fix (the checkpointed step/lock redesign, migrations/0008).
+// every append in appendToHistoryCache) keeps each PLANET's own array bounded regardless of era
+// length - see each function's own comment for the exact rules - which is what keeps a bucket's
+// total size bounded too (PLANETS_PER_BUCKET * ~999-sample worst case, sized to stay comfortably
+// under D1's 2MB row limit - see migrations/0009). This per-planet compression was itself a real
+// contributor to a ~7-hour stretch on 2026-10-12 where 408 of 430 scheduled poller ticks failed
+// with status: exceededResources (the CPU-limit hard-kill) - see worker/poller.ts's own top-of-file
+// comment for the other half of that fix (the checkpointed step/lock redesign, migrations/0008).
 //
 // pointsRemaining/isDominationSunk are reused as-is from src/crusade/crusade-domination-view-model.ts
 // (confirmed Tauri/browser-free - its only import is the plain-interface src/api/types.ts), the same
@@ -36,7 +37,9 @@
 // src/api/fetch-crusade-data.ts's mapCrusadeResponseData per-planet mapping, following the exact
 // precedent worker/poller.ts already set by duplicating findActivePhase rather than importing that
 // file (which pulls in @tauri-apps/api/core).
+import { getPlanetData } from "../src/assets/seasons";
 import { computeConquestProgress, isDominationSunk, pointsRemaining } from "../src/crusade/crusade-domination-view-model";
+import { activeSeason, type Season } from "../src/season";
 import type { CrusadePlanet } from "../src/api/types";
 
 export interface PlanetHistorySample {
@@ -261,8 +264,7 @@ export function enforceHardCap(samples: readonly PlanetHistorySample[]): PlanetH
 // before a reopen is worth spending compression effort on), then lossless run-collapsing, then the
 // 5-minute floor on older samples, then the hard ceiling if that still isn't enough. Called on
 // every append so the *stored* array (not just what a reader happens to request) stays bounded -
-// this is what keeps worker/poller.ts's buildHistoryUpsertStatement (one planet's
-// read+parse+append+stringify per step) from scaling with how long the current era has been
+// this is what keeps a bucket's total size from scaling with how long its planets' eras have been
 // running, which is what actually drove the per-tick cost that led to the CPU-limit failures this
 // exists to prevent a recurrence of.
 export function compressHistorySamples(samples: readonly PlanetHistorySample[]): PlanetHistorySample[] {
@@ -287,27 +289,21 @@ export function appendToHistoryCache(existing: HistoryCacheEntry | null, row: Pl
   return { samples, lastSunk: row.sunk };
 }
 
-interface HistoryCacheRow {
+interface LegacyHistoryCacheRow {
   planet_id: string;
   samples: string;
   last_sunk: number;
 }
 
-// One planet's history write as a single prepared statement - the per-planet checkpointed step unit
-// the poller (worker/poller.ts's runOneStep) commits atomically alongside that same step's
-// leaderboard write and the epoch state machine's own cursor advance, in one db.batch() call.
-// Replaces the old recordHistoryTick, which wrote every STRUGGLE planet in one batch right after
-// the GET_CRUSADE fetch - a cost that scaled with the total relevant-planet count, on top of each
-// one's own history-array size (now bounded separately by compressHistorySamples). Does its own
-// read (D1 has no read-then-conditionally-write within a single batch) - the caller includes the
-// returned statement in its own batch rather than awaiting a write here directly, so the whole
-// step's work (leaderboard + history + cursor advance) commits as one atomic unit. Returns null for
-// a planet with no struggleData - nothing to record (matches the old caller-side struggleData
-// filter, just pushed down to per-planet granularity).
+// DEAD CODE, kept but never called - the old one-row-per-planet write, reading/writing
+// planet_history_cache (migrations/0007, now permanently unused - see this file's top-of-file
+// comment). Only still referenced by worker/poller.ts's own dead "planets" phase branch, which is
+// kept separate and never invoked for the same reason (see AGENTS.md) - left in place rather than
+// deleted so that branch still compiles without being touched.
 export async function buildHistoryUpsertStatement(db: D1Database, planet: CrusadePlanet, nowMs: number): Promise<D1PreparedStatement | null> {
   if (!planet.struggleData) return null;
 
-  const existingRow = await db.prepare("SELECT samples, last_sunk FROM planet_history_cache WHERE planet_id = ?").bind(planet.planetId).first<HistoryCacheRow>();
+  const existingRow = await db.prepare("SELECT samples, last_sunk FROM planet_history_cache WHERE planet_id = ?").bind(planet.planetId).first<LegacyHistoryCacheRow>();
   const existing: HistoryCacheEntry | null = existingRow ? { samples: JSON.parse(existingRow.samples) as PlanetHistorySample[], lastSunk: existingRow.last_sunk === 1 } : null;
 
   const row = buildHistoryRow(planet, nowMs);
@@ -320,23 +316,137 @@ export async function buildHistoryUpsertStatement(db: D1Database, planet: Crusad
     .bind(planet.planetId, JSON.stringify(updated.samples), updated.lastSunk ? 1 : 0, nowMs);
 }
 
+// Planets per bucket row, and the resulting bucket-assignment function - see
+// migrations/0009_planet_history_buckets.sql for the exact size math (8 keeps a bucket's
+// worst-case size, every planet simultaneously at compressHistorySamples' 999-sample hard cap, to
+// ~1.77MB - 88.7% of D1's 2MB per-row limit, real margin rather than a near-miss).
+export const PLANETS_PER_BUCKET = 8;
+
+// Stable for the whole season (planet-data.json's declared order never changes mid-season) - a
+// plain index-based assignment, not a hash, so it's trivially reproducible (migrations/0009's own
+// backfill CASE expression is this exact same mapping, generated from the same file). Rebuilt on
+// every call rather than cached at module scope - cheap (146 entries) and avoids any risk of a
+// stale mapping surviving a season switchover (src/season.ts) within a long-lived isolate.
+export function buildBucketAssignments(): Map<string, number> {
+  const planets = getPlanetData() as { planetId: string }[];
+  return new Map(planets.map((p, i) => [p.planetId, Math.floor(i / PLANETS_PER_BUCKET)]));
+}
+
+// A stored planet entry is tagged with which season (src/season.ts) it was recorded under - 135 of
+// the 146 planet ids in season 1.41 are REUSED as-is in 1.43 (confirmed by diffing both seasons'
+// planet-data.json), so without this tag, a returning planet's stale prior-season samples would
+// get silently treated as "still the same era" the moment it's contested again next season (none
+// of isEraReset/truncateAtLastReopen above know anything about season boundaries - they're purely
+// about capture/reopen cycles within one season's own map). buildBucketUpsertStatements/
+// getPlanetHistory/getAllPlanetHistory below all check this tag against activeSeason() and treat a
+// mismatch exactly like "no prior entry" - same as a brand new planet - so a season switch needs
+// zero manual migration/code change to behave correctly; the very next write (or even just a read,
+// before any write happens) for a reused planet id auto-resets cleanly. Planets that exist only in
+// a past season (not carried into the new one) simply stop being touched at all - inert, orphaned
+// dead weight in their old bucket, not actively harmful, just not cleaned up by this mechanism.
+export interface StoredPlanetHistory extends HistoryCacheEntry {
+  season: Season;
+}
+
+// One bucket row's stored shape: every planet in that bucket that has ever had history recorded,
+// keyed by planetId.
+export type BucketHistoryData = Record<string, StoredPlanetHistory>;
+
+interface BucketRow {
+  data: string;
+}
+
+// Pure: what appendToHistoryCache should treat as "existing" for this planet, given whatever's
+// actually stored (if anything) and the season active right now. A season mismatch is treated
+// identically to "nothing stored yet" - see StoredPlanetHistory's own comment above.
+export function resolveExistingForAppend(stored: StoredPlanetHistory | undefined, currentSeason: Season): HistoryCacheEntry | null {
+  return stored && stored.season === currentSeason ? stored : null;
+}
+
+// Pure: whether a stored entry should be visible to a reader right now - same season-match rule as
+// resolveExistingForAppend, applied on the read side so a reader never sees a past season's
+// leftover samples even before anything has written over them this season.
+export function isVisibleThisSeason(stored: StoredPlanetHistory | undefined, currentSeason: Season): stored is StoredPlanetHistory {
+  return stored !== undefined && stored.season === currentSeason;
+}
+
+// Builds one upsert statement per bucket touched by `planets` (always every bucket a relevant
+// planet falls into - not conditionally skipped - so write volume is a flat, contention-
+// independent function of bucket count, never of how many planets actually changed this cycle;
+// see this file's top-of-file comment). Reads each touched bucket's current contents and the
+// resulting merged write run concurrently across buckets (Promise.allSettled, not a sequential
+// loop) - independent of each other, and no longer gated by any fetch budget since this is all
+// local D1 reads/writes. A bucket whose read or merge throws is skipped (logged, not fatal) so one
+// corrupted bucket never blocks every other bucket's valid write this cycle. Planets with no
+// struggleData are skipped entirely - nothing to record, matching the old per-row behavior.
+export async function buildBucketUpsertStatements(db: D1Database, planets: readonly CrusadePlanet[], nowMs: number): Promise<D1PreparedStatement[]> {
+  const currentSeason = activeSeason(nowMs);
+  const bucketAssignments = buildBucketAssignments();
+  const planetsByBucket = new Map<number, CrusadePlanet[]>();
+  for (const planet of planets) {
+    if (!planet.struggleData) continue;
+    const bucketId = bucketAssignments.get(planet.planetId) ?? 0;
+    const existing = planetsByBucket.get(bucketId);
+    if (existing) existing.push(planet);
+    else planetsByBucket.set(bucketId, [planet]);
+  }
+
+  const bucketIds = [...planetsByBucket.keys()];
+  const results = await Promise.allSettled(
+    bucketIds.map(async (bucketId) => {
+      const existingRow = await db.prepare("SELECT data FROM planet_history_buckets WHERE bucket_id = ?").bind(bucketId).first<BucketRow>();
+      const bucketData: BucketHistoryData = existingRow ? JSON.parse(existingRow.data) : {};
+      for (const planet of planetsByBucket.get(bucketId)!) {
+        const existingForAppend = resolveExistingForAppend(bucketData[planet.planetId], currentSeason);
+        const row = buildHistoryRow(planet, nowMs);
+        bucketData[planet.planetId] = { ...appendToHistoryCache(existingForAppend, row), season: currentSeason };
+      }
+      return db
+        .prepare(
+          "INSERT INTO planet_history_buckets (bucket_id, data, updated_at) VALUES (?, ?, ?) " +
+            "ON CONFLICT(bucket_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
+        )
+        .bind(bucketId, JSON.stringify(bucketData), nowMs);
+    }),
+  );
+
+  const statements: D1PreparedStatement[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === "fulfilled") statements.push(result.value);
+    else console.error(`[poller] bucket ${bucketIds[i]} history write failed`, result.reason);
+  }
+  return statements;
+}
+
 // Read glue for GET /api/planet-history (worker/index.ts) - the current era's full history for one
 // planet, oldest first (matches TrackedPlanetSample's own ordering expectation client-side). A
-// single-row read regardless of how much history that planet has accumulated.
+// single-row read (that planet's whole bucket) regardless of how much history has accumulated.
+// Filters out a stored entry from a past season (see StoredPlanetHistory) even if nothing has
+// written over it yet this season - a reader should never see stale cross-season history either.
 export async function getPlanetHistory(db: D1Database, planetId: string): Promise<PlanetHistorySample[]> {
-  const row = await db.prepare("SELECT samples FROM planet_history_cache WHERE planet_id = ?").bind(planetId).first<{ samples: string }>();
-  return row ? (JSON.parse(row.samples) as PlanetHistorySample[]) : [];
+  const bucketId = buildBucketAssignments().get(planetId) ?? 0;
+  const row = await db.prepare("SELECT data FROM planet_history_buckets WHERE bucket_id = ?").bind(bucketId).first<BucketRow>();
+  if (!row) return [];
+  const bucketData: BucketHistoryData = JSON.parse(row.data);
+  const entry = bucketData[planetId];
+  return isVisibleThisSeason(entry, activeSeason()) ? entry.samples : [];
 }
 
 // Read glue for GET /api/planet-history-all (worker/index.ts) - every planet's current-era history
 // in one query/round-trip, grouped by planetId, instead of the Monitor tab issuing one
-// getPlanetHistory request per planet. One row per planet (~100 total) regardless of how much
+// getPlanetHistory request per planet. One row per bucket (~19 total) regardless of how much
 // history has accumulated per planet - see this file's top-of-file comment for why that matters.
+// Same past-season filtering as getPlanetHistory above.
 export async function getAllPlanetHistory(db: D1Database): Promise<Map<string, PlanetHistorySample[]>> {
-  const result = await db.prepare("SELECT planet_id, samples FROM planet_history_cache").all<{ planet_id: string; samples: string }>();
+  const currentSeason = activeSeason();
+  const result = await db.prepare("SELECT data FROM planet_history_buckets").all<BucketRow>();
   const byPlanet = new Map<string, PlanetHistorySample[]>();
   for (const row of result.results ?? []) {
-    byPlanet.set(row.planet_id, JSON.parse(row.samples) as PlanetHistorySample[]);
+    const bucketData: BucketHistoryData = JSON.parse(row.data);
+    for (const [planetId, entry] of Object.entries(bucketData)) {
+      if (isVisibleThisSeason(entry, currentSeason)) byPlanet.set(planetId, entry.samples);
+    }
   }
   return byPlanet;
 }

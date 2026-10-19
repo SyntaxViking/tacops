@@ -14,10 +14,28 @@ interface OnslaughtRankSelectProps {
 export function OnslaughtRankSelect({ tiers, value, onChange }: OnslaughtRankSelectProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Screen position of the open panel, in `position: fixed` terms (top/right from the viewport
+  // edge) - computed from the trigger button's own live bounding rect rather than a plain CSS
+  // `absolute` offset. App.tsx's shared tab-content wrapper has `overflow-x-auto`, which (per the
+  // CSS spec's overflow-axis-pairing rule - setting one axis non-visible forces the other to
+  // resolve to `auto` too, it can't stay `visible`) also clips vertically. A card with no map
+  // loaded yet is short enough that the panel's downward extent exceeded that wrapper's own
+  // content height and got cut off; a card with a map loaded happened to have enough room not to
+  // notice. `position: fixed` escapes that ancestor entirely (same technique Modal.tsx already
+  // uses for its own overlay), so this needs to track the trigger's position explicitly instead
+  // of relying on the browser to do it implicitly via `absolute`.
+  const [panelPosition, setPanelPosition] = useState<{ top: number; right: number } | null>(null);
   const selected = tiers.find((t) => t.tier === value) ?? null;
 
   useEffect(() => {
     if (!open) return;
+    function updatePosition() {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) setPanelPosition({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
     const handlePointerDown = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -29,6 +47,8 @@ export function OnslaughtRankSelect({ tiers, value, onChange }: OnslaughtRankSel
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
@@ -53,10 +73,11 @@ export function OnslaughtRankSelect({ tiers, value, onChange }: OnslaughtRankSel
           <span className="px-1 text-xs text-neutral-500 dark:text-neutral-400">Select</span>
         )}
       </button>
-      {open && (
+      {open && panelPosition && (
         <div
           role="listbox"
-          className="absolute right-0 z-10 mt-1 flex max-h-64 w-max flex-col gap-1 overflow-y-auto rounded border border-black/20 bg-white p-1.5 shadow-lg dark:border-white/20 dark:bg-neutral-900"
+          style={{ top: panelPosition.top, right: panelPosition.right }}
+          className="fixed z-50 flex max-h-64 w-max flex-col gap-1 overflow-y-auto rounded border border-black/20 bg-white p-1.5 shadow-lg dark:border-white/20 dark:bg-neutral-900"
         >
           {tiers.map((t) => (
             <button
