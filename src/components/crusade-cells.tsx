@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
 import { factionIconUrl } from "../factions/faction-icon";
+import { goldIconUrl, staminaIconUrl } from "../resource-icons";
+import { planetResourceIcon, planetTypeById } from "../crusade/crusade-sector-map-view-model";
 import type { FactionLeaderboardResult, LeaderboardBenchmark, SideLeaderboardResult } from "../api/types";
 
 // Shared by the Crusade tab's table and card views - same underlying data, same rendering rules,
@@ -9,6 +11,24 @@ import type { FactionLeaderboardResult, LeaderboardBenchmark, SideLeaderboardRes
 export function FactionBadge({ factionId }: { factionId: string }) {
   const url = factionIconUrl(factionId);
   return url ? <Icon src={url} title={factionId} /> : <span>{factionId}</span>;
+}
+
+const RESOURCE_ICON_URL: Record<"energy" | "gold", string> = {
+  energy: staminaIconUrl(),
+  gold: goldIconUrl(),
+};
+const RESOURCE_ICON_TOOLTIP: Record<"energy" | "gold", string> = {
+  energy: "Agri world - yields energy",
+  gold: "Mining world - yields gold",
+};
+
+// Shown next to a planet's name in the CRUSADE (zoned) view only - CrusadeDominationTable/Cards
+// (the STRUGGLE view) don't use this, per the user's own scoping of the request. null (no icon,
+// nothing rendered) for every type except Agri/Mining - see planetResourceIcon.
+export function PlanetResourceIcon({ planetId }: { planetId: string }) {
+  const resourceIcon = planetResourceIcon(planetTypeById().get(planetId));
+  if (!resourceIcon) return null;
+  return <Icon src={RESOURCE_ICON_URL[resourceIcon]} title={RESOURCE_ICON_TOOLTIP[resourceIcon]} />;
 }
 
 // Whole-number percent split, Imperium (for) always first - it's the number that matters when
