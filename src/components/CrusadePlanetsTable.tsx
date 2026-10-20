@@ -35,7 +35,7 @@ export function CrusadePlanetsTable({
         <tr>
           <th className={cellClass}>Favorite</th>
           <th className={cellClass}>Planet</th>
-          <th className={cellClass}>Imperium % / Devastation %</th>
+          <th className={cellClass}>Imperium / Devastation</th>
           {onRefreshPlanet && (
             <>
               <th className={cellClass}>Leading Factions (Imperium)</th>

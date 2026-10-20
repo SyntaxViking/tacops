@@ -39,7 +39,8 @@ export function SidePercentCell({ pointsFor, pointsAgainst }: { pointsFor?: numb
   const forPct = Math.round(((pointsFor ?? 0) / total) * 100);
   return (
     <span>
-      {forPct}% / {100 - forPct}%
+      <span className="text-blue-600 dark:text-blue-400">{(pointsFor ?? 0).toLocaleString()}</span> ({forPct}%) /{" "}
+      <span className="text-red-600 dark:text-red-400">{(pointsAgainst ?? 0).toLocaleString()}</span> ({100 - forPct}%)
     </span>
   );
 }
