@@ -21,6 +21,9 @@ import type { TrackedPlanetSample, TrackedPlanetState } from "../crusade/planet-
 import type { ViewMode } from "./ViewModeToggle";
 import type { CrusadeData, CrusadeSectorMap, PlanetDefenseCounts, PlanetLeaderboard, PlanetRefreshEntry } from "../api/types";
 
+const REFRESH_ALL_BUTTON_CLASS =
+  "rounded border border-black/20 px-2 py-0.5 text-sm text-neutral-600 outline-none transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:cursor-default disabled:opacity-60 dark:border-white/20 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white";
+
 interface CrusadeTabProps {
   crusadeData: CrusadeData | null;
   planetRefreshState: Map<string, PlanetRefreshEntry>;
@@ -48,6 +51,12 @@ interface CrusadeTabProps {
   // listed planet, not just whichever one is actively tracked/graphed above.
   historyByPlanet?: Map<string, TrackedPlanetSample[]>;
   planetDefenses?: Record<string, PlanetDefenseCounts>;
+  // The "refresh all leaderboards" button at the top of both STRUGGLE and CRUSADE views - omitted
+  // (like onRefreshPlanet above) for AnonymousCrusadeSection, which has no account to refresh
+  // against. Never shown during Downtime - planetRefreshState is empty there anyway (nothing to
+  // refresh), see App.tsx's refreshAllPlanetsNow.
+  onRefreshAllPlanets?: () => void;
+  isRefreshingAllPlanets?: boolean;
 }
 
 export function CrusadeTab({
@@ -65,6 +74,8 @@ export function CrusadeTab({
   onToggleTrackPlanet,
   historyByPlanet,
   planetDefenses,
+  onRefreshAllPlanets,
+  isRefreshingAllPlanets = false,
 }: CrusadeTabProps) {
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   // The sector the map modal is showing - starts at the clicked planet's sector but can be stepped
@@ -125,6 +136,12 @@ export function CrusadeTab({
     setSelectedPlanetId(null);
     setViewedZone(null);
   }
+
+  const refreshAllButton = onRefreshAllPlanets && (
+    <button type="button" onClick={onRefreshAllPlanets} disabled={isRefreshingAllPlanets} className={REFRESH_ALL_BUTTON_CLASS}>
+      {isRefreshingAllPlanets ? "Refreshing leaderboards..." : "Refresh all leaderboards"}
+    </button>
+  );
 
   const zones = sectorZones(sectorMap);
   const sectorMapModal =
@@ -193,6 +210,7 @@ export function CrusadeTab({
     return (
       <>
         <div className="my-2 flex flex-wrap items-center justify-center gap-4">
+          {refreshAllButton}
           <DominationSortModeToggle value={dominationSortMode} onChange={setDominationSortMode} />
           <GraphHoursFilter value={hoursFilter} onChange={setHoursFilter} />
         </div>
@@ -277,21 +295,26 @@ export function CrusadeTab({
     return <p>No active-zone planet data loaded yet.</p>;
   }
 
-  return viewMode === "table" ? (
-    <CrusadePlanetsTable
-      planets={activePlanets}
-      planetRefreshState={planetRefreshState}
-      onRefreshPlanet={onRefreshPlanet}
-      favoritedPlanetIds={favoritedPlanetIds}
-      onToggleFavoritePlanet={onToggleFavoritePlanet}
-    />
-  ) : (
-    <CrusadePlanetsCards
-      planets={activePlanets}
-      planetRefreshState={planetRefreshState}
-      onRefreshPlanet={onRefreshPlanet}
-      favoritedPlanetIds={favoritedPlanetIds}
-      onToggleFavoritePlanet={onToggleFavoritePlanet}
-    />
+  return (
+    <>
+      {refreshAllButton && <div className="my-2 flex justify-center">{refreshAllButton}</div>}
+      {viewMode === "table" ? (
+        <CrusadePlanetsTable
+          planets={activePlanets}
+          planetRefreshState={planetRefreshState}
+          onRefreshPlanet={onRefreshPlanet}
+          favoritedPlanetIds={favoritedPlanetIds}
+          onToggleFavoritePlanet={onToggleFavoritePlanet}
+        />
+      ) : (
+        <CrusadePlanetsCards
+          planets={activePlanets}
+          planetRefreshState={planetRefreshState}
+          onRefreshPlanet={onRefreshPlanet}
+          favoritedPlanetIds={favoritedPlanetIds}
+          onToggleFavoritePlanet={onToggleFavoritePlanet}
+        />
+      )}
+    </>
   );
 }
