@@ -14,9 +14,12 @@ interface CrusadePlanetCardProps {
   isFavorited: boolean;
   onToggleFavorite?: () => void;
   starDisabled?: boolean;
+  // Opens the sector-map modal for this planet - same reasoning as CrusadePlanetsCards/Table's own
+  // onSelectPlanet (required, not optional - viewing the map needs no account).
+  onSelectPlanet: () => void;
 }
 
-export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited, onToggleFavorite, starDisabled }: CrusadePlanetCardProps) {
+export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited, onToggleFavorite, starDisabled, onSelectPlanet }: CrusadePlanetCardProps) {
   const leaderboard = refreshEntry.leaderboard;
   return (
     <div className="relative">
@@ -26,7 +29,8 @@ export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited
         </div>
       )}
       <div
-        className={`flex flex-col gap-2 rounded-lg border border-black/10 bg-white/60 p-3 text-left dark:border-white/15 dark:bg-white/5 ${
+        onClick={onSelectPlanet}
+        className={`flex cursor-pointer flex-col gap-2 rounded-lg border border-black/10 bg-white/60 p-3 text-left dark:border-white/15 dark:bg-white/5 ${
           refreshEntry.isLoading ? "pointer-events-none" : ""
         }`}
       >
