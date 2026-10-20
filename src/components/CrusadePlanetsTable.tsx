@@ -1,5 +1,5 @@
 import { isStarDisabled } from "../crusade/starred-planets";
-import { FactionBadge, LeaderboardBreakdownCell, SidePercentCell } from "./crusade-cells";
+import { FactionBadge, LeaderboardBreakdownCell, PlanetResourceIcon, SidePercentCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
@@ -57,7 +57,12 @@ export function CrusadePlanetsTable({
                   />
                 )}
               </td>
-              <td className={cellClass}>{planet.name}</td>
+              <td className={cellClass}>
+                <div className="flex items-center gap-1">
+                  {planet.name}
+                  <PlanetResourceIcon planetId={planet.planetId} />
+                </div>
+              </td>
               <td className={cellClass}>
                 <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />
               </td>

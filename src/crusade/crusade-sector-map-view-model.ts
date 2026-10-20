@@ -14,7 +14,7 @@ function planetNameById(): Map<string, string> {
 // SectorMapNode's own `type` (the live map's visual tile category, from the sector map's own data -
 // see buildMap below). Undefined for season 1.41 (captured before this field existed) - every
 // reader here treats that the same as "no special value," i.e. worth 1, no resource.
-function planetTypeById(): Map<string, string | undefined> {
+export function planetTypeById(): Map<string, string | undefined> {
   return new Map((getPlanetData() as { planetId: string; type?: string }[]).map((p) => [p.planetId, p.type]));
 }
 

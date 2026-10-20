@@ -1,4 +1,4 @@
-import { FactionBadge, LeaderboardBreakdownCell, SidePercentCell } from "./crusade-cells";
+import { FactionBadge, LeaderboardBreakdownCell, PlanetResourceIcon, SidePercentCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
@@ -34,6 +34,7 @@ export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited
           <div className="flex items-center gap-1">
             {onToggleFavorite && <StarIconButton isFavorited={isFavorited} onToggle={onToggleFavorite} disabled={starDisabled} />}
             <span className="font-medium">{planet.name}</span>
+            <PlanetResourceIcon planetId={planet.planetId} />
           </div>
           <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />
         </div>
