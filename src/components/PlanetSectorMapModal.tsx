@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Modal } from "./Modal";
-import { dotRadius, MAX_DOT_RADIUS, planetProgressBars, type SectorMapColor, type SectorMapData } from "../crusade/crusade-sector-map-view-model";
+import { crusadeProgressBars, dotRadius, MAX_DOT_RADIUS, planetProgressBars, type SectorMapColor, type SectorMapData } from "../crusade/crusade-sector-map-view-model";
 import { goldIconUrl, staminaIconUrl } from "../resource-icons";
 
 // Imperial/Devastation match the codebase's established side-color intent from the map's own
@@ -184,7 +184,10 @@ export function SectorSvg({
       {sectorMapData.nodes.map((node) => {
         const cx = toSvg(node.x);
         const cy = toSvg(node.y);
-        const bars = planetProgressBars(node.progress);
+        // CRUSADE/Downtime (showPointValues) has no real capture-threshold data to show progress
+        // toward - crusadeProgressBars instead scales relative to whichever side currently leads
+        // (see its own comment). STRUGGLE keeps the existing threshold-based bars unchanged.
+        const bars = showPointValues ? crusadeProgressBars(node.pointsFor, node.pointsAgainst) : planetProgressBars(node.progress);
         const arcRadius = dotRadius(node.dotScale) + ARC_GAP;
         return (
           <g key={node.planetId}>
@@ -213,7 +216,31 @@ export function SectorSvg({
             <circle cx={cx} cy={cy} r={MAX_DOT_RADIUS} fill="transparent">
               <title>{node.name}</title>
             </circle>
-            {bars && node.progress && (
+            {bars && showPointValues && (
+              <>
+                <SideArc
+                  cx={cx}
+                  cy={cy}
+                  r={arcRadius}
+                  side="left"
+                  fraction={bars.imperial}
+                  color={NODE_COLOR.imperial}
+                  outlineColor={ARC_OUTLINE_COLOR.imperial}
+                  label={`Imperial ${node.pointsFor.toLocaleString()} points (${Math.round(bars.imperial * 100)}% of leader)`}
+                />
+                <SideArc
+                  cx={cx}
+                  cy={cy}
+                  r={arcRadius}
+                  side="right"
+                  fraction={bars.devastation}
+                  color={NODE_COLOR.devastation}
+                  outlineColor={ARC_OUTLINE_COLOR.devastation}
+                  label={`Devastation ${node.pointsAgainst.toLocaleString()} points (${Math.round(bars.devastation * 100)}% of leader)`}
+                />
+              </>
+            )}
+            {bars && !showPointValues && node.progress && (
               <>
                 <SideArc
                   cx={cx}
@@ -259,9 +286,20 @@ interface PlanetSectorMapModalProps {
   // Steps to the previous (-1) / next (+1) sector. Omitted when there's only one sector to show,
   // which hides the arrows and leaves the arrow keys alone.
   onChangeSector?: (direction: -1 | 1) => void;
+  // Forwarded to SectorSvg - see its own prop comment. CrusadeTab passes true only during CRUSADE
+  // (the modal is otherwise only ever opened from STRUGGLE's Domination view, which keeps the
+  // default solid-dot-plus-threshold-arcs rendering).
+  showPointValues?: boolean;
 }
 
-export function PlanetSectorMapModal({ sectorMapData, allSectorsMapData, highlightPlanetId, onClose, onChangeSector }: PlanetSectorMapModalProps) {
+export function PlanetSectorMapModal({
+  sectorMapData,
+  allSectorsMapData,
+  highlightPlanetId,
+  onClose,
+  onChangeSector,
+  showPointValues,
+}: PlanetSectorMapModalProps) {
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -292,6 +330,7 @@ export function PlanetSectorMapModal({ sectorMapData, allSectorsMapData, highlig
         <SectorSvg
           sectorMapData={allSectorsMapData}
           highlightPlanetId={highlightPlanetId}
+          showPointValues={showPointValues}
           className="mt-2 h-auto max-w-none shrink-0"
           style={{ width: `${(VIEWBOX_SIZE + (allSectorsMapData.aspect - 1) * SPAN) * 0.28}rem` }}
         />
@@ -319,7 +358,7 @@ export function PlanetSectorMapModal({ sectorMapData, allSectorsMapData, highlig
         )}
       </div>
       {toggle && <div className="mt-1 flex justify-end">{toggle}</div>}
-      <SectorSvg sectorMapData={sectorMapData} highlightPlanetId={highlightPlanetId} className="mt-2 h-auto w-full" />
+      <SectorSvg sectorMapData={sectorMapData} highlightPlanetId={highlightPlanetId} showPointValues={showPointValues} className="mt-2 h-auto w-full" />
     </Modal>
   );
 }

@@ -152,6 +152,7 @@ export function CrusadeTab({
         highlightPlanetId={selectedPlanetId}
         onClose={closeSectorMap}
         onChangeSector={zones.length > 1 ? (direction) => setViewedZone(adjacentZone(zones, viewedZone, direction)) : undefined}
+        showPointValues={crusadeData.phase === "CRUSADE"}
       />
     ) : null;
 
@@ -305,6 +306,7 @@ export function CrusadeTab({
           onRefreshPlanet={onRefreshPlanet}
           favoritedPlanetIds={favoritedPlanetIds}
           onToggleFavoritePlanet={onToggleFavoritePlanet}
+          onSelectPlanet={openSectorMap}
         />
       ) : (
         <CrusadePlanetsCards
@@ -313,8 +315,10 @@ export function CrusadeTab({
           onRefreshPlanet={onRefreshPlanet}
           favoritedPlanetIds={favoritedPlanetIds}
           onToggleFavoritePlanet={onToggleFavoritePlanet}
+          onSelectPlanet={openSectorMap}
         />
       )}
+      {sectorMapModal}
     </>
   );
 }

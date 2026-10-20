@@ -15,6 +15,10 @@ interface CrusadePlanetsTableProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
+  // Opens the sector-map modal for this planet - required (not optional), same as
+  // CrusadeDominationTable's own onSelectPlanet: viewing the map doesn't need an account, so it's
+  // always available even on the anonymous home page.
+  onSelectPlanet: (planetId: string) => void;
 }
 
 export function CrusadePlanetsTable({
@@ -23,6 +27,7 @@ export function CrusadePlanetsTable({
   onRefreshPlanet,
   favoritedPlanetIds,
   onToggleFavoritePlanet,
+  onSelectPlanet,
 }: CrusadePlanetsTableProps) {
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
@@ -47,7 +52,11 @@ export function CrusadePlanetsTable({
           const refreshEntry = planetRefreshState.get(planet.planetId) ?? EMPTY_REFRESH_ENTRY;
           const lb = refreshEntry.leaderboard;
           return (
-            <tr key={planet.planetId} className={refreshEntry.isLoading ? "pointer-events-none opacity-60" : ""}>
+            <tr
+              key={planet.planetId}
+              onClick={() => onSelectPlanet(planet.planetId)}
+              className={`cursor-pointer ${refreshEntry.isLoading ? "pointer-events-none opacity-60" : ""}`}
+            >
               <td className={cellClass}>
                 {onToggleFavoritePlanet && (
                   <StarIconButton
