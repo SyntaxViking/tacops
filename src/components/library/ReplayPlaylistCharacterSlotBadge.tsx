@@ -1,3 +1,4 @@
+import { isMythicWingsIconUrl } from "../../rarity/rarity-stars-icon";
 import type { ReplayPlaylistCharacterSlotRow } from "../../library/replay-playlist-battle-view-model";
 
 // One character in a battle's lineup: a large portrait with the rank icon overlaid top-left, the
@@ -15,7 +16,7 @@ export function ReplayPlaylistCharacterSlotBadge({ row }: { row: ReplayPlaylistC
         {row.starIconUrls.length > 0 && (
           <div className="absolute -bottom-1 left-1/2 flex -translate-x-1/2 gap-px">
             {row.starIconUrls.map((url, i) => (
-              <img key={i} src={url} className="h-3 w-3" />
+              <img key={i} src={url} className={isMythicWingsIconUrl(url) ? "h-3 w-auto" : "h-3 w-3"} />
             ))}
           </div>
         )}
