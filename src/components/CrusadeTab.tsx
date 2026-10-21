@@ -275,21 +275,14 @@ export function CrusadeTab({
   }
 
   // Starred, then ranked, then everyone else (see sortPlanetsRankedFirst), each group ordered
-  // ascending by the deepest Faction Leaderboard rank actually returned - a rough "how
-  // competitive is this planet" signal (the more points it takes to reach whatever rank is
-  // visible, the tougher the planet). Planets with no score yet (still loading, or genuinely no
-  // faction leaderboard data) sort last within their group rather than being dropped.
+  // descending by the winning side's current point total - the same "how contested/hot is this
+  // planet" signal the map's own heat-colored ring uses (see crusadeProgressBars's own comment),
+  // just driving list order here instead of a ring color.
   const activePlanets = sortPlanetsRankedFirst(
     crusadeData.planets.filter((p) => planetRefreshState.has(p.planetId)),
     leaderboardByPlanet,
     favoritedPlanetIds,
-    (a, b) => {
-      const entriesA = leaderboardByPlanet.get(a.planetId)?.faction?.topEntries ?? [];
-      const entriesB = leaderboardByPlanet.get(b.planetId)?.faction?.topEntries ?? [];
-      const scoreA = entriesA.length > 0 ? entriesA[entriesA.length - 1].points : Infinity;
-      const scoreB = entriesB.length > 0 ? entriesB[entriesB.length - 1].points : Infinity;
-      return scoreA - scoreB;
-    },
+    (a, b) => Math.max(b.pointsFor ?? 0, b.pointsAgainst ?? 0) - Math.max(a.pointsFor ?? 0, a.pointsAgainst ?? 0),
   );
 
   if (activePlanets.length === 0) {

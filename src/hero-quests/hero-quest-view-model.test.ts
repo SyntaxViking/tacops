@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeHeroQuestJars } from "./hero-quest-view-model";
+import { computeHeroQuestJars, formatJarStatus } from "./hero-quest-view-model";
 import { Rarity } from "../rarity/rarity.enum";
 
 describe("computeHeroQuestJars", () => {
@@ -39,5 +39,17 @@ describe("computeHeroQuestJars", () => {
     expect(battle17.rarity).toBe(Rarity.Mythic);
     expect(battle17.rewardsRemaining).toBe(0); // 1 - 1
     expect(battle17.battlesRemaining).toBe(5); // 6 - (1 + 0)
+  });
+});
+
+describe("formatJarStatus", () => {
+  it("shows received, total attempts (received + missed), and battles remaining", () => {
+    const jars = computeHeroQuestJars({ LHE1: { savedRolls: { won: 2, lost: 1 } } });
+    const battle1 = jars.find((jar) => jar.battleNumber === 1);
+    expect(formatJarStatus(battle1)).toBe("2 received from 3 attempts (1 attempts remaining)");
+  });
+
+  it("returns null when there's no jar for this battle", () => {
+    expect(formatJarStatus(undefined)).toBeNull();
   });
 });

@@ -8,6 +8,7 @@ import { equippedRelicDamageProfiles } from "../characters/character-profile";
 import { extractSectorMap } from "../crusade/sector-map-extraction";
 import { extractPlanetDefenses } from "../crusade/planet-defenses-extraction";
 import { extractOnslaughtBoards } from "../onslaught/onslaught-extraction";
+import { extractActiveQuestIds } from "../hero-quests/active-quest-extraction";
 import { computeHeroQuestJars, type HeroQuestJar } from "../hero-quests/hero-quest-view-model";
 import {
   computeGuildBossBombTimings,
@@ -35,6 +36,9 @@ export interface PlayerData {
   adViewsRemaining: number;
   resources: PlayerResources;
   heroQuestJars: HeroQuestJar[];
+  // Ids of whichever linear hero event quest(s) are live right now (see active-quest-extraction.ts) -
+  // the Hero Quests tab only shows a battle breakdown when one of these matches bundled data.
+  activeQuestIds: string[];
   sectorMap: CrusadeSectorMap;
   planetDefenses: Record<string, PlanetDefenseCounts>;
   onslaughtBoards: OnslaughtBoards;
@@ -196,6 +200,7 @@ export async function fetchPlayerData(
     adViewsRemaining: hero?.player?.adViews?.currentAmount ?? 7,
     resources,
     heroQuestJars: computeHeroQuestJars(hero?.loot?.urnOfBalls),
+    activeQuestIds: extractActiveQuestIds(hero),
     sectorMap,
     planetDefenses,
     onslaughtBoards,
