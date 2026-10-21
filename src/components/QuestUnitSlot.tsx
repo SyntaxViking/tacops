@@ -1,3 +1,4 @@
+import { isMythicWingsIconUrl } from "../rarity/rarity-stars-icon";
 import type { RenderableQuestUnit } from "../hero-quests/quest-roster-view-model";
 
 // Same layout as ArenaUnitSlot (stars, haloed portrait with the rank badge hanging off its
@@ -9,7 +10,7 @@ export function QuestUnitSlot({ unit }: { unit: RenderableQuestUnit }) {
       {unit.starIconUrls.length > 0 && (
         <div className="flex gap-px">
           {unit.starIconUrls.map((url, i) => (
-            <img key={i} src={url} className="h-3.5 w-3.5" />
+            <img key={i} src={url} className={isMythicWingsIconUrl(url) ? "h-3.5 w-auto" : "h-3.5 w-3.5"} />
           ))}
         </div>
       )}

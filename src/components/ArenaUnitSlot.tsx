@@ -1,5 +1,6 @@
 import { ArenaEquipmentSlot } from "./ArenaEquipmentSlot";
 import { rarityHaloFilter } from "../rarity/rarity-halo";
+import { isMythicWingsIconUrl } from "../rarity/rarity-stars-icon";
 import type { PvpUnitSlot } from "../pvp/pvp-view-model";
 
 // 83px portrait (64px * 1.3) - grown ~30% so 3 fit per row within a card instead of 4. Ability
@@ -13,7 +14,7 @@ export function ArenaUnitSlot({ unit }: { unit: PvpUnitSlot }) {
       {unit.starIconUrls.length > 0 && (
         <div className="flex gap-px">
           {unit.starIconUrls.map((url, i) => (
-            <img key={i} src={url} className="h-4 w-4" />
+            <img key={i} src={url} className={isMythicWingsIconUrl(url) ? "h-4 w-auto" : "h-4 w-4"} />
           ))}
         </div>
       )}
