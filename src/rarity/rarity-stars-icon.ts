@@ -31,3 +31,11 @@ export function starIconUrls(stars: RarityStars): string[] {
   const url = new URL(`../assets/stars/${icon.file}`, import.meta.url).href;
   return Array(icon.count).fill(url);
 }
+
+// mythic_wings.png is a wide emblem (512x164), unlike every other star sprite here (roughly
+// square) - a caller that renders star icons in a fixed square box (rather than through the
+// shared Icon component, which already sizes by height and lets width follow) needs to drop the
+// fixed width for this one specifically, or it gets squashed horizontally to fit the square.
+export function isMythicWingsIconUrl(url: string): boolean {
+  return url.includes("mythic_wings");
+}
