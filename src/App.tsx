@@ -152,6 +152,11 @@ export function App() {
     Map<string, PlanetRefreshEntry>
   >(new Map());
   const [crusadeError, setCrusadeError] = useState<string | null>(null);
+  // Drives the Crusade tab's "refresh all leaderboards" button (see refreshAllPlanetsNow) - a ref
+  // (not just the state) so a rapid double-click can't start a second overlapping pass before the
+  // first one's synchronous guard check has a chance to see the state update.
+  const [isRefreshingAllPlanets, setIsRefreshingAllPlanets] = useState(false);
+  const isRefreshingAllPlanetsRef = useRef(false);
   // Mirrors planetRefreshState for the scheduler's long-lived async worker loops (see the effect
   // below) - those loops must always read the latest state across ticks, not a stale closure, and
   // every mutation of planet-refresh state writes here synchronously before mirroring into
@@ -872,6 +877,34 @@ export function App() {
     void refreshCrusadeScores();
   }
 
+  // The Crusade tab's "refresh all leaderboards" button - a one-time, sequential sweep through
+  // every currently-relevant planet (planetRefreshState is already seeded with exactly the active
+  // set for whatever phase is showing - every planet during STRUGGLE, just the active zone's
+  // during CRUSADE, none during Downtime, see seedPlanetRefreshStateFromCache/activePlanetIds), one
+  // at a time with no delay between, until every one has been fetched once. Deliberately a plain
+  // sequential loop, not routed through the auto-refresh worker pool - this must run exactly once
+  // and then stop, never leaving anything behind that keeps refreshing afterward (that's entirely
+  // isPlanetAutoRefreshable/favoritedPlanetIds' job, untouched here). Each planet is still claimed
+  // (isLoading synchronously set) before its own fetch, the same way claimEligiblePlanet/
+  // refreshPlanetNow do, so this can't race a concurrent auto-refresh or manual click over the same
+  // planet's state.
+  async function refreshAllPlanetsNow() {
+    if (isRefreshingAllPlanetsRef.current) return;
+    isRefreshingAllPlanetsRef.current = true;
+    setIsRefreshingAllPlanets(true);
+    try {
+      for (const planetId of planetRefreshStateRef.current.keys()) {
+        const entry = planetRefreshStateRef.current.get(planetId);
+        if (!entry || entry.isLoading) continue;
+        commitPlanetRefresh(planetId, { ...entry, isLoading: true });
+        await fetchOnePlanet(planetId);
+      }
+    } finally {
+      isRefreshingAllPlanetsRef.current = false;
+      setIsRefreshingAllPlanets(false);
+    }
+  }
+
   // Optimistically updates local state, then fires the full replacement list to the backend -
   // best-effort, matching trackUsage/storeWebCredential above (a sync failure shouldn't block the
   // UI from reflecting the click). Shows a brief auto-dismissing confirmation once the save
@@ -1227,6 +1260,8 @@ export function App() {
                 onToggleTrackPlanet={toggleTrackedPlanet}
                 historyByPlanet={planetHistoryByPlanet}
                 planetDefenses={planetDefenses}
+                onRefreshAllPlanets={refreshAllPlanetsNow}
+                isRefreshingAllPlanets={isRefreshingAllPlanets}
               />
             )}
             {activeTab === "monitor" && (

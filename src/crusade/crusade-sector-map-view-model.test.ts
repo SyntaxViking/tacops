@@ -7,6 +7,7 @@ import {
   computeAllSectorsMap,
   computeDotScales,
   computeSectorMap,
+  crusadeProgressBars,
   dotRadius,
   planetPointsWorth,
   planetProgressBars,
@@ -100,6 +101,19 @@ describe("computeSectorMap", () => {
     expect(result.nodes.find((n) => n.planetId === "planet_011")).toMatchObject({ pointsWorth: 1, resourceIcon: "energy" });
     expect(result.nodes.find((n) => n.planetId === "planet_010")).toMatchObject({ pointsWorth: 1, resourceIcon: "gold" });
     expect(result.nodes.find((n) => n.planetId === "planet_003")).toMatchObject({ pointsWorth: 1, resourceIcon: null });
+  });
+
+  it("carries each node's raw pointsFor/pointsAgainst, defaulting to 0 with no live CrusadePlanet entry", () => {
+    const sectorMap: CrusadeSectorMap = {
+      planets: [
+        { planetId: "scored", zone: 0, type: "Fortress", positionX: 0, positionY: 0 },
+        { planetId: "unscored", zone: 0, type: "Fortress", positionX: 1, positionY: 0 },
+      ],
+      connections: [],
+    };
+    const result = computeSectorMap(0, sectorMap, [crusadePlanet({ planetId: "scored", pointsFor: 1234, pointsAgainst: 567 })]);
+    expect(result.nodes.find((n) => n.planetId === "scored")).toMatchObject({ pointsFor: 1234, pointsAgainst: 567 });
+    expect(result.nodes.find((n) => n.planetId === "unscored")).toMatchObject({ pointsFor: 0, pointsAgainst: 0 });
   });
 
   it("only includes planets from the requested zone", () => {
@@ -257,6 +271,31 @@ describe("planetProgressBars", () => {
 
   it("treats a zero threshold as reached (no divide-by-zero)", () => {
     expect(planetProgressBars(progress({ imperialThreshold: 0 }))).toBeNull();
+  });
+});
+
+describe("crusadeProgressBars", () => {
+  it("puts the leading side at exactly 1 and scales the other side relative to it", () => {
+    expect(crusadeProgressBars(1000, 250)).toEqual({ imperial: 1, devastation: 0.25 });
+    expect(crusadeProgressBars(250, 1000)).toEqual({ imperial: 0.25, devastation: 1 });
+  });
+
+  it("puts both sides at exactly 1 when tied", () => {
+    expect(crusadeProgressBars(500, 500)).toEqual({ imperial: 1, devastation: 1 });
+  });
+
+  it("returns nothing when neither side has any points yet", () => {
+    expect(crusadeProgressBars(0, 0)).toBeNull();
+  });
+
+  it("clamps negative points to zero rather than letting them win the 'leader' comparison", () => {
+    expect(crusadeProgressBars(-10, 100)).toEqual({ imperial: 0, devastation: 1 });
+  });
+
+  it("never omits a side for 'reaching' a threshold - there's no capture/lockout concept in CRUSADE", () => {
+    // A value that would hit planetProgressBars's capture/zero-threshold early-outs is a normal,
+    // still-shown case here.
+    expect(crusadeProgressBars(1_000_000, 1_000_000)).toEqual({ imperial: 1, devastation: 1 });
   });
 });
 

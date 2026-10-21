@@ -14,7 +14,7 @@ function planetNameById(): Map<string, string> {
 // SectorMapNode's own `type` (the live map's visual tile category, from the sector map's own data -
 // see buildMap below). Undefined for season 1.41 (captured before this field existed) - every
 // reader here treats that the same as "no special value," i.e. worth 1, no resource.
-function planetTypeById(): Map<string, string | undefined> {
+export function planetTypeById(): Map<string, string | undefined> {
   return new Map((getPlanetData() as { planetId: string; type?: string }[]).map((p) => [p.planetId, p.type]));
 }
 
@@ -50,6 +50,11 @@ export interface SectorMapNode {
   // both derived from the static per-season planet type, see planetPointsWorth/planetResourceIcon.
   pointsWorth: number;
   resourceIcon: PlanetResourceType;
+  // Raw current points, straight off the live CrusadePlanet (0 when there's no live entry yet) -
+  // what crusadeProgressBars (and its arc labels) are computed from during CRUSADE/Downtime, where
+  // there's no real capture-threshold data (see progress above, which stays STRUGGLE-only).
+  pointsFor: number;
+  pointsAgainst: number;
 }
 
 export interface SectorMapEdge {
@@ -130,6 +135,22 @@ export function planetProgressBars(progress: ConquestProgress | null): PlanetPro
   };
 }
 
+// CRUSADE (Expansion)'s own progress bars - there's no capture-threshold data to measure against
+// here (struggleData is empty/absent during this phase, see computeConquestProgress), so instead
+// of "how close to a fixed target," this shows "how close to the current leader": whichever side
+// has more points reads as fully filled (1 - the leader, by definition, is always exactly at its
+// own total), and the other side's bar is that side's own total as a fraction of the leader's -
+// how far behind it currently is, not of any fixed target. null (no bars) only when neither side
+// has any points yet - unlike planetProgressBars, there's no "captured, stop showing" case here,
+// since CRUSADE has no capture/lockout concept.
+export function crusadeProgressBars(pointsFor: number, pointsAgainst: number): PlanetProgressBars | null {
+  const imperial = Math.max(0, pointsFor);
+  const devastation = Math.max(0, pointsAgainst);
+  const leader = Math.max(imperial, devastation);
+  if (leader <= 0) return null;
+  return { imperial: imperial / leader, devastation: devastation / leader };
+}
+
 // Every playable planet in the crusade, ranked by capture requirement (see computeDotScales).
 // Ranked across the whole crusade, not just one sector, so a planet's dot stays the same size as
 // you step between sectors or expand to all of them.
@@ -177,6 +198,8 @@ function buildMap(
       dotScale: dotScales.get(p.planetId) ?? null,
       pointsWorth: planetPointsWorth(planetType),
       resourceIcon: planetResourceIcon(planetType),
+      pointsFor: crusadePlanet?.pointsFor ?? 0,
+      pointsAgainst: crusadePlanet?.pointsAgainst ?? 0,
     });
   }
 

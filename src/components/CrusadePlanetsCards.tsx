@@ -9,6 +9,10 @@ interface CrusadePlanetsCardsProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
+  // Opens the sector-map modal for this planet - required (not optional), same as
+  // CrusadeDominationCards's own onSelectPlanet: viewing the map doesn't need an account, so it's
+  // always available even on the anonymous home page.
+  onSelectPlanet: (planetId: string) => void;
 }
 
 export function CrusadePlanetsCards({
@@ -17,6 +21,7 @@ export function CrusadePlanetsCards({
   onRefreshPlanet,
   favoritedPlanetIds,
   onToggleFavoritePlanet,
+  onSelectPlanet,
 }: CrusadePlanetsCardsProps) {
   return (
     <div className="mt-4 grid w-full grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
@@ -29,6 +34,7 @@ export function CrusadePlanetsCards({
           isFavorited={favoritedPlanetIds.has(planet.planetId)}
           onToggleFavorite={onToggleFavoritePlanet ? () => onToggleFavoritePlanet(planet.planetId) : undefined}
           starDisabled={isStarDisabled(favoritedPlanetIds, planet.planetId)}
+          onSelectPlanet={() => onSelectPlanet(planet.planetId)}
         />
       ))}
     </div>

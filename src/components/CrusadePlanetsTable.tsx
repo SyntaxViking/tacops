@@ -1,5 +1,5 @@
 import { isStarDisabled } from "../crusade/starred-planets";
-import { FactionBadge, LeaderboardBreakdownCell, SidePercentCell } from "./crusade-cells";
+import { FactionBadge, LeaderboardBreakdownCell, PlanetResourceIcon, SidePercentCell } from "./crusade-cells";
 import { PlanetFetchTimestamp } from "./PlanetFetchTimestamp";
 import { RefreshIconButton } from "./RefreshIconButton";
 import { StarIconButton } from "./StarIconButton";
@@ -15,6 +15,10 @@ interface CrusadePlanetsTableProps {
   onRefreshPlanet?: (planetId: string) => void;
   favoritedPlanetIds: ReadonlySet<string>;
   onToggleFavoritePlanet?: (planetId: string) => void;
+  // Opens the sector-map modal for this planet - required (not optional), same as
+  // CrusadeDominationTable's own onSelectPlanet: viewing the map doesn't need an account, so it's
+  // always available even on the anonymous home page.
+  onSelectPlanet: (planetId: string) => void;
 }
 
 export function CrusadePlanetsTable({
@@ -23,6 +27,7 @@ export function CrusadePlanetsTable({
   onRefreshPlanet,
   favoritedPlanetIds,
   onToggleFavoritePlanet,
+  onSelectPlanet,
 }: CrusadePlanetsTableProps) {
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
@@ -30,7 +35,7 @@ export function CrusadePlanetsTable({
         <tr>
           <th className={cellClass}>Favorite</th>
           <th className={cellClass}>Planet</th>
-          <th className={cellClass}>Imperium % / Devastation %</th>
+          <th className={cellClass}>Imperium / Devastation</th>
           {onRefreshPlanet && (
             <>
               <th className={cellClass}>Leading Factions (Imperium)</th>
@@ -47,7 +52,11 @@ export function CrusadePlanetsTable({
           const refreshEntry = planetRefreshState.get(planet.planetId) ?? EMPTY_REFRESH_ENTRY;
           const lb = refreshEntry.leaderboard;
           return (
-            <tr key={planet.planetId} className={refreshEntry.isLoading ? "pointer-events-none opacity-60" : ""}>
+            <tr
+              key={planet.planetId}
+              onClick={() => onSelectPlanet(planet.planetId)}
+              className={`cursor-pointer ${refreshEntry.isLoading ? "pointer-events-none opacity-60" : ""}`}
+            >
               <td className={cellClass}>
                 {onToggleFavoritePlanet && (
                   <StarIconButton
@@ -57,7 +66,12 @@ export function CrusadePlanetsTable({
                   />
                 )}
               </td>
-              <td className={cellClass}>{planet.name}</td>
+              <td className={cellClass}>
+                <div className="flex items-center gap-1">
+                  {planet.name}
+                  <PlanetResourceIcon planetId={planet.planetId} />
+                </div>
+              </td>
               <td className={cellClass}>
                 <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />
               </td>
