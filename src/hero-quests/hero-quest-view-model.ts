@@ -66,3 +66,14 @@ export function computeHeroQuestJars(urnOfBalls: Record<string, UrnOfBallsEntry>
   }
   return jars;
 }
+
+// "X received from Y attempts (Z attempts remaining)" for a single battle's card in the quest
+// tab - Y is every attempt made so far (received + missed), Z is battlesRemaining (how many more
+// tries are left in this reward cycle). null when there's no jar for this battle number at all
+// (shouldn't happen for a real quest battle, but a bundled quest's battle numbers are offline
+// data, not guaranteed to line up).
+export function formatJarStatus(jar: HeroQuestJar | undefined): string | null {
+  if (!jar) return null;
+  const attempts = jar.rewardsReceived + jar.rewardsMissed;
+  return `${jar.rewardsReceived} received from ${attempts} attempts (${jar.battlesRemaining} attempts remaining)`;
+}

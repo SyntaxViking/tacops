@@ -1,6 +1,14 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Modal } from "./Modal";
-import { crusadeProgressBars, dotRadius, MAX_DOT_RADIUS, planetProgressBars, type SectorMapColor, type SectorMapData } from "../crusade/crusade-sector-map-view-model";
+import {
+  computeDotScales,
+  crusadeProgressBars,
+  dotRadius,
+  MAX_DOT_RADIUS,
+  planetProgressBars,
+  type SectorMapColor,
+  type SectorMapData,
+} from "../crusade/crusade-sector-map-view-model";
 import { goldIconUrl, staminaIconUrl } from "../resource-icons";
 
 // Imperial/Devastation match the codebase's established side-color intent from the map's own
@@ -16,6 +24,25 @@ const NODE_COLOR: Record<SectorMapColor, string> = {
   neutral: "#808080",
 };
 const HIGHLIGHT_COLOR = "#15803d";
+// The CRUSADE/Downtime (showPointValues) ring color scale - how many points the leading side has
+// scored on this planet so far, ranked against every other planet currently on the map (same
+// cross-map ranking convention as crusadeDotScales, see its own comment), from dull (least
+// contested, or untouched - ties for last) to a bright, glowing hot yellow (most contested).
+// Deliberately a single neutral hue rather than tracking the winning side's own blue/red - which
+// side is winning is still shown by the arcs around the ring; this ring is purely "how much has
+// happened here."
+const HEAT_DULL_COLOR = "#713f12"; // Tailwind yellow-900 - dull, muted
+const HEAT_HOT_COLOR = "#fef08a"; // Tailwind yellow-200 - bright, glowing
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function heatColor(heat: number): string {
+  const [r1, g1, b1] = hexToRgb(HEAT_DULL_COLOR);
+  const [r2, g2, b2] = hexToRgb(HEAT_HOT_COLOR);
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * heat);
+  return `rgb(${lerp(r1, r2)}, ${lerp(g1, g2)}, ${lerp(b1, b2)})`;
+}
 // Resource icon shown centered in an Agri/Mining world's hollow circle, in place of its point
 // value (see showPointValues below) - sized to fill most of the ring without touching its stroke.
 const RESOURCE_ICON_URL: Record<"energy" | "gold", string> = {
@@ -181,95 +208,111 @@ export function SectorSvg({
           Sector {label.zone + 1}
         </text>
       ))}
-      {sectorMapData.nodes.map((node) => {
-        const cx = toSvg(node.x);
-        const cy = toSvg(node.y);
-        // CRUSADE/Downtime (showPointValues) has no real capture-threshold data to show progress
-        // toward - crusadeProgressBars instead scales relative to whichever side currently leads
-        // (see its own comment). STRUGGLE keeps the existing threshold-based bars unchanged.
-        const bars = showPointValues ? crusadeProgressBars(node.pointsFor, node.pointsAgainst) : planetProgressBars(node.progress);
-        const arcRadius = dotRadius(node.dotScale) + ARC_GAP;
-        return (
-          <g key={node.planetId}>
-            {node.planetId === highlightPlanetId && <circle cx={cx} cy={cy} r={4} fill="none" stroke={HIGHLIGHT_COLOR} strokeWidth={0.7} />}
-            {showPointValues ? (
-              <circle cx={cx} cy={cy} r={dotRadius(node.dotScale)} fill="none" stroke={NODE_COLOR[node.color]} strokeWidth={0.6} />
-            ) : (
-              <circle cx={cx} cy={cy} r={dotRadius(node.dotScale)} fill={NODE_COLOR[node.color]} />
-            )}
-            {showPointValues &&
-              (node.resourceIcon ? (
-                <image
-                  href={RESOURCE_ICON_URL[node.resourceIcon]}
-                  x={cx - RESOURCE_ICON_SIZE / 2}
-                  y={cy - RESOURCE_ICON_SIZE / 2}
-                  width={RESOURCE_ICON_SIZE}
-                  height={RESOURCE_ICON_SIZE}
-                />
+      {(() => {
+        // Ranked across every node on this map (same cross-map convention as crusadeDotScales) by
+        // whichever side leads each planet - computeDotScales gives the highest input scale 0 (it
+        // was built for dot SIZE, where the highest capture requirement draws smallest), so this
+        // flips it: highest points -> heat 1 (hottest), lowest/tied/all-zero -> heat 0 (dullest).
+        // Only meaningful (and only computed) in showPointValues mode - STRUGGLE's ring color
+        // never uses it.
+        const heatScaleById = showPointValues
+          ? new Map(
+              [...computeDotScales(new Map(sectorMapData.nodes.map((n) => [n.planetId, Math.max(n.pointsFor, n.pointsAgainst)])))].map(
+                ([planetId, scale]) => [planetId, 1 - scale],
+              ),
+            )
+          : null;
+        return sectorMapData.nodes.map((node) => {
+          const cx = toSvg(node.x);
+          const cy = toSvg(node.y);
+          // CRUSADE/Downtime (showPointValues) has no real capture-threshold data to show progress
+          // toward - crusadeProgressBars instead scales relative to whichever side currently leads
+          // (see its own comment). STRUGGLE keeps the existing threshold-based bars unchanged.
+          const bars = showPointValues ? crusadeProgressBars(node.pointsFor, node.pointsAgainst) : planetProgressBars(node.progress);
+          const arcRadius = dotRadius(node.dotScale) + ARC_GAP;
+          const ringColor = showPointValues ? heatColor(heatScaleById!.get(node.planetId) ?? 0) : NODE_COLOR[node.color];
+          return (
+            <g key={node.planetId}>
+              {node.planetId === highlightPlanetId && <circle cx={cx} cy={cy} r={4} fill="none" stroke={HIGHLIGHT_COLOR} strokeWidth={0.7} />}
+              {showPointValues ? (
+                <circle cx={cx} cy={cy} r={dotRadius(node.dotScale)} fill="none" stroke={ringColor} strokeWidth={0.6} />
               ) : (
-                <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={2.2} fontWeight="bold" fill={NODE_COLOR[node.color]}>
-                  {node.pointsWorth}
-                </text>
-              ))}
-            {/* Dots can shrink to ~1px, far too small to hover - this invisible full-size target
-                keeps the name tooltip reachable. */}
-            <circle cx={cx} cy={cy} r={MAX_DOT_RADIUS} fill="transparent">
-              <title>{node.name}</title>
-            </circle>
-            {bars && showPointValues && (
-              <>
-                <SideArc
-                  cx={cx}
-                  cy={cy}
-                  r={arcRadius}
-                  side="left"
-                  fraction={bars.imperial}
-                  color={NODE_COLOR.imperial}
-                  outlineColor={ARC_OUTLINE_COLOR.imperial}
-                  label={`Imperial ${node.pointsFor.toLocaleString()} points (${Math.round(bars.imperial * 100)}% of leader)`}
-                />
-                <SideArc
-                  cx={cx}
-                  cy={cy}
-                  r={arcRadius}
-                  side="right"
-                  fraction={bars.devastation}
-                  color={NODE_COLOR.devastation}
-                  outlineColor={ARC_OUTLINE_COLOR.devastation}
-                  label={`Devastation ${node.pointsAgainst.toLocaleString()} points (${Math.round(bars.devastation * 100)}% of leader)`}
-                />
-              </>
-            )}
-            {bars && !showPointValues && node.progress && (
-              <>
-                <SideArc
-                  cx={cx}
-                  cy={cy}
-                  r={arcRadius}
-                  side="left"
-                  fraction={bars.imperial}
-                  color={NODE_COLOR.imperial}
-                  outlineColor={ARC_OUTLINE_COLOR.imperial}
-                  label={`Imperial ${node.progress.imperialCurrent.toLocaleString()} / ${node.progress.imperialThreshold.toLocaleString()} (${Math.round(bars.imperial * 100)}%)`}
-                />
-                <SideArc
-                  cx={cx}
-                  cy={cy}
-                  r={arcRadius}
-                  side="right"
-                  fraction={bars.devastation}
-                  color={NODE_COLOR.devastation}
-                  outlineColor={ARC_OUTLINE_COLOR.devastation}
-                  label={`Devastation ${node.progress.devastationCurrent.toLocaleString()} / ${node.progress.devastationThreshold.toLocaleString()} (${Math.round(bars.devastation * 100)}%)`}
-                />
-              </>
-            )}
-            <text x={cx} y={cy + NAME_BASELINE} textAnchor="middle" fontSize={2.6} fill="currentColor">
-              {node.name}
-            </text>
-          </g>
-        );
-      })}
+                <circle cx={cx} cy={cy} r={dotRadius(node.dotScale)} fill={ringColor} />
+              )}
+              {showPointValues &&
+                (node.resourceIcon ? (
+                  <image
+                    href={RESOURCE_ICON_URL[node.resourceIcon]}
+                    x={cx - RESOURCE_ICON_SIZE / 2}
+                    y={cy - RESOURCE_ICON_SIZE / 2}
+                    width={RESOURCE_ICON_SIZE}
+                    height={RESOURCE_ICON_SIZE}
+                  />
+                ) : (
+                  <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={2.2} fontWeight="bold" fill={ringColor}>
+                    {node.pointsWorth}
+                  </text>
+                ))}
+              {/* Dots can shrink to ~1px, far too small to hover - this invisible full-size target
+                  keeps the name tooltip reachable. */}
+              <circle cx={cx} cy={cy} r={MAX_DOT_RADIUS} fill="transparent">
+                <title>{node.name}</title>
+              </circle>
+              {bars && showPointValues && (
+                <>
+                  <SideArc
+                    cx={cx}
+                    cy={cy}
+                    r={arcRadius}
+                    side="left"
+                    fraction={bars.imperial}
+                    color={NODE_COLOR.imperial}
+                    outlineColor={ARC_OUTLINE_COLOR.imperial}
+                    label={`Imperial ${node.pointsFor.toLocaleString()} points (${Math.round(bars.imperial * 100)}% of leader)`}
+                  />
+                  <SideArc
+                    cx={cx}
+                    cy={cy}
+                    r={arcRadius}
+                    side="right"
+                    fraction={bars.devastation}
+                    color={NODE_COLOR.devastation}
+                    outlineColor={ARC_OUTLINE_COLOR.devastation}
+                    label={`Devastation ${node.pointsAgainst.toLocaleString()} points (${Math.round(bars.devastation * 100)}% of leader)`}
+                  />
+                </>
+              )}
+              {bars && !showPointValues && node.progress && (
+                <>
+                  <SideArc
+                    cx={cx}
+                    cy={cy}
+                    r={arcRadius}
+                    side="left"
+                    fraction={bars.imperial}
+                    color={NODE_COLOR.imperial}
+                    outlineColor={ARC_OUTLINE_COLOR.imperial}
+                    label={`Imperial ${node.progress.imperialCurrent.toLocaleString()} / ${node.progress.imperialThreshold.toLocaleString()} (${Math.round(bars.imperial * 100)}%)`}
+                  />
+                  <SideArc
+                    cx={cx}
+                    cy={cy}
+                    r={arcRadius}
+                    side="right"
+                    fraction={bars.devastation}
+                    color={NODE_COLOR.devastation}
+                    outlineColor={ARC_OUTLINE_COLOR.devastation}
+                    label={`Devastation ${node.progress.devastationCurrent.toLocaleString()} / ${node.progress.devastationThreshold.toLocaleString()} (${Math.round(bars.devastation * 100)}%)`}
+                  />
+                </>
+              )}
+              <text x={cx} y={cy + NAME_BASELINE} textAnchor="middle" fontSize={2.6} fill="currentColor">
+                {node.name}
+              </text>
+            </g>
+          );
+        });
+      })()}
     </svg>
   );
 }
