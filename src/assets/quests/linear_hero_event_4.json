@@ -1,0 +1,756 @@
+[
+  {
+    "battleNumber": 17,
+    "label": "Mythic 1 (300 out of 500)",
+    "tierName": "Mythic",
+    "rewardChanceOf": "upgHpM004%1/6",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/30a211c49e56a4a795b5daf2cee57acba83feeabc363f7b47c752a375694386e",
+    "roster": [
+      {
+        "unitId": "bloodMephiston",
+        "rank": 16,
+        "starLevel": 9,
+        "activeAbilityLevel": 47,
+        "passiveAbilityLevel": 44,
+        "rarity": 4
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 20,
+        "starLevel": 14,
+        "activeAbilityLevel": 65,
+        "passiveAbilityLevel": 65,
+        "rarity": 5
+      },
+      {
+        "unitId": "ultraApothecary",
+        "rank": 18,
+        "starLevel": 11,
+        "activeAbilityLevel": 55,
+        "passiveAbilityLevel": 35,
+        "rarity": 5
+      },
+      {
+        "unitId": "adeptHospitaller",
+        "rank": 17,
+        "starLevel": 9,
+        "activeAbilityLevel": 44,
+        "passiveAbilityLevel": 50,
+        "rarity": 4
+      },
+      {
+        "unitId": "bloodDante",
+        "rank": 18,
+        "starLevel": 11,
+        "activeAbilityLevel": 38,
+        "passiveAbilityLevel": 55,
+        "rarity": 5
+      }
+    ]
+  },
+  {
+    "battleNumber": 17,
+    "label": "Mythic 1 (Super juiced)",
+    "tierName": "Mythic",
+    "rewardChanceOf": "upgHpM004%1/6",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/a76c690ff05e7838bdce416b71134ce62b99f6b23c8b7fc43d6d06475da16075",
+    "roster": [
+      {
+        "unitId": "ultraCalgar",
+        "rank": 19,
+        "starLevel": 12,
+        "activeAbilityLevel": 60,
+        "passiveAbilityLevel": 60,
+        "rarity": 5
+      },
+      {
+        "unitId": "adeptRetributor",
+        "rank": 19,
+        "starLevel": 12,
+        "activeAbilityLevel": 60,
+        "passiveAbilityLevel": 60,
+        "rarity": 5
+      },
+      {
+        "unitId": "ultraTitus",
+        "rank": 19,
+        "starLevel": 12,
+        "activeAbilityLevel": 60,
+        "passiveAbilityLevel": 60,
+        "rarity": 5
+      },
+      {
+        "unitId": "adeptHospitaller",
+        "rank": 19,
+        "starLevel": 12,
+        "activeAbilityLevel": 60,
+        "passiveAbilityLevel": 60,
+        "rarity": 5
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 20,
+        "starLevel": 14,
+        "activeAbilityLevel": 65,
+        "passiveAbilityLevel": 65,
+        "rarity": 5
+      }
+    ]
+  },
+  {
+    "battleNumber": 16,
+    "label": "Legendary 2",
+    "tierName": "Legendary",
+    "rewardChanceOf": "upgArmL001%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/0cbbfa1b9ca137989831b2f95c26c6be25ccacb4aa405aa690c4255d9d1b3c88",
+    "roster": [
+      {
+        "unitId": "astarEradicator",
+        "rank": 17,
+        "starLevel": 11,
+        "activeAbilityLevel": 50,
+        "passiveAbilityLevel": 50,
+        "rarity": 4
+      },
+      {
+        "unitId": "adeptHospitaller",
+        "rank": 17,
+        "starLevel": 9,
+        "activeAbilityLevel": 44,
+        "passiveAbilityLevel": 50,
+        "rarity": 4
+      },
+      {
+        "unitId": "ultraApothecary",
+        "rank": 17,
+        "starLevel": 11,
+        "activeAbilityLevel": 50,
+        "passiveAbilityLevel": 35,
+        "rarity": 4
+      },
+      {
+        "unitId": "bloodMephiston",
+        "rank": 16,
+        "starLevel": 9,
+        "activeAbilityLevel": 47,
+        "passiveAbilityLevel": 44,
+        "rarity": 4
+      },
+      {
+        "unitId": "bloodDante",
+        "rank": 17,
+        "starLevel": 11,
+        "activeAbilityLevel": 38,
+        "passiveAbilityLevel": 50,
+        "rarity": 4
+      }
+    ]
+  },
+  {
+    "battleNumber": 15,
+    "label": "Legendary 1",
+    "tierName": "Legendary",
+    "rewardChanceOf": "upgHpL100%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/30531d566d25bb30abf3ff0c45354096475242b77c176ef11e3517c99b14eb83",
+    "roster": [
+      {
+        "unitId": "astarEradicator",
+        "rank": 17,
+        "starLevel": 11,
+        "activeAbilityLevel": 50,
+        "passiveAbilityLevel": 50,
+        "rarity": 4
+      },
+      {
+        "unitId": "bloodDeathCompany",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 36,
+        "passiveAbilityLevel": 36,
+        "rarity": 4
+      },
+      {
+        "unitId": "bloodSanguinary",
+        "rank": 15,
+        "starLevel": 8,
+        "activeAbilityLevel": 44,
+        "passiveAbilityLevel": 44,
+        "rarity": 4
+      },
+      {
+        "unitId": "bloodMephiston",
+        "rank": 16,
+        "starLevel": 9,
+        "activeAbilityLevel": 47,
+        "passiveAbilityLevel": 44,
+        "rarity": 4
+      },
+      {
+        "unitId": "adeptRetributor",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 44,
+        "rarity": 4
+      }
+    ]
+  },
+  {
+    "battleNumber": 14,
+    "label": "Epic 3",
+    "tierName": "Epic",
+    "rewardChanceOf": "upgDmgE011%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/138ebcc55fb77e3d58efe3ec90f554c38572e0984657aaa0313279e8205a3ce9",
+    "roster": [
+      {
+        "unitId": "astarEradicator",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "bloodDeathCompany",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "bloodSanguinary",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "bloodDante",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "bloodMephiston",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      }
+    ]
+  },
+  {
+    "battleNumber": 13,
+    "label": "Epic 2",
+    "tierName": "Epic",
+    "rewardChanceOf": "upgArmE013%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/e9b3cb138a4ff49222f0c7c6202166e6814bfc83e471c1724322e25d02023be4",
+    "roster": [
+      {
+        "unitId": "astarEradicator",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "bloodDeathCompany",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "bloodSanguinary",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "adeptRetributor",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      }
+    ]
+  },
+  {
+    "battleNumber": 12,
+    "label": "Epic 1",
+    "tierName": "Epic",
+    "rewardChanceOf": "upgHpE003%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/7a49b0045156fd31a6e9d890dc955c6f45ee76d443a2e1f9f465a02a4f633e21",
+    "roster": [
+      {
+        "unitId": "ultraApothecary",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "adeptRetributor",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 12,
+        "starLevel": 8,
+        "activeAbilityLevel": 35,
+        "passiveAbilityLevel": 35,
+        "rarity": 3
+      }
+    ]
+  },
+  {
+    "battleNumber": 11,
+    "label": "Rare 5",
+    "tierName": "Rare",
+    "rewardChanceOf": "upgArmR015%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/6e1b0dd87e2f0c173b0448ec0bba2b5976f82c242d12dcaa7e44bcddd976cb86",
+    "roster": [
+      {
+        "unitId": "bloodIntercessor",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "bloodDante",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "ultraApothecary",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "bloodDeathCompany",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      }
+    ]
+  },
+  {
+    "battleNumber": 10,
+    "label": "Rare 4",
+    "tierName": "Rare",
+    "rewardChanceOf": "upgArmR006%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/0a082adee521439eb9cd26839301fe5bec67b262aabdc875aa26a425e33aeb26",
+    "roster": [
+      {
+        "unitId": "astarEradicator",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "bloodDeathCompany",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "ultraApothecary",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "adeptRetributor",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      }
+    ]
+  },
+  {
+    "battleNumber": 9,
+    "label": "Rare 3",
+    "tierName": "Rare",
+    "rewardChanceOf": "upgHpR021%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/fb7b5d95a1a9fe04f10c4dedd91ac0c26530c4c33ae120b04506c4ba8e35de9b",
+    "roster": [
+      {
+        "unitId": "adeptRetributor",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "ultraApothecary",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      }
+    ]
+  },
+  {
+    "battleNumber": 8,
+    "label": "Rare 2",
+    "tierName": "Rare",
+    "rewardChanceOf": "upgArmR005%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/82b1bbb8c507139a5a15d9370fd634a434c2c40712a27c6526bac2ac4ecf5b29",
+    "roster": [
+      {
+        "unitId": "ultraInceptorSgt",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 18,
+        "rarity": 2
+      },
+      {
+        "unitId": "bloodIntercessor",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      }
+    ]
+  },
+  {
+    "battleNumber": 7,
+    "label": "Rare 1",
+    "tierName": "Rare",
+    "rewardChanceOf": "upgDmgR007%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/cd5fe580b02622f8afb2e27961bba9313ae98d4165228fa23f4231eb3be021d5",
+    "roster": [
+      {
+        "unitId": "bloodDeathCompany",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "bloodSanguinary",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 9,
+        "starLevel": 6,
+        "activeAbilityLevel": 26,
+        "passiveAbilityLevel": 26,
+        "rarity": 2
+      }
+    ]
+  },
+  {
+    "battleNumber": 6,
+    "label": "Uncommon 3",
+    "tierName": "Uncommon",
+    "rewardChanceOf": "upgDmgU003%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/8867a6ab14068abd99067d407d52446e258c659cbc48f516aac50e2b63d8f17a",
+    "roster": [
+      {
+        "unitId": "bloodDante",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "bloodIntercessor",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "ultraApothecary",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "bloodDeathCompany",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      }
+    ]
+  },
+  {
+    "battleNumber": 5,
+    "label": "Uncommon 2",
+    "tierName": "Uncommon",
+    "rewardChanceOf": "upgArmU001%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/bd6aa252107ccaf39dca671ac8d6302a089bdc7111f215c5486edf8138fff90b",
+    "roster": [
+      {
+        "unitId": "astarEradicator",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "bloodDeathCompany",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "bloodIntercessor",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "adeptRetributor",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      }
+    ]
+  },
+  {
+    "battleNumber": 4,
+    "label": "Uncommon 1",
+    "tierName": "Uncommon",
+    "rewardChanceOf": "upgArmU002%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/fc37fd97b900f0b7f8d5a2f5d30e897e12c2b366cb61a5de399a1f1de498ac3d",
+    "roster": [
+      {
+        "unitId": "adeptRetributor",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "ultraApothecary",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 6,
+        "starLevel": 4,
+        "activeAbilityLevel": 17,
+        "passiveAbilityLevel": 17,
+        "rarity": 1
+      }
+    ]
+  },
+  {
+    "battleNumber": 3,
+    "label": "Common 3",
+    "tierName": "Common",
+    "rewardChanceOf": "upgArmC001%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/1bc661c65171e3f831f7182e04986dac41d78a02643320f7713051ff9e3331f7",
+    "roster": [
+      {
+        "unitId": "bloodDante",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "bloodIntercessor",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "adeptRetributor",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "ultraInceptorSgt",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      }
+    ]
+  },
+  {
+    "battleNumber": 2,
+    "label": "Common 2",
+    "tierName": "Common",
+    "rewardChanceOf": "upgDmgC003%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/c9525b4ec0b81412423eda62fad8a3996891e8e4b2be2b1e302a3d3fc09d374a",
+    "roster": [
+      {
+        "unitId": "bloodIntercessor",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "ultraCalgar",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "ultraInceptorSgt",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "astarEradicator",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      }
+    ]
+  },
+  {
+    "battleNumber": 1,
+    "label": "Common 1",
+    "tierName": "Common",
+    "rewardChanceOf": "upgArmC002%3/4",
+    "replayUrl": "https://tacticus-raidman.com/public/replays/bf53e1c52710baf4808cddf398f4e190eb7c44ef474a29c3a5724b16e544957c",
+    "roster": [
+      {
+        "unitId": "astarEradicator",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "ultraCalgar",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      },
+      {
+        "unitId": "bloodMephiston",
+        "rank": 3,
+        "starLevel": 2,
+        "activeAbilityLevel": 8,
+        "passiveAbilityLevel": 8,
+        "rarity": 0
+      }
+    ]
+  }
+]

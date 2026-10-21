@@ -79,6 +79,12 @@ export function App() {
   const [selectedExpeditionId, setSelectedExpeditionId] = useState<string | null>(null);
   const [devModeEnabled, setDevModeEnabled] = useState(false);
   const lastEightPressRef = useRef(0);
+  // Some password managers autofill a field via simulated keystrokes - a user whose userId
+  // happens to contain an "8" would otherwise have every such keystroke toggle dev mode as it's
+  // typed, which swaps the whole layout out from under the login form mid-autofill. Latches after
+  // the very first "8" (real or simulated) so this can only ever fire once per page load - tapping
+  // the title 8 times (handleTitleTap below) still works afterward as the keyboard-free fallback.
+  const eightKeyUsedRef = useRef(false);
   const titleTapCountRef = useRef(0);
   const lastTitleTapRef = useRef(0);
   const [userId, setUserId] = useState("");
@@ -99,6 +105,7 @@ export function App() {
   const [adViewsRemaining, setAdViewsRemaining] = useState<number | null>(null);
   const [resources, setResources] = useState<PlayerResources | null>(null);
   const [heroQuestJars, setHeroQuestJars] = useState<HeroQuestJar[]>([]);
+  const [activeQuestIds, setActiveQuestIds] = useState<string[]>([]);
   const [sectorMap, setSectorMap] = useState<CrusadeSectorMap>({ planets: [], connections: [] });
   const [planetDefenses, setPlanetDefenses] = useState<Record<string, PlanetDefenseCounts>>({});
   const [onslaughtBoards, setOnslaughtBoards] = useState<OnslaughtBoards>({ Imperial: [], Chaos: [], Xenos: [] });
@@ -294,10 +301,12 @@ export function App() {
         setSelectedExpeditionId(null);
         return;
       }
+      if (eightKeyUsedRef.current) return;
       if (e.key !== "8" || e.repeat) return;
       const now = Date.now();
       if (now - lastEightPressRef.current < 400) return;
       lastEightPressRef.current = now;
+      eightKeyUsedRef.current = true;
       toggleDevMode();
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -402,6 +411,7 @@ export function App() {
       setAdViewsRemaining(data.adViewsRemaining);
       setResources(data.resources);
       setHeroQuestJars(data.heroQuestJars);
+      setActiveQuestIds(data.activeQuestIds);
       setSectorMap(data.sectorMap);
       setPlanetDefenses(data.planetDefenses);
       setOnslaughtBoards(data.onslaughtBoards);
@@ -1055,7 +1065,7 @@ export function App() {
             )}
             {activeTab === "onslaught" && <OnslaughtTab onslaughtBoards={onslaughtBoards} />}
             {activeTab === "coverage" && <BoardCoverageTab />}
-            {activeTab === "heroquests" && <HeroQuestsTab jars={heroQuestJars} />}
+            {activeTab === "heroquests" && <HeroQuestsTab jars={heroQuestJars} activeQuestIds={activeQuestIds} viewMode={viewMode} />}
             {activeTab === "crusade" && (
               <CrusadeTab
                 crusadeData={crusadeData}
