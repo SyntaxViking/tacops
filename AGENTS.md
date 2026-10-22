@@ -41,38 +41,65 @@ Tauri command that reaches the game's servers directly (not just tacops's own Wo
 tacops's own D1 cache or local disk don't need this - gating those would degrade unrelated
 functionality during the window for no account-safety benefit.
 
-## Leaderboard data (`worker/poller.ts`, `src/crusade/crusade-domination-view-model.ts`)
+## Leaderboard data (`worker/poller.ts`, `worker/leaderboard-cache.ts`, `worker/struggle-eligibility.ts`)
 
-The background poller (`worker/poller.ts`, cron every minute) only fetches crusade data
-(GET_CRUSADE) - it deliberately never fetches per-planet leaderboard data (GET_LEADERBOARD_2).
-It used to, writing to D1's `planet_leaderboard_cache` on every planet every tick, which blew
-through D1's daily row-write quota (confirmed via a live `D1_ERROR: ... exceeded D1's free tier
-daily row write limit`). That table is still defined in the schema but permanently unused now -
-nothing reads or writes it.
+An earlier version of the poller fetched every planet's leaderboard data on every tick, writing
+to D1's `planet_leaderboard_cache` on every planet every tick, which blew through D1's daily
+row-write quota (confirmed via a live `D1_ERROR: ... exceeded D1's free tier daily row write
+limit`). The fix at the time was to rip server-side leaderboard fetching out entirely - leaderboard
+data became purely a client-driven, opt-in fetch (still true today, see below), and the poller's
+own `poller_planet_queue`/`"planets"` phase (originally built to checkpoint that per-planet
+leaderboard fetch across ticks) became dead code once there was nothing left to checkpoint.
 
-Leaderboard data is purely a client-driven, opt-in fetch instead (`fetchOnePlanet`/
-`fetchPlanetLeaderboard` in `src/App.tsx`/`src/api/fetch-crusade-data.ts`), gated by
-`isPlanetAutoRefreshable` in `src/crusade/crusade-domination-view-model.ts` - only starred
-planets auto-refresh (every ~5 minutes), the one live-tracked planet refreshes on its own much
-faster loop (~10s), and any other planet only ever gets fetched once, on a manual refresh click.
-**Don't widen `isPlanetAutoRefreshable`'s eligibility again** (e.g. back to "every unranked/
-never-loaded planet") without deliberately re-checking D1's write-quota headroom first - that's
-exactly the behavior that caused the original incident.
+Server-side leaderboard polling is back, but with a much stricter, checkpointed design
+(migrations/0010) specifically so write volume stays bounded regardless of planet count:
+`worker/poller.ts`'s `runPollerTick` acquires `poller_lock` (unchanged CAS pattern), reads
+`poller_leaderboard_cursor` (a singleton row holding the full ordered list of planets still to
+poll this sweep, plus an index into it), and either calls GET_CRUSADE to rebuild that list (when
+it's empty/exhausted) or fetches one listed planet's leaderboard (`worker/leaderboard-cache.ts`,
+GET_LEADERBOARD_2) - committing the step's own result together with the cursor's advance and the
+lock release in one atomic `db.batch()`. CRUSADE always exits after one step (one planet/minute);
+STRUGGLE loops within one invocation, capped at `MAX_STRUGGLE_PLANETS_PER_TICK = 4` planets, since
+a 143-planet map would otherwise take hours per planet at one-per-minute. **Don't raise that cap
+without re-deriving the D1 write-budget math in `worker/poller.ts`'s own top-of-file comment** -
+that's exactly the kind of change that caused the original incident.
 
-Removing the leaderboard fetch alone wasn't enough, though - even with it gone, the poller's own
-GET_CRUSADE-refresh step (once every 5 minutes) was *still* close to the daily quota on its own,
-because it rebuilt `poller_planet_queue` (a DELETE + up to 146 INSERTs) and then walked it one
-planet at a time across many ticks (one more D1 row read AND write per planet per step) via a
-`"planets"` phase - machinery that originally existed to checkpoint that same per-planet
-*leaderboard fetch* across ticks (a slow, fallible network call), not to checkpoint a plain local
-D1 read/write. Once the leaderboard fetch was removed, that queue/cursor walk kept running for no
-remaining benefit, at real D1-operation cost. **`poller_planet_queue`/the `"planets"` phase branch
-in `worker/poller.ts` are now dead code, kept in the file but never invoked** - the crusade_fetch
-step now writes every relevant planet's history directly from the in-memory crusade response
-instead, in the same batch, and always transitions straight back to `"awaiting_epoch"`. **Never
-revive `poller_planet_queue` or transition `poller_epoch_state.phase` to `"planets"` again** -
-that's the second half of the same incident, and bringing it back (even just the queue rebuild,
-without ever walking it) reintroduces the D1-operation cost for nothing.
+STRUGGLE's eligible-planet list is deliberately narrower than every other planet-level mechanism
+in this codebase: only planets not currently in their post-capture `cooldownRemainingMs` lockout
+AND adjacent (via the static per-season `sector-map.json`'s `connections`, not any live fetch) to
+a planet owned by the opposite side (`worker/struggle-eligibility.ts`'s `eligibleStrugglePlanetIds`).
+History-write coverage (`planet_history_buckets`) stays the broader "every planet" list it always
+was - these are two separate concerns, don't conflate them.
+
+The cached leaderboard data itself (`shared_leaderboard_cache`, `worker/leaderboard-cache.ts`) is
+account-agnostic by construction - it never computes `myRank`/`myPoints`/`nearMe` at all (not
+merely strips them), since this cache is served to every visitor via the open `GET
+/api/leaderboard-cache` route, including the logged-out home page. It carries `topFactionsFor`/
+`topFactionsAgainst` (Leading Factions) and the Side Leaderboard's non-personal fields
+(`numParticipants`/`benchmarks`/`topEntries`) for both sides independently. The client merges this
+into the existing per-account `PlanetLeaderboard` shape via `toSeededPlanetLeaderboard`
+(`src/api/crusade-cache-seed.ts`) - both at login (fast-paint, before the user's own live fetch
+lands) and on an independent ~1-minute freshness-poll loop in `src/App.tsx` that adopts any cache
+entry fresher than what's held locally. **Don't route personal data through this cache** - if a
+future leaderboard field is ever added that's tied to a specific account, it belongs in the
+per-account live fetch path below, never in `shared_leaderboard_cache`.
+
+**`poller_epoch_state`/`poller_planet_queue` (migrations/0008) are now permanently abandoned**,
+superseded by `poller_leaderboard_cursor` - left in place unused, same precedent as
+`planet_history_cache`/the original `planet_leaderboard_cache` (migration 0004, also still
+abandoned; `shared_leaderboard_cache` is a new, differently-scoped table, not a revival of it).
+**Never revive `poller_planet_queue` or transition `poller_epoch_state.phase` to `"planets"`
+again** - that machinery is gone for good, not just currently unused.
+
+The existing client-driven, per-user leaderboard fetch is unchanged and still exactly as
+important: `fetchOnePlanet`/`fetchPlanetLeaderboard` in `src/App.tsx`/`src/api/fetch-crusade-data.ts`,
+gated by `isPlanetAutoRefreshable` in `src/crusade/crusade-domination-view-model.ts` - only
+starred planets auto-refresh (every ~5 minutes), the one live-tracked planet refreshes on its own
+much faster loop (~10s), and any other planet only ever gets fetched once, on a manual refresh
+click. This is still the only path that ever produces personal `myRank`/`myPoints`/`nearMe`/the
+per-faction player leaderboard data. **Don't widen `isPlanetAutoRefreshable`'s eligibility again**
+(e.g. back to "every unranked/never-loaded planet") without deliberately re-checking D1's
+write-quota headroom first.
 
 Even that wasn't the full fix, though: with the queue gone, the crusade_fetch step still wrote one
 `planet_history_cache` row per relevant planet, unconditionally, every 5-minute cycle - during

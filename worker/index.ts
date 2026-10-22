@@ -3,6 +3,7 @@ import { recordSighting } from "./track";
 import { renderInsightsPage } from "./insights";
 import { getUserPreferences, setUserPreferenceColumn } from "./user-preferences";
 import { getCrusadeCache } from "./crusade-cache";
+import { getLeaderboardCache } from "./leaderboard-cache";
 import { getAllPlanetHistory, getPlanetHistory } from "./planet-history";
 import { runPollerTick } from "./poller";
 import { isClientVersionAcceptable, STALE_CLIENT_MESSAGE } from "./client-version";
@@ -143,6 +144,13 @@ export default {
 
     if (url.pathname === "/api/crusade-cache" && request.method === "GET") {
       return Response.json(await getCrusadeCache(env.DB));
+    }
+
+    // Open/no-auth, same as /api/crusade-cache above - the shared per-planet leaderboard cache
+    // (worker/poller.ts/worker/leaderboard-cache.ts) is account-agnostic data, not personal to any
+    // one account, and this only ever reads tacops's own D1, never the game's servers.
+    if (url.pathname === "/api/leaderboard-cache" && request.method === "GET") {
+      return Response.json({ entries: await getLeaderboardCache(env.DB) });
     }
 
     // Open/no-auth, same as /api/crusade-cache above - a planet's own points-remaining history is

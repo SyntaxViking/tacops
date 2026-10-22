@@ -289,33 +289,6 @@ export function appendToHistoryCache(existing: HistoryCacheEntry | null, row: Pl
   return { samples, lastSunk: row.sunk };
 }
 
-interface LegacyHistoryCacheRow {
-  planet_id: string;
-  samples: string;
-  last_sunk: number;
-}
-
-// DEAD CODE, kept but never called - the old one-row-per-planet write, reading/writing
-// planet_history_cache (migrations/0007, now permanently unused - see this file's top-of-file
-// comment). Only still referenced by worker/poller.ts's own dead "planets" phase branch, which is
-// kept separate and never invoked for the same reason (see AGENTS.md) - left in place rather than
-// deleted so that branch still compiles without being touched.
-export async function buildHistoryUpsertStatement(db: D1Database, planet: CrusadePlanet, nowMs: number): Promise<D1PreparedStatement | null> {
-  if (!planet.struggleData) return null;
-
-  const existingRow = await db.prepare("SELECT samples, last_sunk FROM planet_history_cache WHERE planet_id = ?").bind(planet.planetId).first<LegacyHistoryCacheRow>();
-  const existing: HistoryCacheEntry | null = existingRow ? { samples: JSON.parse(existingRow.samples) as PlanetHistorySample[], lastSunk: existingRow.last_sunk === 1 } : null;
-
-  const row = buildHistoryRow(planet, nowMs);
-  const updated = appendToHistoryCache(existing, row);
-  return db
-    .prepare(
-      "INSERT INTO planet_history_cache (planet_id, samples, last_sunk, updated_at) VALUES (?, ?, ?, ?) " +
-        "ON CONFLICT(planet_id) DO UPDATE SET samples = excluded.samples, last_sunk = excluded.last_sunk, updated_at = excluded.updated_at",
-    )
-    .bind(planet.planetId, JSON.stringify(updated.samples), updated.lastSunk ? 1 : 0, nowMs);
-}
-
 // Planets per bucket row, and the resulting bucket-assignment function - see
 // migrations/0009_planet_history_buckets.sql for the exact size math (8 keeps a bucket's
 // worst-case size, every planet simultaneously at compressHistorySamples' 999-sample hard cap, to

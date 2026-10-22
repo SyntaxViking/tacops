@@ -1,8 +1,7 @@
 // Serves the poller's crusade snapshot (worker/poller.ts) to the frontend. Thin passthrough, no
 // reshaping - this endpoint's job is just to hand back the same raw shape a live GET_CRUSADE call
-// would have produced, sourced from D1 instead of Loki. Leaderboard data is deliberately not part
-// of this cache - the poller never fetches it (see AGENTS.md), so it's only ever available via a
-// live per-planet fetch (starred/live-tracked/manually-refreshed planets).
+// would have produced, sourced from D1 instead of Loki. Leaderboard data is served by a separate
+// endpoint instead (GET /api/leaderboard-cache, worker/leaderboard-cache.ts) - see AGENTS.md.
 export interface CrusadeCacheResponse {
   crusadeRaw: unknown | null;
   crusadeFetchedAt: number | null;
