@@ -63,7 +63,23 @@ const TABS = [
 ];
 
 const FETCH_COUNTDOWN_SECONDS = 60;
-const SOLVER_COUNTDOWN_SECONDS = 70; // 7 lexicographic passes x the 10s-per-pass solver timeout
+// Outer watchdog for the board-solver's optimal-solve worker (see its own effect for why this
+// exists) - if it hasn't responded by this point, it's killed and the already-computed greedy
+// result (see GREEDY_TIMEOUT_NOTE below) is used to unblock the UI instead.
+const WATCHDOG_MS = 20_000;
+// Shown while the greedy result is up and the real optimization is still running behind the
+// spinner overlay - see the solver effect.
+const GREEDY_PREVIEW_NOTE = "This is a quick solve while a full optimization runs in the background.";
+// Shown once the optimal attempt concludes (success or failure) without ever improving on the
+// greedy result that's already on screen - same assignment, just relabeled now that nothing
+// better is coming.
+const GREEDY_TIMEOUT_NOTE = "The optimizer took too long to respond, so this is a quick fallback assignment (not necessarily optimal).";
+// The visible countdown must never hit 0 before WATCHDOG_MS could possibly fire - it previously
+// had its own separately-tuned value (12s) that drifted under WATCHDOG_MS's actual 20s, so the
+// spinner looked stuck for that 8s gap even though it was still legitimately working. Derived
+// from WATCHDOG_MS directly (plus a few seconds of slack) so the two can't drift apart like that
+// again - in practice the greedy preview now lands almost immediately, well before this matters.
+const SOLVER_COUNTDOWN_SECONDS = Math.ceil(WATCHDOG_MS / 1000) + 5;
 
 export function App() {
   const [environment, setEnvironment] = useState<Environment>("prod");
@@ -184,17 +200,31 @@ export function App() {
     "crusadeNpc",
   ]);
 
+  // solverState tracks whether there's a usable assignment to show at all (becomes "success" the
+  // moment EITHER the greedy or the optimal result lands, whichever first) - separate from
+  // solverOptimizing, which tracks whether the spinner overlay should still be up (true until the
+  // optimal attempt itself concludes, one way or another). The two decouple on purpose: the greedy
+  // result renders for real (fulfillment, required/optional characters, the lot) the instant it
+  // lands, with the spinner as a translucent overlay on top of it rather than hiding it - see the
+  // solver effect below and its render site.
   const [solverState, setSolverState] = useState<"idle" | "solving" | "success" | "error">("idle");
+  const [solverOptimizing, setSolverOptimizing] = useState(false);
   const [solverSecondsRemaining, setSolverSecondsRemaining] = useState(SOLVER_COUNTDOWN_SECONDS);
   const [assignment, setAssignment] = useState<BoardAssignmentResult>(new Map());
   const [solverError, setSolverError] = useState<string>();
   const [solverIncompleteReason, setSolverIncompleteReason] = useState<string>();
-  const workerRef = useRef<Worker | null>(null);
+  // Two workers run in parallel for every solve (see the effect below): greedy (fast, shown
+  // immediately) and optimal (slow, supersedes it when/if it finishes).
+  const greedyWorkerRef = useRef<Worker | null>(null);
+  const optimalWorkerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
 
   // Terminate any worker still running on unmount (e.g. hot-reload in dev).
   useEffect(() => {
-    return () => workerRef.current?.terminate();
+    return () => {
+      greedyWorkerRef.current?.terminate();
+      optimalWorkerRef.current?.terminate();
+    };
   }, []);
 
   // Forces a stale tab to reload once a newer build has deployed (see src/version-check.ts) -
@@ -229,11 +259,21 @@ export function App() {
     return () => clearTimeout(timer);
   }, [staleVersionDetected]);
 
-  // The solver runs entirely in a Web Worker (javascript-lp-solver is synchronous with no
-  // async/worker mode of its own) so it can never block the main thread - the board renders
-  // immediately from fetched data, and this fills in the suggested assignment once it's ready.
-  // Terminating and recreating the worker on every change (rather than queuing) guarantees a
-  // priority-order change doesn't have to wait behind a slow, now-stale solve.
+  // The solver runs entirely in Web Workers (javascript-lp-solver is synchronous with no
+  // async/worker mode of its own) so it can never block the main thread. Two run in parallel for
+  // every solve: a greedy one (forceGreedy, polynomial, no search - can't hang, and is normally
+  // done almost instantly) and the real optimal one (the full lexicographic LP, which can
+  // legitimately take a while on a hard board). The greedy result renders for real the instant it
+  // lands (solverState "success", so the board shows real fulfillment/required-character data,
+  // not placeholders) with a note that a better one may still be coming - the spinner stays up as
+  // a translucent overlay on top of it (solverOptimizing), not hiding it, so the user can see both
+  // that something was found and that work is still happening. The optimal result always
+  // supersedes it outright when it finishes (the LP is never worse than greedy, by construction);
+  // if the optimal attempt fails or times out instead, the greedy result already on screen is
+  // simply relabeled rather than recomputed - either way solverOptimizing clears and the overlay
+  // goes away within WATCHDOG_MS at the very most. Terminating and recreating both workers on
+  // every change (rather than queuing) guarantees a priority-order change doesn't have to wait
+  // behind a slow, now-stale solve.
   useEffect(() => {
     // Mirrors solveBoardAssignment's own openBoards.length===0 fast path (board-solver.ts) - when
     // every entry is already Dispatched/Completed there's nothing to solve, so this skips
@@ -241,9 +281,11 @@ export function App() {
     // same empty assignment the worker itself would return instantly. Previously this case fell
     // through to the worker path below every time, needlessly recreating the worker.
     if (board.length === 0 || heroes.length === 0 || board.every(entryIsUnavailable)) {
-      workerRef.current?.terminate();
+      greedyWorkerRef.current?.terminate();
+      optimalWorkerRef.current?.terminate();
       setAssignment(new Map());
       setSolverState("idle");
+      setSolverOptimizing(false);
       setSolverError(undefined);
       setSolverIncompleteReason(undefined);
       return;
@@ -252,28 +294,12 @@ export function App() {
     requestIdRef.current += 1;
     const requestId = requestIdRef.current;
 
-    workerRef.current?.terminate();
-    const worker = new Worker(new URL("./board/board-solver.worker.ts", import.meta.url), { type: "module" });
-    workerRef.current = worker;
-
-    worker.onmessage = (event: MessageEvent<SolveResponse>) => {
-      if (event.data.requestId !== requestIdRef.current) return; // stale response, ignore
-      if (event.data.status === "success") {
-        setAssignment(new Map(event.data.assignmentEntries));
-        setSolverIncompleteReason(event.data.solveStatus === "incomplete" ? event.data.message : undefined);
-        setSolverError(undefined);
-        setSolverState("success");
-      } else {
-        setSolverError(event.data.error);
-        setSolverIncompleteReason(undefined);
-        setSolverState("error");
-      }
-    };
-
     setSolverState("solving");
+    setSolverOptimizing(true);
     setSolverError(undefined);
     setSolverIncompleteReason(undefined);
-    const request: SolveRequest = {
+
+    const baseRequest = {
       requestId,
       board,
       heroes,
@@ -281,7 +307,91 @@ export function App() {
       favoritedCharacterIds: [...favoritedCharacterIds],
       antiFavoritedCharacterIds: [...antiFavoritedCharacterIds],
     };
-    worker.postMessage(request);
+
+    // Tracks whether the optimal attempt has already had the final say (a real result, a worker
+    // error, or the watchdog giving up on it) - guards against the watchdog firing twice and
+    // against a late/failed optimal response overwriting a result it's already lost the race to.
+    let optimalSettled = false;
+    // Once the optimal side settles (whichever way), falls back to whatever the greedy worker
+    // already produced - computed eagerly, in parallel, so it's instantly ready the moment it's
+    // needed, whether that's to relabel it after a timeout/error or because it's the only result
+    // that ever showed up at all.
+    let greedyResult: SolveResponse | undefined;
+
+    function finishWithGreedyFallback(errorIfNoGreedy: string) {
+      optimalWorkerRef.current?.terminate();
+      setSolverOptimizing(false);
+      if (greedyResult?.status === "success") {
+        setAssignment(new Map(greedyResult.assignmentEntries));
+        setSolverIncompleteReason(GREEDY_TIMEOUT_NOTE);
+        setSolverError(undefined);
+        setSolverState("success");
+      } else {
+        // Shouldn't normally happen - greedy is polynomial and far faster than WATCHDOG_MS - but
+        // there's genuinely nothing to show if it hasn't landed (or itself failed) by now.
+        setSolverError(errorIfNoGreedy);
+        setSolverIncompleteReason(undefined);
+        setSolverState("error");
+      }
+    }
+
+    greedyWorkerRef.current?.terminate();
+    const greedyWorker = new Worker(new URL("./board/board-solver.worker.ts", import.meta.url), { type: "module" });
+    greedyWorkerRef.current = greedyWorker;
+    greedyWorker.onmessage = (event: MessageEvent<SolveResponse>) => {
+      if (event.data.requestId !== requestIdRef.current) return; // stale response, ignore
+      greedyResult = event.data;
+      if (optimalSettled) return; // the optimal attempt already had the final say - don't touch the UI
+      if (event.data.status === "success") {
+        setAssignment(new Map(event.data.assignmentEntries));
+        setSolverIncompleteReason(GREEDY_PREVIEW_NOTE);
+        setSolverError(undefined);
+        setSolverState("success"); // real data now - solverOptimizing (still true) is what keeps the overlay up
+      }
+      // A failed greedy solve (shouldn't happen - solveGreedyFallback has no throw path) just
+      // leaves the spinner fully covering an empty board; the optimal attempt is still in flight
+      // and gets the final say either way.
+    };
+    greedyWorker.postMessage({ ...baseRequest, forceGreedy: true } satisfies SolveRequest);
+
+    optimalWorkerRef.current?.terminate();
+    const optimalWorker = new Worker(new URL("./board/board-solver.worker.ts", import.meta.url), { type: "module" });
+    optimalWorkerRef.current = optimalWorker;
+
+    // runPasses's own shared deadline (board-solver.ts's SOLVE_TIMEOUT_MS) bounds a *returning*
+    // solver.Solve() call, but can't help if a call never returns at all - its branch-and-bound
+    // loop only checks the deadline between nodes, so one pathologically slow node (or simplex
+    // cycling on a degenerate root relaxation) can run for an unbounded time. This is the outer
+    // safety net for exactly that.
+    const watchdogTimer = setTimeout(() => {
+      if (optimalSettled) return;
+      optimalSettled = true;
+      console.warn("[App] board solver watchdog fired - the optimal attempt never returned in time, keeping the greedy result");
+      finishWithGreedyFallback("both the optimizer and the quick fallback took too long to respond");
+    }, WATCHDOG_MS);
+
+    optimalWorker.onmessage = (event: MessageEvent<SolveResponse>) => {
+      if (event.data.requestId !== requestIdRef.current) return; // stale response, ignore
+      if (optimalSettled) return;
+      optimalSettled = true;
+      clearTimeout(watchdogTimer);
+      if (event.data.status === "success") {
+        setAssignment(new Map(event.data.assignmentEntries));
+        setSolverIncompleteReason(event.data.solveStatus === "incomplete" ? event.data.message : undefined);
+        setSolverError(undefined);
+        setSolverState("success");
+        setSolverOptimizing(false);
+      } else {
+        finishWithGreedyFallback(event.data.error);
+      }
+    };
+    optimalWorker.postMessage({ ...baseRequest, forceGreedy: false } satisfies SolveRequest);
+
+    return () => {
+      clearTimeout(watchdogTimer);
+      greedyWorker.terminate();
+      optimalWorker.terminate();
+    };
   }, [board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds]);
 
   function toggleDevMode() {
@@ -339,16 +449,18 @@ export function App() {
     return () => clearInterval(interval);
   }, [fetchState]);
 
-  // Same purely-visual purpose as the fetch countdown above - actual enforcement is the
-  // solver's own per-pass timeout in board-solver.ts.
+  // Same purely-visual purpose as the fetch countdown above - actual enforcement is WATCHDOG_MS.
+  // Keyed on solverOptimizing, not solverState - the overlay (and this countdown alongside it)
+  // stays up for as long as the optimal attempt is still running, even after solverState has
+  // already flipped to "success" once the greedy result lands underneath it.
   useEffect(() => {
-    if (solverState !== "solving") return;
+    if (!solverOptimizing) return;
     setSolverSecondsRemaining(SOLVER_COUNTDOWN_SECONDS);
     const interval = setInterval(() => {
       setSolverSecondsRemaining((s) => Math.max(0, s - 1));
     }, 1000);
     return () => clearInterval(interval);
-  }, [solverState]);
+  }, [solverOptimizing]);
 
   // Drives RolloverCooldownModal - unconditional (not gated on login/fetch state, unlike the two
   // countdowns above) since the modal needs to cover the pre-login screen too (see its own
@@ -1013,13 +1125,13 @@ export function App() {
                   </>
                 )}
                 <div className="relative w-full">
-                  {solverState === "solving" && (
+                  {solverOptimizing && (
                     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/70 dark:bg-neutral-900/70">
-                      <p className="font-medium">Solving</p>
+                      <p className="font-medium">{solverState === "success" ? "Optimizing" : "Solving"}</p>
                       <Spinner size={64} seconds={solverSecondsRemaining} />
                     </div>
                   )}
-                  <div className={solverState === "solving" ? "pointer-events-none" : ""}>
+                  <div className={solverOptimizing ? "pointer-events-none" : ""}>
                     {viewMode === "table" ? (
                       <OperationsTable
                         board={board}

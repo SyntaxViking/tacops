@@ -243,8 +243,13 @@ function buildModel(
 
 // Safety net, not a tuned value - solver.Solve() runs synchronously (this library has no
 // async/worker mode of its own; we run the whole module inside a Web Worker instead so this
-// can't freeze the UI thread). Bounding each pass means the worst case is "slow and logged," not
-// "hangs forever."
+// can't freeze the UI thread). This bounds the WHOLE lexicographic sequence (see runPasses), not
+// each pass independently - model.timeout only ever bounds a single Solve() call (confirmed
+// against the library's own source: it computes `terminalTime = Date.now() + model.timeout` fresh
+// on every call), so setting the same value on every one of the 8 passes let the real worst case
+// reach 8x this - confirmed against a real hard instance where the UI looked permanently stuck
+// because every pass independently ground through its own full timeout before anything ever
+// reached the user.
 const SOLVE_TIMEOUT_MS = 10_000;
 
 // A timed-out branch-and-bound search can return variable values that aren't cleanly 0/1 even
@@ -270,26 +275,41 @@ type PassesResult = { result: SolveResult; status: "ok" | "degraded" } | { resul
 // depends on whether the resulting assignment actually leaves a board unrun - see
 // solveBoardAssignment - not on which of these internal paths produced it.
 function runPasses(model: LpModel): PassesResult {
-  model.timeout = SOLVE_TIMEOUT_MS;
+  // One shared deadline for the entire sequence - each pass's own model.timeout is however much
+  // of that budget is still left, not a fresh SOLVE_TIMEOUT_MS every time (see SOLVE_TIMEOUT_MS's
+  // own comment for why that matters).
+  const deadline = Date.now() + SOLVE_TIMEOUT_MS;
   let lastGoodResult: SolveResult | undefined;
   for (let i = 0; i < PASS_ORDER.length; i++) {
     const pass = PASS_ORDER[i];
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      console.warn(`[board-solver] out of time before pass "${pass.key}" could even start`);
+      return lastGoodResult ? { result: lastGoodResult, status: "degraded" } : { result: null, status: "failed" };
+    }
     model.optimize = pass.key;
     model.opType = pass.opType;
+    model.timeout = remainingMs;
     const startedAt = performance.now();
     const result = solver.Solve(model) as SolveResult;
     const elapsedMs = Math.round(performance.now() - startedAt);
-    const hitTimeout = elapsedMs >= SOLVE_TIMEOUT_MS;
-    const usable = result.feasible && isIntegralResult(model, result);
+    const hitTimeout = Date.now() >= deadline;
+    // A timed-out branch-and-bound search can land on a value that happens to look feasible and
+    // integral without actually being the true optimum for this pass - trusting it anyway would
+    // lock in a possibly-wrong `equal` constraint for every later pass. Treat a timeout exactly
+    // like "not usable" so this bails out (to the last fully-completed pass, or straight to the
+    // greedy fallback) immediately rather than locking in a questionable result and continuing.
+    const isIntegral = result.feasible && isIntegralResult(model, result);
+    const usable = !hitTimeout && isIntegral;
     console.log(
-      `[board-solver] pass "${pass.key}" (${i + 1}/${PASS_ORDER.length}): feasible=${result.feasible} integral=${usable || !result.feasible} result=${result.result} took ${elapsedMs}ms${hitTimeout ? " (HIT TIMEOUT)" : ""}`,
+      `[board-solver] pass "${pass.key}" (${i + 1}/${PASS_ORDER.length}): feasible=${result.feasible} integral=${isIntegral} result=${result.result} took ${elapsedMs}ms${hitTimeout ? " (HIT TIMEOUT)" : ""}`,
     );
     if (!usable) {
       if (lastGoodResult) {
-        console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result - falling back to the last completed pass's solution`);
+        console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result${hitTimeout ? " (timed out)" : ""} - falling back to the last completed pass's solution`);
         return { result: lastGoodResult, status: "degraded" };
       }
-      console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result and there's no earlier fallback`);
+      console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result${hitTimeout ? " (timed out)" : ""} and there's no earlier fallback - falling back to the greedy solver`);
       return { result: null, status: "failed" };
     }
     lastGoodResult = result;
@@ -333,30 +353,41 @@ export function findMinimalRequiredSubset(assignedIds: string[], groupRequiremen
   return best ?? new Set(assignedIds);
 }
 
-// An anti-favorited unit is deliberately treated exactly like an XP-capped one for growth/fill
-// purposes: deploying either wastes a growth opportunity (capped, no XP left to gain) or works
-// against the player's own stated intent (anti-favorited) when an equally-usable alternative
-// exists, so both get zeroed out of the xpGain-maximizing pass (see effectiveXpGain) and sink to
-// the bottom of fillComparator's preference order - only ever used when no other eligible unit can
-// fill the slot.
-function isDeprioritizedForGrowth(unit: RosterCharacter): boolean {
-  return isXpCapped(unit.rarity, unit.xpLevel) || unit.isAntiFavorited;
+// How undesirable a unit is to deploy when there's no objective-coverage signal to go on - higher
+// is worse. XP-capped sinks to the very bottom (rank 2): it's not just undesirable, it's strictly
+// the least optimal pick possible, since deploying it buys literally nothing (no growth left to
+// gain) for the same opportunity cost as any other choice. Anti-favorited (rank 1) works against
+// the player's own stated intent, which is worse than a neutral pick but still strictly better
+// than an XP-capped one - it can still gain real XP, it's just not wanted. Both are only ever used
+// when no better-ranked eligible unit can fill the slot.
+function avoidRank(unit: RosterCharacter): number {
+  if (isXpCapped(unit.rarity, unit.xpLevel)) return 2;
+  if (unit.isAntiFavorited) return 1;
+  return 0;
 }
 
+// Mirrors avoidRank as a small negative penalty on the xpGain-maximizing LP pass (see buildModel),
+// rather than a flat 0 for both categories as before - that flattening was the actual bug: with
+// no growth-eligible alternative in play, the xpGain pass had no signal left to prefer an
+// anti-favorited unit (which can still gain real XP) over an XP-capped one (which never will), so
+// the final powerUsed tiebreaker alone could easily let a higher-power XP-capped unit win a slot
+// over an anti-favorited one. These penalties are far smaller in magnitude than any real
+// estimateXpGain value (ROUGH_XP_PER_LEVEL=17 per level), so they only ever matter as a tiebreaker
+// in exactly that no-better-option case - they can't outweigh a real growth-eligible candidate.
 function effectiveXpGain(unit: RosterCharacter): number {
-  return isDeprioritizedForGrowth(unit) ? 0 : estimateXpGain(unit.rarity, unit.xpLevel);
+  const rank = avoidRank(unit);
+  return rank > 0 ? -rank : estimateXpGain(unit.rarity, unit.xpLevel);
 }
 
-// Shared "who to prefer when there's no objective-coverage signal to go on" ordering: units
-// deprioritized for growth (capped or anti-favorited, see isDeprioritizedForGrowth) sink to the
-// bottom, then favorited units are preferred, then by power descending (falling back to
-// last-place, not 0, when power is unknown - an uncomputed power shouldn't look weaker than a
-// genuinely low-power character). Negative return means `a` is preferred over `b`, matching
+// Shared "who to prefer when there's no objective-coverage signal to go on" ordering for the
+// greedy fallback: avoidRank ascending (so XP-capped sinks below anti-favorited, below everyone
+// else), then favorited units are preferred, then by power descending (falling back to last-place,
+// not 0, when power is unknown - an uncomputed power shouldn't look weaker than a genuinely
+// low-power character). Negative return means `a` is preferred over `b`, matching
 // Array.prototype.sort's contract.
 function fillComparator(a: RosterCharacter, b: RosterCharacter): number {
-  const aAvoid = isDeprioritizedForGrowth(a) ? 1 : 0;
-  const bAvoid = isDeprioritizedForGrowth(b) ? 1 : 0;
-  if (aAvoid !== bAvoid) return aAvoid - bAvoid;
+  const rankDiff = avoidRank(a) - avoidRank(b);
+  if (rankDiff !== 0) return rankDiff;
   const aFav = a.isFavorited ? 1 : 0;
   const bFav = b.isFavorited ? 1 : 0;
   if (aFav !== bFav) return bFav - aFav;
@@ -575,6 +606,14 @@ export function solveBoardAssignment(
   priorityOrder: [PriorityKey, PriorityKey, PriorityKey, PriorityKey],
   favoritedCharacterIds: ReadonlySet<string> = new Set(),
   antiFavoritedCharacterIds: ReadonlySet<string> = new Set(),
+  // Set by the worker's watchdog retry (see board-solver.worker.ts) when a first attempt never
+  // came back at all - runPasses's own shared deadline (SOLVE_TIMEOUT_MS) bounds a *returning*
+  // solver.Solve() call, but can't help if a single call never returns in the first place (a real
+  // risk with this library - its branch-and-bound loop only checks the deadline between nodes, so
+  // one pathologically slow node, or simplex cycling on a degenerate root relaxation, can run past
+  // it for an unbounded amount of time). skipLp bypasses the LP entirely and goes straight to the
+  // greedy fallback, which has no such risk (polynomial, no search).
+  skipLp = false,
 ): SolveBoardAssignmentResult {
   const openBoards = board.filter((entry) => !entryIsUnavailable(entry));
   if (openBoards.length === 0) {
@@ -582,6 +621,14 @@ export function solveBoardAssignment(
   }
 
   const roster = buildRoster(heroes, committedCharacterIds(board), favoritedCharacterIds, antiFavoritedCharacterIds);
+
+  if (skipLp) {
+    console.warn("[board-solver] skipping the LP entirely (watchdog retry) - going straight to the greedy fallback");
+    const assignment = solveGreedyFallback(openBoards, roster);
+    const incomplete = [...assignment.values()].some((solution) => !solution.run);
+    return incomplete ? { assignment, status: "incomplete", message: INCOMPLETE_BOARD_MESSAGE } : { assignment, status: "ok" };
+  }
+
   const built = buildModel(openBoards, roster, priorityOrder);
   const variableCount = Object.keys(built.model.variables).length;
   const constraintCount = Object.keys(built.model.constraints).length;

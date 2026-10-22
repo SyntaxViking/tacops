@@ -9,6 +9,10 @@ export interface SolveRequest {
   priorityOrder: [PriorityKey, PriorityKey, PriorityKey, PriorityKey];
   favoritedCharacterIds: string[];
   antiFavoritedCharacterIds: string[];
+  // Set by App.tsx's watchdog when a previous request for this same data never came back at all
+  // (see its own comment) - skips the LP entirely and goes straight to the greedy fallback, which
+  // can't hang the way the LP can.
+  forceGreedy?: boolean;
 }
 
 // "status" here is the worker-protocol outcome (did the call throw an unexpected exception);
@@ -31,7 +35,7 @@ export type SolveResponse =
     };
 
 self.onmessage = (event: MessageEvent<SolveRequest>) => {
-  const { requestId, board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds } = event.data;
+  const { requestId, board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds, forceGreedy } = event.data;
   try {
     const { assignment, status, message } = solveBoardAssignment(
       board,
@@ -39,6 +43,7 @@ self.onmessage = (event: MessageEvent<SolveRequest>) => {
       priorityOrder,
       new Set(favoritedCharacterIds),
       new Set(antiFavoritedCharacterIds),
+      forceGreedy,
     );
     const response: SolveResponse = {
       requestId,
