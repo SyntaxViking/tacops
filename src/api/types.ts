@@ -184,6 +184,26 @@ export interface PlanetLeaderboard {
   againstParticipants: number | null;
 }
 
+// The shared, account-agnostic subset of a planet's leaderboard data cached in D1 by
+// worker/poller.ts (worker/leaderboard-cache.ts) and served by GET /api/leaderboard-cache - never
+// myRank/myPoints/nearMe, which only make sense for whichever account fetched them. Drives both
+// the ~1-minute client freshness-poll (src/App.tsx) and the logged-out home page's side/faction
+// leaderboards - see crusade-cache-seed.ts's toSeededPlanetLeaderboard for how this maps into the
+// per-account PlanetLeaderboard shape every existing Crusades-tab component already renders.
+export interface SharedSideLeaderboard {
+  numParticipants: number;
+  benchmarks: LeaderboardBenchmark[];
+  topEntries: LeaderboardBenchmark[];
+}
+
+export interface SharedPlanetLeaderboard {
+  topFactionsFor: CrusadeFactionStanding[];
+  topFactionsAgainst: CrusadeFactionStanding[];
+  sideFor: SharedSideLeaderboard | null;
+  sideAgainst: SharedSideLeaderboard | null;
+  fetchedAt: number;
+}
+
 // Per-planet leaderboard fetch/refresh state, owned in App.tsx and threaded down through the
 // Crusades tab's cards/tables - drives the fetched-at timestamp, the loading spinner overlay, and
 // the manual refresh button's disabled state.

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { CrusadeTab } from "./CrusadeTab";
 import { FactionPicker } from "./FactionPicker";
 import { fetchCrusadeCache, type CrusadeCacheResponse } from "../api/fetch-crusade-cache";
-import { seedPlanetRefreshStateFromCache } from "../api/crusade-cache-seed";
+import { fetchLeaderboardCache, type LeaderboardCacheResponse } from "../api/fetch-leaderboard-cache";
+import { seedPlanetRefreshStateFromCache, toSeededPlanetLeaderboard } from "../api/crusade-cache-seed";
 import { getOrCreateAnonymousId } from "../api/anonymous-id";
 import { trackAnonymousUsage } from "../track-usage";
 import { factionSide } from "../factions/faction-side";
@@ -14,9 +15,11 @@ const SELECTED_FACTION_STORAGE_KEY = "tacops:selectedFactionId";
 const EMPTY_FAVORITED_PLANET_IDS = new Set<string>();
 
 // The home page's read-only crusade view for a visitor who hasn't pressed "8" (see App.tsx) - no
-// credentials, no login form, just whatever the background poller (worker/poller.ts) has cached.
-// Fetches once on mount and never again: no polling, no manual refresh - if the visitor wants
-// fresher data, they refresh the page, per the product decision to keep this path simple for now.
+// credentials, no login form, just whatever the background poller (worker/poller.ts) has cached -
+// now including per-planet leaderboard data (worker/leaderboard-cache.ts), not just crusade
+// ownership/points. Fetches once on mount and never again: no polling, no manual refresh - if the
+// visitor wants fresher data, they refresh the page, per the product decision to keep this path
+// simple for now.
 export function AnonymousCrusadeSection() {
   // The layout only ever appears in a logged-in GET_PLAYER response, which an anonymous visitor
   // doesn't have - but it's the same for every player, so a snapshot is bundled (rebuilt by
@@ -34,6 +37,7 @@ export function AnonymousCrusadeSection() {
     }
   });
   const [cache, setCache] = useState<CrusadeCacheResponse | null>(null);
+  const [leaderboardCache, setLeaderboardCache] = useState<LeaderboardCacheResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,6 +55,11 @@ export function AnonymousCrusadeSection() {
         console.error("[AnonymousCrusadeSection] fetchCrusadeCache failed", err);
         setError(`Failed to load cached crusade data: ${err}`);
       });
+    // Independent of the crusade-cache fetch above (and never blocks it) - a failure here just
+    // means planets render with no leaderboard data, same as before this cache existed.
+    fetchLeaderboardCache()
+      .then(setLeaderboardCache)
+      .catch((err) => console.error("[AnonymousCrusadeSection] fetchLeaderboardCache failed", err));
   }, []);
 
   function selectFaction(factionId: string) {
@@ -62,16 +71,31 @@ export function AnonymousCrusadeSection() {
     }
   }
 
-  const { crusadeData, planetRefreshState } = useMemo(
-    () => (cache ? seedPlanetRefreshStateFromCache(cache) : { crusadeData: null, planetRefreshState: new Map() }),
-    [cache],
-  );
-
   // "for" = Imperial factions, "against" = Xenos/Chaos (Devastation) - see factionSide. Biases
-  // initial Domination sort order toward the visitor's chosen side.
+  // initial Domination sort order toward the visitor's chosen side, and also decides which side's
+  // Side Leaderboard breakdown appears below - same "no personal rank, fall back to chosenSide"
+  // shape as a logged-in user with no rank on a given planet (mergeSideLeaderboard's own
+  // fallback, src/api/fetch-crusade-data.ts). Defaults to "for" before a faction is picked -
+  // arbitrary, but consistent with that same existing fallback behavior.
   const selectedSide = selectedFactionId ? factionSide(selectedFactionId) : undefined;
   const defaultDominationSortMode: DominationSortMode | undefined =
     selectedSide === "against" ? "devastationFirst" : selectedSide === "for" ? "imperialFirst" : undefined;
+
+  const { crusadeData, planetRefreshState } = useMemo(() => {
+    const seeded = cache ? seedPlanetRefreshStateFromCache(cache) : { crusadeData: null, planetRefreshState: new Map() };
+    if (!leaderboardCache) return seeded;
+    const chosenSideForMerge = selectedSide ?? "for";
+    for (const [planetId, entry] of seeded.planetRefreshState) {
+      const cachedLeaderboard = leaderboardCache.entries[planetId];
+      if (!cachedLeaderboard) continue;
+      seeded.planetRefreshState.set(planetId, {
+        ...entry,
+        leaderboard: toSeededPlanetLeaderboard(planetId, cachedLeaderboard, chosenSideForMerge),
+        lastSuccessAt: cachedLeaderboard.fetchedAt,
+      });
+    }
+    return seeded;
+  }, [cache, leaderboardCache, selectedSide]);
 
   return (
     <div className="w-full max-w-4xl">

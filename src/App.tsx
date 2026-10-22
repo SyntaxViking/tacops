@@ -34,7 +34,8 @@ import { storeWebCredential } from "./api/store-web-credential";
 import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
 import { getDevDataSource, setDevDataSource, type DevDataSource } from "./api/dev-data-source";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
-import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
+import { fetchLeaderboardCache } from "./api/fetch-leaderboard-cache";
+import { seedPlanetRefreshStateFromCache, toSeededPlanetLeaderboard } from "./api/crusade-cache-seed";
 import { isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
@@ -505,6 +506,24 @@ export function App() {
         setCrusadeData(seededCrusadeData);
         planetRefreshStateRef.current = seeded;
         setPlanetRefreshState(seeded);
+
+        // Second fast-paint pass, chained after the crusade snapshot above so there's something
+        // to merge leaderboard data into - fills in the shared D1 leaderboard cache (worker/
+        // poller.ts) for every seeded planet, still guarded the same way so a slow response here
+        // can never clobber a real fetch that's already landed.
+        fetchLeaderboardCache()
+          .then(({ entries }) => {
+            if (sessionParamsRef.current) return;
+            const merged = new Map(planetRefreshStateRef.current);
+            for (const [planetId, entry] of merged) {
+              const cachedLeaderboard = entries[planetId];
+              if (!cachedLeaderboard) continue;
+              merged.set(planetId, { ...entry, leaderboard: toSeededPlanetLeaderboard(planetId, cachedLeaderboard, seededCrusadeData.chosenSide), lastSuccessAt: cachedLeaderboard.fetchedAt });
+            }
+            planetRefreshStateRef.current = merged;
+            setPlanetRefreshState(merged);
+          })
+          .catch((error) => console.error("[App] go(): fetchLeaderboardCache seed failed", error));
       })
       .catch((error) => console.error("[App] go(): fetchCrusadeCache seed failed", error));
 
@@ -765,7 +784,48 @@ export function App() {
       }
     }
 
-    const workers = [...Array.from({ length: AUTO_REFRESH_WORKERS }, () => worker()), crusadeScoreRefreshLoop()];
+    // Independent ~1-minute cadence: checks the shared D1 leaderboard cache (worker/poller.ts)
+    // and adopts any entry fresher than what's held locally, serving it directly rather than
+    // triggering a live fetch - pure D1 reads, no additional write pressure or game-server load.
+    // Covers every planet currently in planetRefreshState, not just starred ones (unlike
+    // claimEligiblePlanet's isPlanetAutoRefreshable gate, which only bounds *live* fetch cost -
+    // that doesn't apply to reading an already-fetched cache). The "only adopt if strictly
+    // newer" check means this can never regress a planet kept fresher by the worker pool above or
+    // the live-tracker loop.
+    async function leaderboardCacheFreshnessLoop() {
+      while (generationRef.current === myGeneration) {
+        await new Promise((resolve) => setTimeout(resolve, 60_000));
+        if (generationRef.current !== myGeneration) return;
+        try {
+          const { entries } = await fetchLeaderboardCache();
+          const chosenSide = crusadeDataRef.current?.chosenSide ?? "";
+          const current = planetRefreshStateRef.current;
+          const next = new Map(current);
+          let changed = false;
+          for (const [planetId, cached] of Object.entries(entries)) {
+            const entry = current.get(planetId);
+            if (!entry || entry.isLoading) continue;
+            if (entry.lastSuccessAt !== null && cached.fetchedAt <= entry.lastSuccessAt) continue;
+            next.set(planetId, {
+              leaderboard: toSeededPlanetLeaderboard(planetId, cached, chosenSide),
+              lastSuccessAt: cached.fetchedAt,
+              lastAttemptAt: Date.now(),
+              lastAttemptFailed: false,
+              isLoading: false,
+            });
+            changed = true;
+          }
+          if (changed) {
+            planetRefreshStateRef.current = next;
+            setPlanetRefreshState(next);
+          }
+        } catch (error) {
+          console.error("[App] leaderboardCacheFreshnessLoop failed", error);
+        }
+      }
+    }
+
+    const workers = [...Array.from({ length: AUTO_REFRESH_WORKERS }, () => worker()), crusadeScoreRefreshLoop(), leaderboardCacheFreshnessLoop()];
     return () => {
       generationRef.current++;
       void workers;
