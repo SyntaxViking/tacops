@@ -140,6 +140,27 @@ describe("solveGreedyFallback", () => {
     expect(solution.optionalCharacterIds).toEqual([]);
   });
 
+  it("displays requiredCharacterIds sorted by power descending, same as optionalCharacterIds", () => {
+    // Two non-overlapping objectives, each coverable by only one candidate, so both end up
+    // required - the lower-power one is discovered first (board-building order), which would
+    // leave it first in an unsorted result; the DISPLAYED order should still be power descending.
+    const lowPowerFlyer = character("lowPowerFlyer", { power: 10, profile: profile({ traits: ["Flying"] }) });
+    const highPowerBolter = character("highPowerBolter", { power: 9999, profile: profile({ damageProfiles: ["Bolter"] }) });
+    const twoObjectiveBoard = board({
+      participants: 2,
+      bonusObjectives: [
+        { objectiveType: "Trait", objectiveTarget: "Flying" },
+        { objectiveType: "DamageType", objectiveTarget: "Bolter" },
+      ],
+    });
+
+    const result = solveGreedyFallback([twoObjectiveBoard], [lowPowerFlyer, highPowerBolter]);
+
+    const solution = result.get("exp")!;
+    expect(solution.bonusCompleted).toBe(true);
+    expect(solution.requiredCharacterIds).toEqual(["highPowerBolter", "lowPowerFlyer"]);
+  });
+
   it("falls back to a rank fill that prefers an uncapped character over a higher-rank capped one", () => {
     const cappedHigh = character("cappedHigh", { rank: Rank.Adamantine2, rarity: Rarity.Mythic, xpLevel: 60 }); // xpLevelCap[Mythic] = 60
     const uncappedLow = character("uncappedLow", { rank: Rank.Iron1, rarity: Rarity.Common, xpLevel: 0 });
@@ -242,6 +263,20 @@ describe("solveGreedyFallback", () => {
     expect(result.get("exp")!.run).toBe(true);
     expect(result.get("exp")!.optionalCharacterIds).toEqual(["antiFavoritedOnly"]);
   });
+
+  it("prefers an anti-favorited character over an XP-capped one, even when the capped one has far higher power", () => {
+    // Reported bug: XP-capped and anti-favorited used to share one flat "avoid" tier, so this fell
+    // through to the plain power tiebreak and the capped unit (strictly the worst possible pick -
+    // it can't gain anything from being deployed) won purely on power. XP-capped must rank below
+    // anti-favorited regardless of power.
+    const cappedHighPower = character("cappedHighPower", { rarity: Rarity.Mythic, xpLevel: 60, power: 9999 });
+    const antiFavoritedLowPower = character("antiFavoritedLowPower", { power: 1, isAntiFavorited: true });
+    const unsolvableBoard = board({ bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Necrons" }] });
+
+    const result = solveGreedyFallback([unsolvableBoard], [cappedHighPower, antiFavoritedLowPower]);
+
+    expect(result.get("exp")!.optionalCharacterIds).toEqual(["antiFavoritedLowPower"]);
+  });
 });
 
 describe("solveBoardAssignment", () => {
@@ -335,6 +370,28 @@ describe("solveBoardAssignment", () => {
 
     const plainResult = solveBoardAssignment([toxicBoard], [withoutRelic], priority).assignment.get("exp")!;
     expect(plainResult.bonusCompleted).toBe(false);
+  });
+
+  it("skips the LP entirely and uses the greedy fallback when skipLp is set", () => {
+    // Same shape as the very first test above (a single Common slot, two candidates differing
+    // only on power) - skipLp=true should still produce a complete, sensible assignment via
+    // solveGreedyFallback, not an empty/failed one, confirming the watchdog's forced-greedy retry
+    // (see board-solver.worker.ts/App.tsx) actually reaches a usable result.
+    const weakHero: RawUnit = { id: "ultraTigurius", power: 100 };
+    const strongHero: RawUnit = { id: "ultraEliminatorSgt", power: 9999 };
+    const openBoard = board({ rarity: "Common", category: "all_vanguard" });
+
+    const { assignment, status } = solveBoardAssignment(
+      [openBoard],
+      [weakHero, strongHero],
+      ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
+      new Set(),
+      new Set(),
+      true,
+    );
+
+    expect(status).toBe("ok");
+    expect(assignment.get("exp")!.run).toBe(true);
   });
 });
 
