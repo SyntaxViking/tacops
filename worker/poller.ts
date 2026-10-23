@@ -35,9 +35,10 @@
 import { getPlanetData, getSectorMapData } from "../src/assets/seasons";
 import { bootstrapSession, environmentConfig, fetchCrusadeDataWithSession, type Session } from "./loki-client";
 import { buildLeaderboardCacheUpsertStatement, fetchSharedPlanetLeaderboard } from "./leaderboard-cache";
-import { buildBucketUpsertStatements, rawPlanetToCrusadePlanet } from "./planet-history";
+import { buildBucketUpsertStatements } from "./planet-history";
 import { eligibleStrugglePlanetIds } from "./struggle-eligibility";
 import { isInRolloverWindow } from "../src/rollover-window";
+import { findActivePhase, mapCrusadeResponseData } from "../src/crusade/crusade-data-mapping";
 import type { CrusadePlanet, CrusadeSectorMap } from "../src/api/types";
 
 const SESSION_MAX_AGE_MS = 4 * 60 * 60 * 1000; // no documented Loki session TTL - defensive reuse window
@@ -60,35 +61,7 @@ const MAX_ITERATIONS_PER_TICK = 200;
 // for keeping D1 write volume bounded - see this file's top-of-file write-budget math.
 const MAX_STRUGGLE_PLANETS_PER_TICK = 4;
 
-interface RawCrusadePhase {
-  phase: string;
-  zone?: string;
-  startsOn: number;
-  endsOn: number;
-}
-
 type Phase = "CRUSADE" | "STRUGGLE" | "DOWNTIME" | null;
-
-// Byte-identical copy of src/api/fetch-crusade-data.ts's findActivePhase - duplicated rather than
-// imported because that module pulls in @tauri-apps/api/core and browser-only fetch helpers that
-// don't belong in the Workers runtime. Keep the two in sync by hand if the phase-schedule shape
-// ever changes.
-export function findActivePhase(
-  downtimePhase: RawCrusadePhase | undefined,
-  crusadePhases: RawCrusadePhase[],
-  strugglePhase: RawCrusadePhase | undefined,
-): { phase: Phase; activeZone: number | null } {
-  const now = Date.now();
-  const allPhases = [downtimePhase, ...crusadePhases, strugglePhase].filter((p): p is RawCrusadePhase => p !== undefined);
-  const active = allPhases.find((p) => now >= p.startsOn && now < p.endsOn);
-  if (!active) return { phase: null, activeZone: null };
-
-  if (active.phase !== "CRUSADE" || !active.zone) {
-    return { phase: active.phase as Phase, activeZone: null };
-  }
-  const oneBased = parseInt(active.zone.replace("zone", ""), 10);
-  return { phase: "CRUSADE", activeZone: Number.isNaN(oneBased) ? null : oneBased - 1 };
-}
 
 // CRUSADE (Expansion)'s own eligibility/history-coverage list: only the active zone's planets -
 // operates on the local static planet-data.json asset, not on a Loki response. During STRUGGLE
@@ -100,15 +73,6 @@ export function relevantPlanetIds(phase: Phase, activeZone: number | null): stri
   if (phase === "STRUGGLE") return planets.map((p) => p.planetId);
   if (phase === "CRUSADE" && activeZone !== null) return planets.filter((p) => p.zone === activeZone).map((p) => p.planetId);
   return [];
-}
-
-interface RawCrusadePlanetData {
-  planetId: string;
-  sideOwner?: string;
-  ownedByFaction?: string;
-  pointsFor?: number;
-  pointsAgainst?: number;
-  struggleData?: CrusadePlanet["struggleData"];
 }
 
 interface CursorRow {
@@ -253,41 +217,25 @@ async function runRebuildStep(
     return { didWork: true, phase: null };
   }
 
-  const active = findActivePhase(data?.downtimePhase, data?.crusadePhases ?? [], data?.strugglePhase);
-  const crusadeId = data?.crusadeId ?? "";
-  const seasonNumber = data?.seasonNumber ?? 0;
-  const rawPlanets = (data?.planetsData ?? []) as RawCrusadePlanetData[];
-  const planetsById = new Map(rawPlanets.map((p) => [p.planetId, p]));
+  // One shared mapper (src/crusade/crusade-data-mapping.ts) for the whole raw response - phase/
+  // activeZone (findActivePhase) and every planet (with real name/zone lookups, not placeholders)
+  // in one pass, same as the client's own live fetch and crusade-cache-seed.ts's cached-replay
+  // path use.
+  const mapped = mapCrusadeResponseData(data);
+  const active = { phase: mapped.phase, activeZone: mapped.activeZone };
+  const crusadeId = mapped.crusadeId;
+  const seasonNumber = mapped.seasonNumber;
+  const planetsById = new Map(mapped.planets.map((p) => [p.planetId, p]));
 
   const historyPlanetIds = relevantPlanetIds(active.phase, active.activeZone);
-  const historyPlanets: CrusadePlanet[] = historyPlanetIds.map((planetId) => {
-    const raw = planetsById.get(planetId);
-    return rawPlanetToCrusadePlanet({
-      planetId,
-      sideOwner: raw?.sideOwner,
-      ownedByFaction: raw?.ownedByFaction,
-      pointsFor: raw?.pointsFor,
-      pointsAgainst: raw?.pointsAgainst,
-      struggleData: raw?.struggleData,
-    });
-  });
+  const historyPlanets = historyPlanetIds.map((planetId) => planetsById.get(planetId)).filter((p): p is CrusadePlanet => p !== undefined);
   const historyStatements = await buildBucketUpsertStatements(db, historyPlanets, nowMs);
 
   let eligiblePlanetIds: string[] = [];
   if (active.phase === "CRUSADE") {
     eligiblePlanetIds = historyPlanetIds;
   } else if (active.phase === "STRUGGLE") {
-    const allPlanets: CrusadePlanet[] = rawPlanets.map((raw) =>
-      rawPlanetToCrusadePlanet({
-        planetId: raw.planetId,
-        sideOwner: raw.sideOwner,
-        ownedByFaction: raw.ownedByFaction,
-        pointsFor: raw.pointsFor,
-        pointsAgainst: raw.pointsAgainst,
-        struggleData: raw.struggleData,
-      }),
-    );
-    eligiblePlanetIds = eligibleStrugglePlanetIds(allPlanets, getSectorMapData() as CrusadeSectorMap, nowMs);
+    eligiblePlanetIds = eligibleStrugglePlanetIds(mapped.planets, getSectorMapData() as CrusadeSectorMap, nowMs);
   }
 
   const snapshotStatement = db

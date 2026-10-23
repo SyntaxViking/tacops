@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { seedPlanetRefreshStateFromCache } from "./crusade-cache-seed";
+import { seedPlanetRefreshStateFromCache, toSeededPlanetLeaderboard } from "./crusade-cache-seed";
 import type { CrusadeCacheResponse } from "./fetch-crusade-cache";
+import type { SharedPlanetLeaderboard } from "./types";
 
 const CRUSADE_ID = "crusade1";
 const SEASON = 3;
@@ -68,5 +69,47 @@ describe("seedPlanetRefreshStateFromCache", () => {
     expect(result.crusadeData?.phase).toBe("STRUGGLE");
     expect(result.planetRefreshState.has("planet_003")).toBe(true);
     expect(result.planetRefreshState.has("planet_002")).toBe(true);
+  });
+});
+
+const sharedCache: SharedPlanetLeaderboard = {
+  topFactionsFor: [{ factionId: "Ultramarines", points: 500 }],
+  topFactionsAgainst: [{ factionId: "Necrons", points: 400 }],
+  sideFor: { numParticipants: 100, benchmarks: [{ rank: 1, points: 9000 }], topEntries: [{ rank: 1, points: 9000 }] },
+  sideAgainst: { numParticipants: 80, benchmarks: [{ rank: 1, points: 8000 }], topEntries: [{ rank: 1, points: 8000 }] },
+  perFaction: { Ultramarines: { numParticipants: 50, benchmarks: [{ rank: 1, points: 7000 }], topEntries: [{ rank: 1, points: 7000 }] } },
+  fetchedAt: now,
+};
+
+describe("toSeededPlanetLeaderboard", () => {
+  it("picks the side matching chosenSide, with no personal rank", () => {
+    const result = toSeededPlanetLeaderboard("planet_003", sharedCache, "For", null);
+    expect(result.side).toEqual({ numParticipants: 100, myRank: null, myPoints: null, benchmarks: [{ rank: 1, points: 9000 }], topEntries: [{ rank: 1, points: 9000 }], nearMe: [] });
+  });
+
+  it("matches chosenSide case-insensitively and picks the against side", () => {
+    const result = toSeededPlanetLeaderboard("planet_003", sharedCache, "against", null);
+    expect(result.side?.numParticipants).toBe(80);
+  });
+
+  it("populates .faction from perFaction when factionId is given and cached", () => {
+    const result = toSeededPlanetLeaderboard("planet_003", sharedCache, "for", "Ultramarines");
+    expect(result.faction).toEqual({ numParticipants: 50, myRank: null, myPoints: null, benchmarks: [{ rank: 1, points: 7000 }], topEntries: [{ rank: 1, points: 7000 }], nearMe: [] });
+  });
+
+  it("leaves .faction null when factionId is null", () => {
+    expect(toSeededPlanetLeaderboard("planet_003", sharedCache, "for", null).faction).toBeNull();
+  });
+
+  it("leaves .faction null when the requested faction isn't in perFaction", () => {
+    expect(toSeededPlanetLeaderboard("planet_003", sharedCache, "for", "Necrons").faction).toBeNull();
+  });
+
+  it("always keeps topFactionsFor/topFactionsAgainst and both sides' participant counts, regardless of chosenSide/factionId", () => {
+    const result = toSeededPlanetLeaderboard("planet_003", sharedCache, "for", "Ultramarines");
+    expect(result.topFactionsFor).toEqual(sharedCache.topFactionsFor);
+    expect(result.topFactionsAgainst).toEqual(sharedCache.topFactionsAgainst);
+    expect(result.forParticipants).toBe(100);
+    expect(result.againstParticipants).toBe(80);
   });
 });

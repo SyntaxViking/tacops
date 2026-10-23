@@ -6,7 +6,7 @@ import { fetchLeaderboardCache, type LeaderboardCacheResponse } from "../api/fet
 import { seedPlanetRefreshStateFromCache, toSeededPlanetLeaderboard } from "../api/crusade-cache-seed";
 import { getOrCreateAnonymousId } from "../api/anonymous-id";
 import { trackAnonymousUsage } from "../track-usage";
-import { factionSide } from "../factions/faction-side";
+import { factionSide, FACTION_SIDE } from "../factions/faction-side";
 import type { DominationSortMode } from "../crusade/crusade-domination-view-model";
 import { getSectorMapData } from "../assets/seasons";
 import type { CrusadeSectorMap } from "../api/types";
@@ -85,17 +85,23 @@ export function AnonymousCrusadeSection() {
     const seeded = cache ? seedPlanetRefreshStateFromCache(cache) : { crusadeData: null, planetRefreshState: new Map() };
     if (!leaderboardCache) return seeded;
     const chosenSideForMerge = selectedSide ?? "for";
+    // Arbitrary default before any faction is picked - matches FactionPicker's first rendered
+    // icon. Which faction's "Faction Leaderboard" cell shows is driven entirely by this picker.
+    const factionIdForLeaderboard = selectedFactionId ?? Object.keys(FACTION_SIDE)[0];
     for (const [planetId, entry] of seeded.planetRefreshState) {
       const cachedLeaderboard = leaderboardCache.entries[planetId];
       if (!cachedLeaderboard) continue;
       seeded.planetRefreshState.set(planetId, {
         ...entry,
-        leaderboard: toSeededPlanetLeaderboard(planetId, cachedLeaderboard, chosenSideForMerge),
+        leaderboard: toSeededPlanetLeaderboard(planetId, cachedLeaderboard, chosenSideForMerge, factionIdForLeaderboard),
         lastSuccessAt: cachedLeaderboard.fetchedAt,
       });
     }
     return seeded;
-  }, [cache, leaderboardCache, selectedSide]);
+    // selectedFactionId must be a dependency in its own right, not just via selectedSide - two
+    // different factions on the same side share a selectedSide, so relying on that alone would
+    // silently fail to update the faction leaderboard cell when switching between them.
+  }, [cache, leaderboardCache, selectedSide, selectedFactionId]);
 
   return (
     <div className="w-full max-w-4xl">

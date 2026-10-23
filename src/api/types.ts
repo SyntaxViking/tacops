@@ -201,6 +201,12 @@ export interface SharedPlanetLeaderboard {
   topFactionsAgainst: CrusadeFactionStanding[];
   sideFor: SharedSideLeaderboard | null;
   sideAgainst: SharedSideLeaderboard | null;
+  // One specific faction's players ranked against each other, keyed by factionId - covers every
+  // faction (src/factions/faction-side.ts's FACTION_SIDE), not just whichever one a given viewer
+  // belongs to, so the logged-out home page's FactionPicker can show any of them and a logged-in
+  // user's own faction can be looked up immediately at first paint. Missing key means that
+  // faction's leaderboard wasn't cached for this planet (not the same as a stored null).
+  perFaction: Record<string, SharedSideLeaderboard>;
   fetchedAt: number;
 }
 

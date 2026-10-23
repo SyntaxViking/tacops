@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findActivePhase, relevantPlanetIds } from "./poller";
+import { relevantPlanetIds } from "./poller";
 
 describe("relevantPlanetIds", () => {
   it("returns all 143 planets during STRUGGLE", () => {
@@ -20,29 +20,5 @@ describe("relevantPlanetIds", () => {
 
   it("returns nothing for CRUSADE with no active zone", () => {
     expect(relevantPlanetIds("CRUSADE", null)).toEqual([]);
-  });
-});
-
-describe("findActivePhase", () => {
-  const now = Date.now();
-
-  it("resolves a CRUSADE phase's 1-based zone string down to a 0-based activeZone", () => {
-    const result = findActivePhase(undefined, [{ phase: "CRUSADE", zone: "zone3", startsOn: now - 1000, endsOn: now + 1000 }], undefined);
-    expect(result).toEqual({ phase: "CRUSADE", activeZone: 2 });
-  });
-
-  it("resolves STRUGGLE with no activeZone", () => {
-    const result = findActivePhase(undefined, [], { phase: "STRUGGLE", startsOn: now - 1000, endsOn: now + 1000 });
-    expect(result).toEqual({ phase: "STRUGGLE", activeZone: null });
-  });
-
-  it("resolves DOWNTIME with no activeZone", () => {
-    const result = findActivePhase({ phase: "DOWNTIME", startsOn: now - 1000, endsOn: now + 1000 }, [], undefined);
-    expect(result).toEqual({ phase: "DOWNTIME", activeZone: null });
-  });
-
-  it("returns phase: null when nothing brackets now", () => {
-    const result = findActivePhase({ phase: "DOWNTIME", startsOn: now - 2000, endsOn: now - 1000 }, [], undefined);
-    expect(result).toEqual({ phase: null, activeZone: null });
   });
 });

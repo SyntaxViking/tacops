@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFactionLeaderboard, findActivePhase, mergeSideLeaderboard, readLeaderboard, resolveMyFactionId } from "./fetch-crusade-data";
+import { buildFactionLeaderboard, mergeSideLeaderboard } from "./fetch-crusade-data";
 
 // Points taken from a real captured GET_LEADERBOARD_2 response (planet_041, crusadePlayer
 // "_against" leaderboard) - the player (myRank 53) doesn't place in the top 25 shown here, which
@@ -111,20 +111,6 @@ describe("mergeSideLeaderboard", () => {
   });
 });
 
-describe("resolveMyFactionId", () => {
-  it("returns forFactionId when chosenSide is For", () => {
-    expect(resolveMyFactionId({ chosenSide: "For", forFactionId: "Custodes", againstFactionId: "WorldEaters" })).toBe("Custodes");
-  });
-
-  it("returns againstFactionId when chosenSide is Against", () => {
-    expect(resolveMyFactionId({ chosenSide: "Against", forFactionId: "Custodes", againstFactionId: "WorldEaters" })).toBe("WorldEaters");
-  });
-
-  it("matches chosenSide case-insensitively", () => {
-    expect(resolveMyFactionId({ chosenSide: "against", forFactionId: "Custodes", againstFactionId: "WorldEaters" })).toBe("WorldEaters");
-  });
-});
-
 describe("buildFactionLeaderboard", () => {
   it("returns rank/participants and benchmarks directly, with no for/against merge", () => {
     const result = buildFactionLeaderboard(realAgainstEntry);
@@ -195,89 +181,5 @@ describe("buildFactionLeaderboard", () => {
 
   it("returns null for a null entry", () => {
     expect(buildFactionLeaderboard(noEntry)).toBeNull();
-  });
-});
-
-describe("readLeaderboard", () => {
-  it("converts the API's 0-based myRank to a 1-based display rank", () => {
-    const leaderboards = { "some:id": { numParticipants: 10, myRank: 0, myPoints: 500, topEntries: [], localEntries: [] } };
-    expect(readLeaderboard(leaderboards, "some:id", "me")?.myRank).toBe(1);
-  });
-
-  it("leaves a null myRank (not ranked, and not present in topEntries/localEntries either) alone", () => {
-    const leaderboards = { "some:id": { numParticipants: 10, myRank: null, myPoints: null, topEntries: [], localEntries: [] } };
-    expect(readLeaderboard(leaderboards, "some:id", "me")?.myRank).toBeNull();
-  });
-
-  it("returns null when the leaderboard id isn't present at all (typo'd id prefix)", () => {
-    expect(readLeaderboard({}, "missing:id", "me")).toBeNull();
-  });
-
-  it("derives myRank/myPoints from topEntries by participantId when the API omits myRank entirely (player already in the top entries, e.g. rank #1)", () => {
-    const leaderboards = {
-      "some:id": {
-        numParticipants: 10,
-        topEntries: [
-          { position: 0, points: 7588, participantId: "me" },
-          { position: 1, points: 7500, participantId: "someone-else" },
-        ],
-        localEntries: [],
-      },
-    };
-    const result = readLeaderboard(leaderboards, "some:id", "me");
-    expect(result?.myRank).toBe(1);
-    expect(result?.myPoints).toBe(7588);
-  });
-
-  it("derives myRank/myPoints from localEntries by participantId when myRank is omitted and the player isn't in topEntries", () => {
-    const leaderboards = {
-      "some:id": {
-        numParticipants: 50,
-        topEntries: [{ position: 0, points: 9000, participantId: "someone-else" }],
-        localEntries: [{ position: 12, points: 3984, participantId: "me" }],
-      },
-    };
-    const result = readLeaderboard(leaderboards, "some:id", "me");
-    expect(result?.myRank).toBe(13);
-    expect(result?.myPoints).toBe(3984);
-  });
-
-  it("prefers the server-supplied myRank over a topEntries participantId match when both are present", () => {
-    const leaderboards = {
-      "some:id": {
-        numParticipants: 10,
-        myRank: 4,
-        myPoints: 1234,
-        topEntries: [{ position: 0, points: 7588, participantId: "me" }],
-        localEntries: [],
-      },
-    };
-    const result = readLeaderboard(leaderboards, "some:id", "me");
-    expect(result?.myRank).toBe(5);
-    expect(result?.myPoints).toBe(1234);
-  });
-});
-
-describe("findActivePhase", () => {
-  it("resolves whichever phase actually brackets now, not just the first CRUSADE entry", () => {
-    const realNow = Date.now();
-    const phasesAroundNow = [{ phase: "CRUSADE", zone: "zone5", startsOn: realNow - 1000, endsOn: realNow + 1000 }];
-    expect(findActivePhase(undefined, phasesAroundNow, undefined)).toEqual({ phase: "CRUSADE", activeZone: 4 });
-  });
-
-  it("returns STRUGGLE with a null activeZone (Domination has no zone)", () => {
-    const realNow = Date.now();
-    const struggleAroundNow = { phase: "STRUGGLE", startsOn: realNow - 1000, endsOn: realNow + 1000 };
-    expect(findActivePhase(undefined, [], struggleAroundNow)).toEqual({ phase: "STRUGGLE", activeZone: null });
-  });
-
-  it("returns DOWNTIME with a null activeZone", () => {
-    const realNow = Date.now();
-    const downtimeAroundNow = { phase: "DOWNTIME", startsOn: realNow - 1000, endsOn: realNow + 1000 };
-    expect(findActivePhase(downtimeAroundNow, [], undefined)).toEqual({ phase: "DOWNTIME", activeZone: null });
-  });
-
-  it("returns null phase when nothing brackets now (all inputs undefined/empty)", () => {
-    expect(findActivePhase(undefined, [], undefined)).toEqual({ phase: null, activeZone: null });
   });
 });
