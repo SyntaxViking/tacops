@@ -134,18 +134,19 @@ export function CrusadeDominationCard({
             {cooldownEndLocal && <span className="text-xs opacity-70">Available again at {cooldownEndLocal}</span>}
           </div>
         )}
-        {onRefresh && (
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1">
-              <span className={labelClass}>Side Leaderboard</span>
-              <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className={labelClass}>Faction Leaderboard</span>
-              <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
-            </div>
+        {/* Unconditional (not gated on onRefresh) - an anonymous visitor (AnonymousCrusadeSection,
+            no onRefresh) can still have leaderboard data here via the shared D1 cache
+            (worker/leaderboard-cache.ts), just with no refresh/star/track controls above. */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-1">
+            <span className={labelClass}>Side Leaderboard</span>
+            <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
           </div>
-        )}
+          <div className="flex flex-col gap-1">
+            <span className={labelClass}>Faction Leaderboard</span>
+            <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
+          </div>
+        </div>
       </div>
     </div>
   );

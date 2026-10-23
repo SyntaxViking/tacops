@@ -43,43 +43,44 @@ export function CrusadePlanetCard({ planet, refreshEntry, onRefresh, isFavorited
           <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />
         </div>
         {onRefresh && (
-          <>
-            <div className="flex items-center justify-end gap-1">
-              <PlanetFetchTimestamp entry={refreshEntry} />
-              <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1">
-                <span className={labelClass}>Leading Factions (Imperium)</span>
-                {(leaderboard?.topFactionsFor ?? []).slice(0, 3).map((f) => (
-                  <div key={f.factionId} className="flex items-center gap-1">
-                    <FactionBadge factionId={f.factionId} />
-                    <span>{f.points.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className={labelClass}>Leading Factions (Devastation)</span>
-                {(leaderboard?.topFactionsAgainst ?? []).slice(0, 3).map((f) => (
-                  <div key={f.factionId} className="flex items-center gap-1">
-                    <FactionBadge factionId={f.factionId} />
-                    <span>{f.points.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1">
-                <span className={labelClass}>Side Leaderboard</span>
-                <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className={labelClass}>Faction Leaderboard</span>
-                <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
-              </div>
-            </div>
-          </>
+          <div className="flex items-center justify-end gap-1">
+            <PlanetFetchTimestamp entry={refreshEntry} />
+            <RefreshIconButton onRefresh={onRefresh} isLoading={refreshEntry.isLoading} />
+          </div>
         )}
+        {/* Unconditional (not gated on onRefresh) - an anonymous visitor (AnonymousCrusadeSection,
+            no onRefresh) can still have leaderboard data here via the shared D1 cache
+            (worker/leaderboard-cache.ts), just with no refresh/star controls above. */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-1">
+            <span className={labelClass}>Leading Factions (Imperium)</span>
+            {(leaderboard?.topFactionsFor ?? []).slice(0, 3).map((f) => (
+              <div key={f.factionId} className="flex items-center gap-1">
+                <FactionBadge factionId={f.factionId} />
+                <span>{f.points.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className={labelClass}>Leading Factions (Devastation)</span>
+            {(leaderboard?.topFactionsAgainst ?? []).slice(0, 3).map((f) => (
+              <div key={f.factionId} className="flex items-center gap-1">
+                <FactionBadge factionId={f.factionId} />
+                <span>{f.points.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-1">
+            <span className={labelClass}>Side Leaderboard</span>
+            <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className={labelClass}>Faction Leaderboard</span>
+            <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
+          </div>
+        </div>
       </div>
     </div>
   );
