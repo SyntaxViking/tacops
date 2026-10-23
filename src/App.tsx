@@ -1219,7 +1219,7 @@ export function App() {
           <p>
             {isTauri()
               ? "Reads your local Tacticus credentials, fetches your live account data, and shows your current expeditions board."
-              : "Enter your Tacticus user ID and client secret to fetch your live account data and show your current expeditions board. Nothing you enter here is stored unless you check \"Remember me\" below."}
+              : "Enter your Tacticus user ID and client secret to fetch your live account data and show your current expeditions board. Nothing here is ever persisted to servers."}
           </p>
 
           {devModeEnabled && <EnvironmentToggle value={environment} onChange={setEnvironment} />}
