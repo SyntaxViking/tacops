@@ -113,6 +113,25 @@ export function App() {
   const [userId, setUserId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [showClientSecret, setShowClientSecret] = useState(false);
+  const AUTO_LOGIN_STORAGE_KEY = "tacops.autoLoginEnabled";
+  // Opt-in, off by default - the auto-login effect below only ever attempts
+  // retrieveWebCredential() when this is true, and go() only ever calls storeWebCredential() when
+  // this is true, so a user who never checks the box gets neither half of the feature at all.
+  const [autoLoginEnabled, setAutoLoginEnabledState] = useState(() => {
+    try {
+      return localStorage.getItem(AUTO_LOGIN_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  function setAutoLoginEnabled(enabled: boolean) {
+    setAutoLoginEnabledState(enabled);
+    try {
+      localStorage.setItem(AUTO_LOGIN_STORAGE_KEY, String(enabled));
+    } catch {
+      // Best-effort - worst case the preference doesn't persist across reloads.
+    }
+  }
   const [status, setStatus] = useState("");
   const [fetchState, setFetchState] = useState<"idle" | "loading" | "error" | "success">("idle");
   const [secondsRemaining, setSecondsRemaining] = useState(FETCH_COUNTDOWN_SECONDS);
@@ -576,7 +595,7 @@ export function App() {
       setRawPlayerData(data.raw);
       setFetchState("success");
       if (!isTauri()) {
-        void storeWebCredential(effectiveUserId, effectiveClientSecret);
+        if (autoLoginEnabled) void storeWebCredential(effectiveUserId, effectiveClientSecret);
         void trackUsage(effectiveUserId, environment);
       }
       // Best-effort restore of starred characters/planets - a failure here shouldn't affect the
@@ -651,15 +670,19 @@ export function App() {
     };
   }
 
-  // Web-only: on first mount, silently check whether the browser already has a stored credential
-  // for this origin (see storeWebCredential's own comment for why/how it got stored) and, if so,
-  // skip the "8"/title-tap reveal gesture entirely and log straight in - more automatic than even
-  // Tauri's own flow, which still needs the gesture + a GO click. Chrome/Edge only - resolves to
-  // null with zero browser UI on Safari/Firefox (no PasswordCredential support) or whenever
-  // nothing's stored, and that must never be treated as an error, only as "fall back to the
-  // manual form, exactly like today."
+  // Web-only, opt-in via autoLoginEnabled (the checkbox next to the credential inputs - off by
+  // default, so nothing in this effect ever runs for a user who hasn't explicitly turned it on):
+  // on first mount, silently check whether the browser already has a stored credential for this
+  // origin (see storeWebCredential's own comment for why/how it got stored) and, if so, skip the
+  // "8"/title-tap reveal gesture entirely and log straight in - more automatic than even Tauri's
+  // own flow, which still needs the gesture + a GO click. Chrome/Edge only - resolves to null with
+  // zero browser UI on Safari/Firefox (no PasswordCredential support) or whenever nothing's
+  // stored, and that must never be treated as an error, only as "fall back to the manual form,
+  // exactly like today." autoLoginEnabled is read directly (not via a ref) because its initial
+  // useState value is already resolved synchronously from localStorage before this mount-only
+  // effect ever runs, so there's no staleness to guard against here.
   useEffect(() => {
-    if (isTauri()) return;
+    if (isTauri() || !autoLoginEnabled) return;
     let cancelled = false;
     retrieveWebCredential()
       .then((credential) => {
@@ -675,7 +698,10 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // Re-runs if the user checks the box while already on the page (not just at mount) - a
+    // same-tab "turn this on" should try immediately, not require a reload. devModeEnabledRef
+    // still exists for the "already revealed/typing" guard above, independent of this dep.
+  }, [autoLoginEnabled]);
 
   // Undoes go(): every piece of account data it populates on success goes back to its own
   // useState default, the tracked-planet/crusade/scheduler state goes back the same way go()'s
@@ -721,6 +747,7 @@ export function App() {
 
     resetToAnonymousView();
     setDevModeEnabled(false);
+    setAutoLoginEnabled(false);
 
     if ("credentials" in navigator && typeof navigator.credentials.preventSilentAccess === "function") {
       void navigator.credentials.preventSilentAccess().catch(() => {});
@@ -1199,7 +1226,7 @@ export function App() {
           <p>
             {isTauri()
               ? "Reads your local Tacticus credentials, fetches your live account data, and shows your current expeditions board."
-              : "Enter your Tacticus user ID and client secret to fetch your live account data and show your current expeditions board. Nothing you enter here is stored - only your browser remembers it, if you let it, and a future visit will try to log you back in automatically using whatever it remembered."}
+              : "Enter your Tacticus user ID and client secret to fetch your live account data and show your current expeditions board. Nothing you enter here is stored unless you check \"Remember me\" below."}
           </p>
 
           {devModeEnabled && <EnvironmentToggle value={environment} onChange={setEnvironment} />}
@@ -1244,6 +1271,15 @@ export function App() {
                         {showClientSecret ? "Hide" : "Show"}
                       </button>
                     </div>
+                    <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                      <input
+                        type="checkbox"
+                        checked={autoLoginEnabled}
+                        onChange={(e) => setAutoLoginEnabled(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      Remember me on this device (auto-login next time)
+                    </label>
                   </>
                 )}
                 <div className="flex items-center gap-2">
