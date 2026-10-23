@@ -60,12 +60,11 @@ export function CrusadeDominationTable({
           <th className={cellClass}>Owner</th>
           <th className={cellClass}>Imperial</th>
           <th className={cellClass}>Devastation</th>
-          {onRefreshPlanet && (
-            <>
-              <th className={cellClass}>Side Leaderboard</th>
-              <th className={cellClass}>Faction Leaderboard</th>
-            </>
-          )}
+          {/* Unconditional (not gated on onRefreshPlanet) - an anonymous visitor
+              (AnonymousCrusadeSection, no onRefreshPlanet) can still have leaderboard data via the
+              shared D1 cache (worker/leaderboard-cache.ts); only "Fetched" below needs an account. */}
+          <th className={cellClass}>Side Leaderboard</th>
+          <th className={cellClass}>Faction Leaderboard</th>
           <th className={cellClass}>Defenses</th>
           {onRefreshPlanet && <th className={cellClass}>Fetched</th>}
         </tr>
@@ -152,16 +151,12 @@ export function CrusadeDominationTable({
                   </div>
                 )}
               </td>
-              {onRefreshPlanet && (
-                <>
-                  <td className={cellClass}>
-                    <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
-                  </td>
-                  <td className={cellClass}>
-                    <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
-                  </td>
-                </>
-              )}
+              <td className={cellClass}>
+                <LeaderboardBreakdownCell result={leaderboard?.side ?? null} />
+              </td>
+              <td className={cellClass}>
+                <LeaderboardBreakdownCell result={leaderboard?.faction ?? null} />
+              </td>
               <td className={cellClass}>
                 <PlanetDefenseBadge imperial={defenses.imperial} devastation={defenses.devastation} />
               </td>
