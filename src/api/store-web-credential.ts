@@ -1,62 +1,93 @@
-// Chrome/Edge's native "save password?" prompt relies on detecting a successful form submission
-// via navigation or a full page reload, neither of which happens in this single-page app - so it
-// never fires on its own. The Credential Management API lets us trigger it explicitly instead.
-// Safari and Firefox don't implement PasswordCredential, so this is a no-op there (autofill via
-// the autoComplete attributes on the inputs still works everywhere it's supported).
+// Persists userId/clientSecret in localStorage, encrypted via the Web Crypto API (AES-GCM, a
+// real, audited cipher - not a hand-rolled one) using a fixed key baked into this bundle.
 //
-// Both functions below log every branch to the console (not just failures) - this API is prone to
-// invisible failure modes (the save prompt can appear and auto-dismiss without the user noticing,
-// mediation:"silent" can decline for reasons that have nothing to do with whether something is
-// actually stored) and the previous silent-everywhere version made a real "doesn't work" report
-// impossible to diagnose. If this is still silently failing, check the browser console (not just
-// whether a visible prompt appeared) for which of these lines actually printed.
+// This is explicitly NOT real security: the key is exactly as readable by anyone who views this
+// file's own (public, client-side) source as the ciphertext is by anyone who opens DevTools, so
+// it can't stop a determined attacker or any XSS that can run JS on this page - encryption with a
+// key the same JS context can always reach is "locks keep honest people honest," not a security
+// boundary. What it DOES raise the bar against: someone glancing at localStorage's raw values in
+// DevTools' Application panel, or a non-JS-executing scraper/extension that greps storage for
+// recognizable plaintext secrets. Still strictly better than storing the same values in plain
+// text, which is why this exists at all.
+//
+// Replaces an earlier attempt that used the browser's native Credential Management API
+// (navigator.credentials.store/get) - abandoned after repeated real-world failures retrieving a
+// stored credential that couldn't be diagnosed further without live browser access. This
+// approach has no mediation/consent mystery to fail silently, and works in every modern browser
+// (Web Crypto + localStorage are universal), not just Chrome/Edge.
+const STORAGE_KEY = "tacops.webCredential";
+
+// AES-GCM, 256-bit, fixed - deliberately NOT derived from anything secret, since there is no
+// secret available client-side without user interaction (which would defeat "automatic"). The
+// specific bytes are arbitrary; any fixed 32-byte value works identically.
+const RAW_KEY_BYTES = new Uint8Array([
+  0x4a, 0x2f, 0x1e, 0x9c, 0x73, 0xd8, 0x5b, 0x01, 0x6e, 0xaf, 0x33, 0x90, 0xc4, 0x27, 0xb5, 0x8d, 0x11, 0x5f, 0xe6, 0x7a, 0x42, 0x0c, 0x99, 0x3b, 0x8e,
+  0x21, 0xd4, 0x56, 0xf0, 0x89, 0x1d, 0x62,
+]);
+
+function getKey(): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", RAW_KEY_BYTES, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+interface StoredPayload {
+  iv: number[];
+  data: number[];
+}
+
 export async function storeWebCredential(userId: string, clientSecret: string): Promise<void> {
-  if (!("PasswordCredential" in window)) {
-    console.log("[storeWebCredential] skipped - this browser doesn't implement PasswordCredential");
-    return;
-  }
   try {
-    const PasswordCredentialCtor = (window as any).PasswordCredential;
-    const credential = new PasswordCredentialCtor({ id: userId, password: clientSecret });
-    await navigator.credentials.store(credential);
-    console.log("[storeWebCredential] navigator.credentials.store() resolved - check chrome://settings/passwords to confirm it actually saved (a dismissed/ignored save prompt can resolve without saving anything)");
+    const key = await getKey();
+    // A fresh random IV per encryption is standard AES-GCM practice - it doesn't need to be
+    // secret, just unique per encryption, so storing it alongside the ciphertext is fine.
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify({ userId, clientSecret }));
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+    const payload: StoredPayload = { iv: Array.from(iv), data: Array.from(new Uint8Array(ciphertext)) };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    console.log("[storeWebCredential] saved to localStorage");
   } catch (error) {
-    // Best-effort - the user can dismiss/block the prompt, and that should never affect the
-    // actual data fetch that already happened - but logged (not swallowed silently) since this is
-    // the only way to tell "the browser declined" apart from "this threw for an unrelated reason."
-    console.warn("[storeWebCredential] navigator.credentials.store() failed", error);
+    console.warn("[storeWebCredential] failed to save", error);
   }
 }
 
-// The read-back half of storeWebCredential above, used by App.tsx on mount to silently auto-login
-// a returning visitor. mediation: "silent" resolves to null (no browser UI at all) whenever
-// there's nothing stored OR the browser simply declines to hand it back without a user gesture -
-// both are normal, expected outcomes here, never an error; the caller's only job is to fall back
-// to the manual login form when this returns null. Same Chrome/Edge-only limitation as
-// storeWebCredential (Safari/Firefox don't implement PasswordCredential at all).
 export async function retrieveWebCredential(): Promise<{ userId: string; clientSecret: string } | null> {
-  if (!("PasswordCredential" in window)) {
-    console.log("[retrieveWebCredential] skipped - this browser doesn't implement PasswordCredential");
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn("[retrieveWebCredential] localStorage unavailable", error);
+    return null;
+  }
+  if (!raw) {
+    console.log("[retrieveWebCredential] nothing stored");
     return null;
   }
   try {
-    // TS's DOM lib types CredentialRequestOptions with only mediation/publicKey (no `password`),
-    // and Credential's base interface has only id/type (no `password`) - same gap
-    // storeWebCredential's constructor call already works around above, same `any` escape hatch.
-    const credential = await navigator.credentials.get({ password: true, mediation: "silent" } as any);
-    if (!credential) {
-      console.log('[retrieveWebCredential] navigator.credentials.get() resolved null - either nothing is stored for this origin, or the browser declined to return it silently (check chrome://settings/passwords to tell which)');
-      return null;
-    }
-    const { id, password } = credential as any;
-    if (typeof id !== "string" || typeof password !== "string") {
-      console.warn("[retrieveWebCredential] got a credential back but id/password weren't both strings - treating as nothing stored", credential);
+    const { iv, data } = JSON.parse(raw) as StoredPayload;
+    const key = await getKey();
+    const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: new Uint8Array(iv) }, key, new Uint8Array(data));
+    const parsed = JSON.parse(new TextDecoder().decode(plaintext));
+    if (typeof parsed?.userId !== "string" || typeof parsed?.clientSecret !== "string") {
+      console.warn("[retrieveWebCredential] stored payload decrypted but had the wrong shape - clearing it", parsed);
+      clearWebCredential();
       return null;
     }
     console.log("[retrieveWebCredential] found a stored credential, auto-login will be attempted");
-    return { userId: id, clientSecret: password };
+    return { userId: parsed.userId, clientSecret: parsed.clientSecret };
   } catch (error) {
-    console.warn("[retrieveWebCredential] navigator.credentials.get() failed", error);
+    // Most likely cause: the fixed key above changed since this was stored (e.g. a future code
+    // change) - clear the now-undecryptable entry rather than leaving a permanent dead entry that
+    // fails the same way on every future page load.
+    console.warn("[retrieveWebCredential] failed to decrypt stored credential - clearing it", error);
+    clearWebCredential();
     return null;
+  }
+}
+
+export function clearWebCredential(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn("[clearWebCredential] failed", error);
   }
 }

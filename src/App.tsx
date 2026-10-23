@@ -30,7 +30,7 @@ import { registerStaleVersionHandler, startVersionCheck } from "./version-check"
 import { fetchPlayerData } from "./api/fetch-player-data";
 import { entryIsUnavailable } from "./board/board-view-model";
 import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
-import { retrieveWebCredential, storeWebCredential } from "./api/store-web-credential";
+import { clearWebCredential, retrieveWebCredential, storeWebCredential } from "./api/store-web-credential";
 import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
 import { getDevDataSource, setDevDataSource, type DevDataSource } from "./api/dev-data-source";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
@@ -611,14 +611,11 @@ export function App() {
       console.error("[App] go(): caught error", error);
       setStatus(`Failed: ${error}`);
       setFetchState("error");
-      // This attempt came from the auto-login effect, not a manual GO click - the credential the
-      // browser silently handed back didn't work (revoked/rotated secret), so stop it from being
-      // silently retried (and failing) on every future page load. A manual click's own failure
-      // means the user typed something wrong themselves, unrelated to any stored credential, so
-      // this never fires for that case.
-      if (overrideCredentials && "credentials" in navigator && typeof navigator.credentials.preventSilentAccess === "function") {
-        void navigator.credentials.preventSilentAccess().catch(() => {});
-      }
+      // This attempt came from the auto-login effect, not a manual GO click - the stored
+      // credential didn't work (revoked/rotated secret), so clear it rather than retrying (and
+      // failing) on every future page load. A manual click's own failure means the user typed
+      // something wrong themselves, unrelated to any stored credential, so this never fires then.
+      if (overrideCredentials) clearWebCredential();
       return;
     }
 
@@ -672,15 +669,15 @@ export function App() {
 
   // Web-only, opt-in via autoLoginEnabled (the checkbox next to the credential inputs - off by
   // default, so nothing in this effect ever runs for a user who hasn't explicitly turned it on):
-  // on first mount, silently check whether the browser already has a stored credential for this
-  // origin (see storeWebCredential's own comment for why/how it got stored) and, if so, skip the
-  // "8"/title-tap reveal gesture entirely and log straight in - more automatic than even Tauri's
-  // own flow, which still needs the gesture + a GO click. Chrome/Edge only - resolves to null with
-  // zero browser UI on Safari/Firefox (no PasswordCredential support) or whenever nothing's
-  // stored, and that must never be treated as an error, only as "fall back to the manual form,
-  // exactly like today." autoLoginEnabled is read directly (not via a ref) because its initial
-  // useState value is already resolved synchronously from localStorage before this mount-only
-  // effect ever runs, so there's no staleness to guard against here.
+  // on first mount, check whether an encrypted credential is stored for this origin (see
+  // storeWebCredential's own comment) and, if so, skip the "8"/title-tap reveal gesture entirely
+  // and log straight in - more automatic than even Tauri's own flow, which still needs the
+  // gesture + a GO click. Works in every modern browser (no native-API mediation/consent step
+  // that can decline) - whenever nothing's stored, this resolves to null, which must never be
+  // treated as an error, only as "fall back to the manual form, exactly like today."
+  // autoLoginEnabled is read directly (not via a ref) because its initial useState value is
+  // already resolved synchronously from localStorage before this mount-only effect ever runs, so
+  // there's no staleness to guard against here.
   useEffect(() => {
     if (isTauri() || !autoLoginEnabled) return;
     let cancelled = false;
@@ -707,10 +704,9 @@ export function App() {
   // useState default, the tracked-planet/crusade/scheduler state goes back the same way go()'s
   // own GET_CRUSADE-failure branch already resets it (nulling crusadeData in the same pass as
   // bumping crusadeSessionId, so the scheduler effect's re-run hits its own `if (!crusadeData)
-  // return;` guard instead of starting a fresh generation), and the browser is told not to hand
-  // this credential back silently next time - though note that does NOT delete the saved password
-  // from the browser's own password manager, only this app's ability to retrieve it without the
-  // user picking it again.
+  // return;` guard instead of starting a fresh generation), and the stored credential is deleted
+  // outright (unlike the browser's own saved passwords, this app fully owns this storage, so
+  // there's no "it's still in the browser's password manager" caveat here).
   function logout() {
     trackedPlanetIdRef.current = null;
     setTrackedPlanetId(null);
@@ -748,10 +744,7 @@ export function App() {
     resetToAnonymousView();
     setDevModeEnabled(false);
     setAutoLoginEnabled(false);
-
-    if ("credentials" in navigator && typeof navigator.credentials.preventSilentAccess === "function") {
-      void navigator.credentials.preventSilentAccess().catch(() => {});
-    }
+    clearWebCredential();
   }
 
   // Writes a planet's new refresh-state entry to both the scheduler's live ref and to React
