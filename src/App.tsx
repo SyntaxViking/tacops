@@ -29,17 +29,13 @@ import { Toast } from "./components/Toast";
 import { registerStaleVersionHandler, startVersionCheck } from "./version-check";
 import { fetchPlayerData } from "./api/fetch-player-data";
 import { entryIsUnavailable } from "./board/board-view-model";
-import {
-  activePlanetIds,
-  fetchCrusadeData,
-  fetchPlanetLeaderboard,
-  resolveMyFactionId,
-} from "./api/fetch-crusade-data";
-import { storeWebCredential } from "./api/store-web-credential";
+import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
+import { clearWebCredential, retrieveWebCredential, storeWebCredential } from "./api/store-web-credential";
 import { fetchUserPreferences, setAntiFavoritedCharacters, setFavoritedCharacters, setFavoritedPlanets } from "./api/user-preferences";
 import { getDevDataSource, setDevDataSource, type DevDataSource } from "./api/dev-data-source";
 import { fetchCrusadeCache } from "./api/fetch-crusade-cache";
-import { seedPlanetRefreshStateFromCache } from "./api/crusade-cache-seed";
+import { fetchLeaderboardCache } from "./api/fetch-leaderboard-cache";
+import { seedPlanetRefreshStateFromCache, toSeededPlanetLeaderboard } from "./api/crusade-cache-seed";
 import { isPlanetAutoRefreshable } from "./crusade/crusade-domination-view-model";
 import { toggleStarredPlanet } from "./crusade/starred-planets";
 import { toggleTrackedPlanetId } from "./crusade/tracked-planet";
@@ -100,12 +96,16 @@ export function App() {
   }
   const [activeTab, setActiveTab] = useState(TABS[0].id);
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
-  const [selectedExpeditionId, setSelectedExpeditionId] = useState<
-    string | null
-  >(null);
+  const [selectedExpeditionId, setSelectedExpeditionId] = useState<string | null>(null);
   // Defaults to true so the full app is shown on load (no anonymous-crusade gate, no title tap
   // needed). The title tap / "8" key still toggles it, but the default state is the app itself.
   const [devModeEnabled, setDevModeEnabled] = useState(true);
+  // Mirrors devModeEnabled for the auto-login effect below, which checks this from inside a
+  // retrieveWebCredential().then() callback - that closure captures devModeEnabled's value at
+  // mount (always false), so it needs the current value via a ref, same reasoning as
+  // favoritedPlanetIdsRef/trackedPlanetIdRef elsewhere in this file.
+  const devModeEnabledRef = useRef(false);
+  devModeEnabledRef.current = devModeEnabled;
   const lastEightPressRef = useRef(0);
   // Some password managers autofill a field via simulated keystrokes - a user whose userId
   // happens to contain an "8" would otherwise have every such keystroke toggle dev mode as it's
@@ -133,6 +133,25 @@ export function App() {
     }
   });
   const [showClientSecret, setShowClientSecret] = useState(false);
+  const AUTO_LOGIN_STORAGE_KEY = "tacops.autoLoginEnabled";
+  // Opt-in, off by default - the auto-login effect below only ever attempts
+  // retrieveWebCredential() when this is true, and go() only ever calls storeWebCredential() when
+  // this is true, so a user who never checks the box gets neither half of the feature at all.
+  const [autoLoginEnabled, setAutoLoginEnabledState] = useState(() => {
+    try {
+      return localStorage.getItem(AUTO_LOGIN_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  function setAutoLoginEnabled(enabled: boolean) {
+    setAutoLoginEnabledState(enabled);
+    try {
+      localStorage.setItem(AUTO_LOGIN_STORAGE_KEY, String(enabled));
+    } catch {
+      // Best-effort - worst case the preference doesn't persist across reloads.
+    }
+  }
   const [status, setStatus] = useState("");
   const [fetchState, setFetchState] = useState<"idle" | "loading" | "error" | "success">("idle");
   const [secondsRemaining, setSecondsRemaining] = useState(FETCH_COUNTDOWN_SECONDS);
@@ -429,13 +448,17 @@ export function App() {
     };
   }, [board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds]);
 
+  // Shared by toggleDevMode's "turning off" branch and logout() below - both return to the
+  // anonymous view's own default tab/view-mode, not whatever the account happened to leave set.
+  function resetToAnonymousView() {
+    setViewMode("cards");
+    setActiveTab("operations");
+  }
+
   function toggleDevMode() {
     setDevModeEnabled((current) => {
       const next = !current;
-      if (!next) {
-        setViewMode("cards");
-        setActiveTab("operations");
-      }
+      if (!next) resetToAnonymousView();
       return next;
     });
   }
@@ -521,13 +544,28 @@ export function App() {
     );
   }
 
-  async function go() {
+  // overrideCredentials lets the auto-login effect below trigger a login with a retrieved
+  // credential before it's ever reflected in userId/clientSecret state (React state updates
+  // aren't synchronous, so setUserId/setClientSecret immediately followed by go() would still see
+  // the old, empty state inside this call) - falls back to current state when omitted, so the
+  // manual GO button's onSubmit (which calls go() with no arguments) is completely unaffected.
+  async function go(overrideCredentials?: { userId: string; clientSecret: string }) {
+    const effectiveUserId = overrideCredentials?.userId ?? userId;
+    const effectiveClientSecret = overrideCredentials?.clientSecret ?? clientSecret;
+    if (overrideCredentials) {
+      // Keeps the (possibly still-hidden) form in sync with what's actually being attempted, so a
+      // failure below shows the real attempted values ready to edit, same as a manual failure would.
+      setUserId(overrideCredentials.userId);
+      setClientSecret(overrideCredentials.clientSecret);
+    }
+
     // Persist (or clear) credentials for the next visit. Wrapped in try/catch so a browser with
     // localStorage blocked (private mode, quota, policy) doesn't break the actual fetch below.
     try {
-      if (userId && clientSecret) {
-        localStorage.setItem(LOCAL_STORAGE_USER_ID_KEY, userId);
-        localStorage.setItem(LOCAL_STORAGE_CLIENT_SECRET_KEY, clientSecret);
+      // Use the effective credentials so auto-login saves to localStorage too!
+      if (effectiveUserId && effectiveClientSecret) {
+        localStorage.setItem(LOCAL_STORAGE_USER_ID_KEY, effectiveUserId);
+        localStorage.setItem(LOCAL_STORAGE_CLIENT_SECRET_KEY, effectiveClientSecret);
       } else {
         localStorage.removeItem(LOCAL_STORAGE_USER_ID_KEY);
         localStorage.removeItem(LOCAL_STORAGE_CLIENT_SECRET_KEY);
@@ -535,7 +573,6 @@ export function App() {
     } catch {
       // ignore - persistence is best-effort
     }
-
     setFetchState("loading");
     setBoard([]);
     setCrusadeError(null);
@@ -562,6 +599,28 @@ export function App() {
         setCrusadeData(seededCrusadeData);
         planetRefreshStateRef.current = seeded;
         setPlanetRefreshState(seeded);
+
+        // Second fast-paint pass, chained after the crusade snapshot above so there's something
+        // to merge leaderboard data into - fills in the shared D1 leaderboard cache (worker/
+        // poller.ts) for every seeded planet, still guarded the same way so a slow response here
+        // can never clobber a real fetch that's already landed.
+        fetchLeaderboardCache()
+          .then(({ entries }) => {
+            if (sessionParamsRef.current) return;
+            const merged = new Map(planetRefreshStateRef.current);
+            for (const [planetId, entry] of merged) {
+              const cachedLeaderboard = entries[planetId];
+              if (!cachedLeaderboard) continue;
+              merged.set(planetId, {
+                ...entry,
+                leaderboard: toSeededPlanetLeaderboard(planetId, cachedLeaderboard, seededCrusadeData.chosenSide, resolveMyFactionId(seededCrusadeData)),
+                lastSuccessAt: cachedLeaderboard.fetchedAt,
+              });
+            }
+            planetRefreshStateRef.current = merged;
+            setPlanetRefreshState(merged);
+          })
+          .catch((error) => console.error("[App] go(): fetchLeaderboardCache seed failed", error));
       })
       .catch((error) =>
         console.error("[App] go(): fetchCrusadeCache seed failed", error),
@@ -570,7 +629,7 @@ export function App() {
     try {
       setStatus("Reading local credentials...");
       setStatus("Fetching player data...");
-      const data = await fetchPlayerData(environment, { userId, clientSecret });
+      const data = await fetchPlayerData(environment, { userId: effectiveUserId, clientSecret: effectiveClientSecret });
       setStatus(
         data.board.length === 0
           ? "Couldn't find any expeditions. Have you refreshed your board after claiming your completed operations?"
@@ -589,12 +648,12 @@ export function App() {
       setRawPlayerData(data.raw);
       setFetchState("success");
       if (!isTauri()) {
-        void storeWebCredential(userId, clientSecret);
-        void trackUsage(userId, environment);
+        if (autoLoginEnabled) void storeWebCredential(effectiveUserId, effectiveClientSecret);
+        void trackUsage(effectiveUserId, environment);
       }
       // Best-effort restore of starred characters/planets - a failure here shouldn't affect the
       // data that already loaded successfully above, so it's not part of the try/catch's failure path.
-      fetchUserPreferences(userId)
+      fetchUserPreferences(effectiveUserId)
         .then((preferences) => {
           setFavoritedCharacterIds(new Set(preferences.favoritedCharacters));
           setFavoritedPlanetIds(new Set(preferences.favoritedPlanets));
@@ -609,6 +668,11 @@ export function App() {
       console.error("[App] go(): caught error", error);
       setStatus(`Failed: ${error}`);
       setFetchState("error");
+      // This attempt came from the auto-login effect, not a manual GO click - the stored
+      // credential didn't work (revoked/rotated secret), so clear it rather than retrying (and
+      // failing) on every future page load. A manual click's own failure means the user typed
+      // something wrong themselves, unrelated to any stored credential, so this never fires then.
+      if (overrideCredentials) clearWebCredential();
       return;
     }
 
@@ -618,7 +682,7 @@ export function App() {
     // successfully above. Split into two try/catches (rather than one shared one) so
     // crusadeError says which call actually failed - error.toString() already embeds the URL and
     // a JSON dump of the response, from post()/postGameEvent()'s error formatting.
-    const webCredentials = { userId, clientSecret };
+    const webCredentials = { userId: effectiveUserId, clientSecret: effectiveClientSecret };
     let crusade;
     try {
       crusade = await fetchCrusadeData(environment, webCredentials);
@@ -667,9 +731,89 @@ export function App() {
       seasonNumber: crusade.seasonNumber,
       chosenSide: crusade.chosenSide,
       myFactionId: resolveMyFactionId(crusade),
-      userId,
-      clientSecret,
+      userId: effectiveUserId,
+      clientSecret: effectiveClientSecret,
     };
+  }
+
+  // Web-only, opt-in via autoLoginEnabled (the checkbox next to the credential inputs - off by
+  // default, so nothing in this effect ever runs for a user who hasn't explicitly turned it on):
+  // on first mount, check whether an encrypted credential is stored for this origin (see
+  // storeWebCredential's own comment) and, if so, skip the "8"/title-tap reveal gesture entirely
+  // and log straight in - more automatic than even Tauri's own flow, which still needs the
+  // gesture + a GO click. Works in every modern browser (no native-API mediation/consent step
+  // that can decline) - whenever nothing's stored, this resolves to null, which must never be
+  // treated as an error, only as "fall back to the manual form, exactly like today."
+  // autoLoginEnabled is read directly (not via a ref) because its initial useState value is
+  // already resolved synchronously from localStorage before this mount-only effect ever runs, so
+  // there's no staleness to guard against here.
+  useEffect(() => {
+    if (isTauri() || !autoLoginEnabled) return;
+    let cancelled = false;
+    retrieveWebCredential()
+      .then((credential) => {
+        if (cancelled || !credential) return;
+        // Guards against a retrieval that resolves after the user already pressed "8"/tapped the
+        // title and started typing their own credentials - devModeEnabledRef (not the
+        // devModeEnabled this effect's own closure captured at mount) reflects the current value.
+        if (devModeEnabledRef.current) return;
+        setDevModeEnabled(true);
+        void go(credential);
+      })
+      .catch((error) => console.error("[App] auto-login: retrieveWebCredential failed", error));
+    return () => {
+      cancelled = true;
+    };
+    // Re-runs if the user checks the box while already on the page (not just at mount) - a
+    // same-tab "turn this on" should try immediately, not require a reload. devModeEnabledRef
+    // still exists for the "already revealed/typing" guard above, independent of this dep.
+  }, [autoLoginEnabled]);
+
+  // Undoes go(): every piece of account data it populates on success goes back to its own
+  // useState default, the tracked-planet/crusade/scheduler state goes back the same way go()'s
+  // own GET_CRUSADE-failure branch already resets it (nulling crusadeData in the same pass as
+  // bumping crusadeSessionId, so the scheduler effect's re-run hits its own `if (!crusadeData)
+  // return;` guard instead of starting a fresh generation), and the stored credential is deleted
+  // outright (unlike the browser's own saved passwords, this app fully owns this storage, so
+  // there's no "it's still in the browser's password manager" caveat here).
+  function logout() {
+    trackedPlanetIdRef.current = null;
+    setTrackedPlanetId(null);
+    trackedPlanetStateRef.current = null;
+    setTrackedPlanetState(null);
+
+    crusadeDataRef.current = null;
+    setCrusadeData(null);
+    planetRefreshStateRef.current = new Map();
+    setPlanetRefreshState(new Map());
+    setCrusadeError(null);
+    setCrusadeSessionId((id) => id + 1);
+    sessionParamsRef.current = null;
+
+    setBoard([]);
+    setHeroes([]);
+    setMachinesOfWar([]);
+    setAdViewsRemaining(null);
+    setResources(null);
+    setHeroQuestJars([]);
+    setActiveQuestIds([]);
+    setSectorMap({ planets: [], connections: [] });
+    setPlanetDefenses({});
+    setOnslaughtBoards({ Imperial: [], Chaos: [], Xenos: [] });
+    setRawPlayerData(null);
+    setFavoritedCharacterIds(new Set());
+    setAntiFavoritedCharacterIds(new Set());
+    setFavoritedPlanetIds(new Set());
+
+    setUserId("");
+    setClientSecret("");
+    setFetchState("idle");
+    setStatus("");
+
+    resetToAnonymousView();
+    setDevModeEnabled(false);
+    setAutoLoginEnabled(false);
+    clearWebCredential();
   }
 
   // Writes a planet's new refresh-state entry to both the scheduler's live ref and to React
@@ -871,10 +1015,49 @@ export function App() {
       }
     }
 
-    const workers = [
-      ...Array.from({ length: AUTO_REFRESH_WORKERS }, () => worker()),
-      crusadeScoreRefreshLoop(),
-    ];
+    // Independent ~1-minute cadence: checks the shared D1 leaderboard cache (worker/poller.ts)
+    // and adopts any entry fresher than what's held locally, serving it directly rather than
+    // triggering a live fetch - pure D1 reads, no additional write pressure or game-server load.
+    // Covers every planet currently in planetRefreshState, not just starred ones (unlike
+    // claimEligiblePlanet's isPlanetAutoRefreshable gate, which only bounds *live* fetch cost -
+    // that doesn't apply to reading an already-fetched cache). The "only adopt if strictly
+    // newer" check means this can never regress a planet kept fresher by the worker pool above or
+    // the live-tracker loop.
+    async function leaderboardCacheFreshnessLoop() {
+      while (generationRef.current === myGeneration) {
+        await new Promise((resolve) => setTimeout(resolve, 60_000));
+        if (generationRef.current !== myGeneration) return;
+        try {
+          const { entries } = await fetchLeaderboardCache();
+          const chosenSide = crusadeDataRef.current?.chosenSide ?? "";
+          const factionId = crusadeDataRef.current ? resolveMyFactionId(crusadeDataRef.current) : null;
+          const current = planetRefreshStateRef.current;
+          const next = new Map(current);
+          let changed = false;
+          for (const [planetId, cached] of Object.entries(entries)) {
+            const entry = current.get(planetId);
+            if (!entry || entry.isLoading) continue;
+            if (entry.lastSuccessAt !== null && cached.fetchedAt <= entry.lastSuccessAt) continue;
+            next.set(planetId, {
+              leaderboard: toSeededPlanetLeaderboard(planetId, cached, chosenSide, factionId),
+              lastSuccessAt: cached.fetchedAt,
+              lastAttemptAt: Date.now(),
+              lastAttemptFailed: false,
+              isLoading: false,
+            });
+            changed = true;
+          }
+          if (changed) {
+            planetRefreshStateRef.current = next;
+            setPlanetRefreshState(next);
+          }
+        } catch (error) {
+          console.error("[App] leaderboardCacheFreshnessLoop failed", error);
+        }
+      }
+    }
+
+    const workers = [...Array.from({ length: AUTO_REFRESH_WORKERS }, () => worker()), crusadeScoreRefreshLoop(), leaderboardCacheFreshnessLoop()];
     return () => {
       generationRef.current++;
       void workers;
@@ -1176,7 +1359,7 @@ export function App() {
           <p>
             {isTauri()
               ? "Reads your local Tacticus credentials, fetches your live account data, and shows your current expeditions board."
-              : "Enter your Tacticus user ID and client secret to fetch your live account data and show your current expeditions board. Nothing you enter here is stored - only your browser remembers it, if you let it."}
+              : "Enter your Tacticus user ID and client secret to fetch your live account data and show your current expeditions board. Nothing here is ever persisted to servers."}
           </p>
 
           {devModeEnabled && <EnvironmentToggle value={environment} onChange={setEnvironment} />}
@@ -1221,6 +1404,15 @@ export function App() {
                         {showClientSecret ? "Hide" : "Show"}
                       </button>
                     </div>
+                    <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                      <input
+                        type="checkbox"
+                        checked={autoLoginEnabled}
+                        onChange={(e) => setAutoLoginEnabled(e.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      Remember me on this device (auto-login next time)
+                    </label>
                   </>
                 )}
                 <div className="flex items-center gap-2">
@@ -1231,14 +1423,26 @@ export function App() {
                   >
                     GO
                   </button>
-                  <button
-                    type="button"
-                    disabled={rawPlayerData === null}
-                    onClick={exportPlayerData}
-                    className="hidden"
-                  >
-                    Export JSON
-                  </button>
+                  {devModeEnabled && (
+                    <button
+                      type="button"
+                      disabled={rawPlayerData === null}
+                      onClick={exportPlayerData}
+                      className="hidden"
+                    >
+                      Export JSON
+                    </button>
+                  )}
+                  {!isTauri() && fetchState === "success" && (
+                    <button
+                      type="button"
+                      onClick={logout}
+                      title="Stops this browser from logging you back in automatically next time - it doesn't delete the saved password from your browser's own password manager."
+                      className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm text-neutral-700 outline-none transition-colors hover:border-blue-500 active:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:active:bg-neutral-900/40"
+                    >
+                      Log out
+                    </button>
+                  )}
                 </div>
               </form>
               {resources && (

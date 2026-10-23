@@ -36,15 +36,15 @@ export function CrusadePlanetsTable({
           <th className={cellClass}>Favorite</th>
           <th className={cellClass}>Planet</th>
           <th className={cellClass}>Imperium / Devastation</th>
-          {onRefreshPlanet && (
-            <>
-              <th className={cellClass}>Leading Factions (Imperium)</th>
-              <th className={cellClass}>Leading Factions (Devastation)</th>
-              <th className={cellClass}>Side Leaderboard</th>
-              <th className={cellClass}>Faction Leaderboard</th>
-              <th className={cellClass}>Fetched</th>
-            </>
-          )}
+          {/* Leaderboard columns are unconditional (not gated on onRefreshPlanet) - an anonymous
+              visitor (AnonymousCrusadeSection, no onRefreshPlanet) can still have leaderboard data
+              via the shared D1 cache (worker/leaderboard-cache.ts); only "Fetched" (the refresh
+              control) needs an account to act on. */}
+          <th className={cellClass}>Leading Factions (Imperium)</th>
+          <th className={cellClass}>Leading Factions (Devastation)</th>
+          <th className={cellClass}>Side Leaderboard</th>
+          <th className={cellClass}>Faction Leaderboard</th>
+          {onRefreshPlanet && <th className={cellClass}>Fetched</th>}
         </tr>
       </thead>
       <tbody>
@@ -75,37 +75,35 @@ export function CrusadePlanetsTable({
               <td className={cellClass}>
                 <SidePercentCell pointsFor={planet.pointsFor} pointsAgainst={planet.pointsAgainst} />
               </td>
+              <td className={cellClass}>
+                {(lb?.topFactionsFor ?? []).slice(0, 3).map((f) => (
+                  <div key={f.factionId} className="flex items-center gap-1">
+                    <FactionBadge factionId={f.factionId} />
+                    <span>{f.points.toLocaleString()}</span>
+                  </div>
+                ))}
+              </td>
+              <td className={cellClass}>
+                {(lb?.topFactionsAgainst ?? []).slice(0, 3).map((f) => (
+                  <div key={f.factionId} className="flex items-center gap-1">
+                    <FactionBadge factionId={f.factionId} />
+                    <span>{f.points.toLocaleString()}</span>
+                  </div>
+                ))}
+              </td>
+              <td className={cellClass}>
+                <LeaderboardBreakdownCell result={lb?.side ?? null} />
+              </td>
+              <td className={cellClass}>
+                <LeaderboardBreakdownCell result={lb?.faction ?? null} />
+              </td>
               {onRefreshPlanet && (
-                <>
-                  <td className={cellClass}>
-                    {(lb?.topFactionsFor ?? []).slice(0, 3).map((f) => (
-                      <div key={f.factionId} className="flex items-center gap-1">
-                        <FactionBadge factionId={f.factionId} />
-                        <span>{f.points.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </td>
-                  <td className={cellClass}>
-                    {(lb?.topFactionsAgainst ?? []).slice(0, 3).map((f) => (
-                      <div key={f.factionId} className="flex items-center gap-1">
-                        <FactionBadge factionId={f.factionId} />
-                        <span>{f.points.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </td>
-                  <td className={cellClass}>
-                    <LeaderboardBreakdownCell result={lb?.side ?? null} />
-                  </td>
-                  <td className={cellClass}>
-                    <LeaderboardBreakdownCell result={lb?.faction ?? null} />
-                  </td>
-                  <td className={cellClass}>
-                    <div className="flex items-center gap-1">
-                      {refreshEntry.isLoading ? <Spinner size={20} /> : <PlanetFetchTimestamp entry={refreshEntry} />}
-                      <RefreshIconButton onRefresh={() => onRefreshPlanet(planet.planetId)} isLoading={refreshEntry.isLoading} />
-                    </div>
-                  </td>
-                </>
+                <td className={cellClass}>
+                  <div className="flex items-center gap-1">
+                    {refreshEntry.isLoading ? <Spinner size={20} /> : <PlanetFetchTimestamp entry={refreshEntry} />}
+                    <RefreshIconButton onRefresh={() => onRefreshPlanet(planet.planetId)} isLoading={refreshEntry.isLoading} />
+                  </div>
+                </td>
               )}
             </tr>
           );

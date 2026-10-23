@@ -32,11 +32,10 @@
 //
 // pointsRemaining/isDominationSunk are reused as-is from src/crusade/crusade-domination-view-model.ts
 // (confirmed Tauri/browser-free - its only import is the plain-interface src/api/types.ts), the same
-// class of precedent as this worker already importing src/factions/faction-side.ts and
-// src/assets/seasons' planet-data.json. rawPlanetToCrusadePlanet below is a small hand-written duplicate of
-// src/api/fetch-crusade-data.ts's mapCrusadeResponseData per-planet mapping, following the exact
-// precedent worker/poller.ts already set by duplicating findActivePhase rather than importing that
-// file (which pulls in @tauri-apps/api/core).
+// class of precedent as this worker directly importing src/factions/faction-side.ts,
+// src/assets/seasons' planet-data.json, and src/crusade/crusade-data-mapping.ts's
+// mapCrusadeResponseData (worker/poller.ts builds every CrusadePlanet this file's functions take
+// via that shared mapper, not a hand-written duplicate of it).
 import { getPlanetData } from "../src/assets/seasons";
 import { computeConquestProgress, isDominationSunk, pointsRemaining } from "../src/crusade/crusade-domination-view-model";
 import { activeSeason, type Season } from "../src/season";
@@ -57,30 +56,6 @@ export interface PlanetHistorySample {
   devastationAccrued?: number;
   imperialThreshold?: number;
   devastationThreshold?: number;
-}
-
-// Maps one raw planetsData[] entry (GET_CRUSADE's own shape, already in memory in worker/poller.ts
-// during a crusade-refresh tick) into the CrusadePlanet shape pointsRemaining/isDominationSunk need.
-// name/zone are never read by either of those, so cheap placeholders stand in rather than pulling in
-// planet-data.json's name/zone lookup just for this.
-export function rawPlanetToCrusadePlanet(raw: {
-  planetId: string;
-  sideOwner?: string;
-  ownedByFaction?: string;
-  pointsFor?: number;
-  pointsAgainst?: number;
-  struggleData?: CrusadePlanet["struggleData"];
-}): CrusadePlanet {
-  return {
-    planetId: raw.planetId,
-    name: raw.planetId,
-    zone: null,
-    sideOwner: raw.sideOwner,
-    ownedByFaction: raw.ownedByFaction,
-    pointsFor: raw.pointsFor,
-    pointsAgainst: raw.pointsAgainst,
-    struggleData: raw.struggleData,
-  };
 }
 
 export interface PlanetHistoryRow {
@@ -287,33 +262,6 @@ export function appendToHistoryCache(existing: HistoryCacheEntry | null, row: Pl
   };
   const samples = !existing || isEraReset(existing.lastSunk, row.sunk) ? [sample] : compressHistorySamples([...existing.samples, sample]);
   return { samples, lastSunk: row.sunk };
-}
-
-interface LegacyHistoryCacheRow {
-  planet_id: string;
-  samples: string;
-  last_sunk: number;
-}
-
-// DEAD CODE, kept but never called - the old one-row-per-planet write, reading/writing
-// planet_history_cache (migrations/0007, now permanently unused - see this file's top-of-file
-// comment). Only still referenced by worker/poller.ts's own dead "planets" phase branch, which is
-// kept separate and never invoked for the same reason (see AGENTS.md) - left in place rather than
-// deleted so that branch still compiles without being touched.
-export async function buildHistoryUpsertStatement(db: D1Database, planet: CrusadePlanet, nowMs: number): Promise<D1PreparedStatement | null> {
-  if (!planet.struggleData) return null;
-
-  const existingRow = await db.prepare("SELECT samples, last_sunk FROM planet_history_cache WHERE planet_id = ?").bind(planet.planetId).first<LegacyHistoryCacheRow>();
-  const existing: HistoryCacheEntry | null = existingRow ? { samples: JSON.parse(existingRow.samples) as PlanetHistorySample[], lastSunk: existingRow.last_sunk === 1 } : null;
-
-  const row = buildHistoryRow(planet, nowMs);
-  const updated = appendToHistoryCache(existing, row);
-  return db
-    .prepare(
-      "INSERT INTO planet_history_cache (planet_id, samples, last_sunk, updated_at) VALUES (?, ?, ?, ?) " +
-        "ON CONFLICT(planet_id) DO UPDATE SET samples = excluded.samples, last_sunk = excluded.last_sunk, updated_at = excluded.updated_at",
-    )
-    .bind(planet.planetId, JSON.stringify(updated.samples), updated.lastSunk ? 1 : 0, nowMs);
 }
 
 // Planets per bucket row, and the resulting bucket-assignment function - see

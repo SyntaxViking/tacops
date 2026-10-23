@@ -9,7 +9,6 @@ import {
   isEraReset,
   isVisibleThisSeason,
   PLANETS_PER_BUCKET,
-  rawPlanetToCrusadePlanet,
   resolveExistingForAppend,
   thinOlderSamples,
   truncateAtLastReopen,
@@ -17,29 +16,7 @@ import {
   type PlanetHistorySample,
   type StoredPlanetHistory,
 } from "./planet-history";
-
-describe("rawPlanetToCrusadePlanet", () => {
-  it("maps the fields pointsRemaining/isDominationSunk actually read, with placeholder name/zone", () => {
-    const result = rawPlanetToCrusadePlanet({
-      planetId: "planet_042",
-      sideOwner: "For",
-      ownedByFaction: "Custodes",
-      pointsFor: 100,
-      pointsAgainst: 50,
-      struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
-    });
-    expect(result).toEqual({
-      planetId: "planet_042",
-      name: "planet_042",
-      zone: null,
-      sideOwner: "For",
-      ownedByFaction: "Custodes",
-      pointsFor: 100,
-      pointsAgainst: 50,
-      struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
-    });
-  });
-});
+import type { CrusadePlanet } from "../src/api/types";
 
 describe("buildBucketAssignments", () => {
   it("assigns every known planet to a bucket, with no bucket holding more than PLANETS_PER_BUCKET planets", () => {
@@ -109,9 +86,17 @@ describe("isVisibleThisSeason", () => {
   });
 });
 
+// buildHistoryRow only reads sideOwner/pointsFor/pointsAgainst/struggleData (never name/zone) -
+// plain placeholders for the rest, same as worker/poller.ts's own real-data construction (via
+// src/crusade/crusade-data-mapping.ts's mapCrusadeResponseData) never relies on this test's
+// specific name/zone values either.
+function testPlanet(overrides: Partial<CrusadePlanet> & Pick<CrusadePlanet, "planetId">): CrusadePlanet {
+  return { name: overrides.planetId, zone: null, ...overrides };
+}
+
 describe("buildHistoryRow", () => {
   it("computes remaining points and sunk for a live contested planet", () => {
-    const planet = rawPlanetToCrusadePlanet({
+    const planet = testPlanet({
       planetId: "planet_001",
       sideOwner: "For",
       pointsFor: 100,
@@ -132,7 +117,7 @@ describe("buildHistoryRow", () => {
   });
 
   it("marks sunk true once a side has reached its own threshold", () => {
-    const planet = rawPlanetToCrusadePlanet({
+    const planet = testPlanet({
       planetId: "planet_001",
       sideOwner: "For",
       pointsFor: 1000,
@@ -143,7 +128,7 @@ describe("buildHistoryRow", () => {
   });
 
   it("marks sunk true for the idle (0/0) cooldown state too", () => {
-    const planet = rawPlanetToCrusadePlanet({
+    const planet = testPlanet({
       planetId: "planet_001",
       struggleData: { conquestThresholdPointsAttacker: 1000, conquestThresholdPointsDefender: 1000 },
     });
