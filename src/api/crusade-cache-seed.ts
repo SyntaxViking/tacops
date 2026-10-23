@@ -39,15 +39,23 @@ export function seedPlanetRefreshStateFromCache(cache: CrusadeCacheResponse): Se
 // myRank/myPoints/nearMe are always null/empty (there's no account behind a shared cache entry),
 // the same "no personal rank, fall back to chosenSide" shape fetch-crusade-data.ts's own
 // mergeSideLeaderboard already produces when a live fetch finds no personal rank either. Used by
-// both App.tsx's login-time seed and its ~1-minute freshness-poll loop.
-export function toSeededPlanetLeaderboard(planetId: string, cached: SharedPlanetLeaderboard, chosenSide: string): PlanetLeaderboard {
+// both App.tsx's login-time seed and its ~1-minute freshness-poll loop, and by
+// AnonymousCrusadeSection.tsx (the logged-out home page).
+//
+// factionId picks which faction's player leaderboard populates `.faction` - the viewer's own (via
+// resolveMyFactionId) for a logged-in account, or whichever faction is currently selected in the
+// landing page's FactionPicker for an anonymous visitor; `null` leaves `.faction` null.
+export function toSeededPlanetLeaderboard(planetId: string, cached: SharedPlanetLeaderboard, chosenSide: string, factionId: string | null): PlanetLeaderboard {
   const mine = chosenSide.toLowerCase() === "for" ? cached.sideFor : cached.sideAgainst;
+  const factionEntry = factionId ? cached.perFaction?.[factionId] ?? null : null;
   return {
     planetId,
     topFactionsFor: cached.topFactionsFor,
     topFactionsAgainst: cached.topFactionsAgainst,
     side: mine ? { numParticipants: mine.numParticipants, myRank: null, myPoints: null, benchmarks: mine.benchmarks, topEntries: mine.topEntries, nearMe: [] } : null,
-    faction: null,
+    faction: factionEntry
+      ? { numParticipants: factionEntry.numParticipants, myRank: null, myPoints: null, benchmarks: factionEntry.benchmarks, topEntries: factionEntry.topEntries, nearMe: [] }
+      : null,
     forParticipants: cached.sideFor?.numParticipants ?? null,
     againstParticipants: cached.sideAgainst?.numParticipants ?? null,
   };

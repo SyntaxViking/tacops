@@ -72,17 +72,40 @@ History-write coverage (`planet_history_buckets`) stays the broader "every plane
 was - these are two separate concerns, don't conflate them.
 
 The cached leaderboard data itself (`shared_leaderboard_cache`, `worker/leaderboard-cache.ts`) is
-account-agnostic by construction - it never computes `myRank`/`myPoints`/`nearMe` at all (not
-merely strips them), since this cache is served to every visitor via the open `GET
-/api/leaderboard-cache` route, including the logged-out home page. It carries `topFactionsFor`/
-`topFactionsAgainst` (Leading Factions) and the Side Leaderboard's non-personal fields
-(`numParticipants`/`benchmarks`/`topEntries`) for both sides independently. The client merges this
-into the existing per-account `PlanetLeaderboard` shape via `toSeededPlanetLeaderboard`
-(`src/api/crusade-cache-seed.ts`) - both at login (fast-paint, before the user's own live fetch
-lands) and on an independent ~1-minute freshness-poll loop in `src/App.tsx` that adopts any cache
-entry fresher than what's held locally. **Don't route personal data through this cache** - if a
-future leaderboard field is ever added that's tied to a specific account, it belongs in the
-per-account live fetch path below, never in `shared_leaderboard_cache`.
+account-agnostic by construction - `myRank`/`myPoints`/`nearMe` are never forwarded into anything
+it builds (not merely stripped after the fact), since this cache is served to every visitor via the
+open `GET /api/leaderboard-cache` route, including the logged-out home page. It carries
+`topFactionsFor`/`topFactionsAgainst` (Leading Factions), the Side Leaderboard's non-personal
+fields for both sides independently, and `perFaction` - every faction's own player leaderboard
+(`numParticipants`/`benchmarks`/`topEntries`, keyed by factionId, covering all of
+`src/factions/faction-side.ts`'s `FACTION_SIDE`), batched into the same GET_LEADERBOARD_2 call as
+the 4 side ids. **This is a hard safety invariant, not just scope**: the poller fetches every
+leaderboard using one dedicated service account's own credentials, so Loki's raw response
+legitimately carries that account's own `myRank`/`myPoints` wherever it ranks - unrelated to
+whoever views the cached data. `worker/leaderboard-cache.ts`'s `buildSharedSide` enforces the
+cutoff by construction (only ever destructuring `numParticipants`/`topEntries` into a type with no
+`myRank` field at all) - never widen that type or spread a raw parsed entry into it. The client
+merges the cache into the existing per-account `PlanetLeaderboard` shape via
+`toSeededPlanetLeaderboard` (`src/api/crusade-cache-seed.ts`) - at login (fast-paint, using
+`resolveMyFactionId` for `.faction`, before the user's own live fetch lands), on the ~1-minute
+freshness-poll loop in `src/App.tsx` (same), and on the logged-out home page
+(`AnonymousCrusadeSection.tsx`, which instead uses whichever faction its `FactionPicker` currently
+has selected). **Don't route personal data through this cache** - a future field tied to a
+specific account belongs in the per-account live fetch path below, never in
+`shared_leaderboard_cache`.
+
+**Shared parsing lives in `src/crusade/crusade-data-mapping.ts` and
+`src/crusade/leaderboard-parsing.ts`** (pure, no Tauri/browser dependency) - `findActivePhase`,
+`mapCrusadeResponseData`, `activePlanetIds`, `resolveMyFactionId`, `leaderboardIdsForPlanet`,
+`factionPlayerLeaderboardId`, `readLeaderboard`, `topFactionStandings`, `buildBenchmarks`,
+`buildTopEntries` all live there now, imported directly by both `src/api/fetch-crusade-data.ts`
+(the client's own live fetch) and the Worker (`worker/poller.ts`/`worker/leaderboard-cache.ts`).
+**Don't hand-duplicate any of these into the Worker again** - that was the old pattern (duplicating
+whatever `fetch-crusade-data.ts` needed, since importing that module directly would pull
+`@tauri-apps/api/core` into the Workers runtime), and it rotted: three near-identical copies of the
+same leaderboard-parsing logic drifted apart before being consolidated. If a function the Worker
+needs has no real Tauri/browser dependency of its own, it belongs in one of these two shared
+modules (or a new one next to them), imported by both sides - not copied.
 
 **`poller_epoch_state`/`poller_planet_queue` (migrations/0008) are now permanently abandoned**,
 superseded by `poller_leaderboard_cursor` - left in place unused, same precedent as
@@ -96,8 +119,9 @@ important: `fetchOnePlanet`/`fetchPlanetLeaderboard` in `src/App.tsx`/`src/api/f
 gated by `isPlanetAutoRefreshable` in `src/crusade/crusade-domination-view-model.ts` - only
 starred planets auto-refresh (every ~5 minutes), the one live-tracked planet refreshes on its own
 much faster loop (~10s), and any other planet only ever gets fetched once, on a manual refresh
-click. This is still the only path that ever produces personal `myRank`/`myPoints`/`nearMe`/the
-per-faction player leaderboard data. **Don't widen `isPlanetAutoRefreshable`'s eligibility again**
+click. This is still the only path that ever produces personal `myRank`/`myPoints`/`nearMe` - the
+shared cache above also carries per-faction data now, but always with those three fields stripped.
+**Don't widen `isPlanetAutoRefreshable`'s eligibility again**
 (e.g. back to "every unranked/never-loaded planet") without deliberately re-checking D1's
 write-quota headroom first.
 

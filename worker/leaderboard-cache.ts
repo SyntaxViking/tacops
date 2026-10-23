@@ -2,71 +2,32 @@
 // worker/poller.ts's checkpointed loop, and the backing store for GET /api/leaderboard-cache
 // (worker/index.ts). Scope is deliberately narrower than a live per-account fetch
 // (src/api/fetch-crusade-data.ts's fetchPlanetLeaderboard): myRank/myPoints/nearMe are never
-// computed here at all (not merely stripped after the fact) - there's no account to be "mine" for
-// data served to every visitor, including the logged-out home page this cache exists to drive.
-// The per-faction player leaderboard (factionPlayerLeaderboardId) is out of scope for the same
-// reason - it needs a specific account's own chosen faction to query.
+// forwarded into anything this file builds - there's no account to be "mine" for data served to
+// every visitor, including the logged-out home page this cache exists to drive.
+//
+// This matters beyond just UX: the poller fetches every leaderboard using one dedicated service
+// account's own credentials (POLLER_USER_ID/POLLER_CLIENT_SECRET), so Loki's raw response
+// legitimately carries a myRank/myPoints for THAT account wherever it happens to rank - completely
+// unrelated to whoever ends up viewing the cached data. readLeaderboard (imported below from the
+// shared parsing module, same one the client's own live fetch uses) DOES return those fields when
+// present - that's correct there, since it's always called with the real logged-in viewer's own
+// credentials. buildSharedSide below enforces the cutoff for THIS file: it only ever destructures
+// numParticipants/topEntries off whatever readLeaderboard returns, into SharedSideLeaderboard - a
+// type with no myRank/myPoints/nearMe field at all. Never widen that type or spread a raw entry
+// into it - doing so would show a random visitor the poller's own account's rank as their own.
 import { fetchLeaderboardDataWithSession, type Session } from "./loki-client";
 import { activeSeason } from "../src/season";
+import { FACTION_SIDE } from "../src/factions/faction-side";
+import {
+  factionPlayerLeaderboardId,
+  leaderboardIdsForPlanet,
+  readLeaderboard,
+  topFactionStandings,
+  buildBenchmarks,
+  buildTopEntries,
+  type RawLeaderboardEntry,
+} from "../src/crusade/leaderboard-parsing";
 import type { CrusadeFactionStanding, LeaderboardBenchmark } from "../src/api/types";
-
-// Byte-identical copy of src/api/fetch-crusade-data.ts's leaderboardIdsForPlanet - duplicated
-// rather than imported for the same reason worker/poller.ts already duplicates findActivePhase
-// (that module pulls in @tauri-apps/api/core). Keep the two in sync by hand if the id format
-// ever changes.
-export function leaderboardIdsForPlanet(crusadeId: string, seasonNumber: number, planetId: string) {
-  const base = `${crusadeId}_${seasonNumber}_${planetId}`;
-  return {
-    factionFor: `crusadeFaction:crusade_leaderboard_planet_side_factions_${base}_for`,
-    factionAgainst: `crusadeFaction:crusade_leaderboard_planet_side_factions_${base}_against`,
-    playerFor: `crusadePlayer:crusade_leaderboard_planet_side_players_${base}_for`,
-    playerAgainst: `crusadePlayer:crusade_leaderboard_planet_side_players_${base}_against`,
-  };
-}
-
-interface LeaderboardRow {
-  position: number;
-  points: number;
-  factionId?: string;
-}
-
-function parseRows(rows: any): LeaderboardRow[] {
-  return (rows ?? []).map((e: any) => ({ position: e.position, points: e.points, factionId: e.factionId }));
-}
-
-interface RawLeaderboardEntry {
-  numParticipants: number;
-  topEntries: LeaderboardRow[];
-}
-
-// Simplified duplicate of src/api/fetch-crusade-data.ts's readLeaderboard - never reads
-// myRank/myPoints/localEntries at all, since this cache is shared across every account (and
-// anonymous visitors) alike. Same "numParticipants is the real presence signal" guard as the
-// original - a missing/wrong leaderboardId type prefix doesn't error, it just echoes the id back
-// with nothing in it. Exported for direct unit testing, same precedent as the original.
-export function readLeaderboard(leaderboards: any, leaderboardId: string): RawLeaderboardEntry | null {
-  const entry = leaderboards?.[leaderboardId];
-  if (!entry || typeof entry.numParticipants !== "number") return null;
-  return { numParticipants: entry.numParticipants, topEntries: parseRows(entry.topEntries) };
-}
-
-export function topFactionStandings(entry: RawLeaderboardEntry | null): CrusadeFactionStanding[] {
-  return (entry?.topEntries ?? []).filter((e) => e.factionId).map((e) => ({ factionId: e.factionId!, points: e.points }));
-}
-
-// Same collapsed-view ranks as src/api/fetch-crusade-data.ts's BENCHMARK_RANKS.
-const BENCHMARK_RANKS = [1, 5, 10, 25];
-
-function buildBenchmarks(entry: RawLeaderboardEntry): LeaderboardBenchmark[] {
-  return BENCHMARK_RANKS.filter((rank) => entry.topEntries.some((e) => e.position === rank - 1)).map((rank) => ({
-    rank,
-    points: entry.topEntries.find((e) => e.position === rank - 1)!.points,
-  }));
-}
-
-function buildTopEntries(entry: RawLeaderboardEntry): LeaderboardBenchmark[] {
-  return [...entry.topEntries].sort((a, b) => a.position - b.position).map((e) => ({ rank: e.position + 1, points: e.points }));
-}
 
 export interface SharedSideLeaderboard {
   numParticipants: number;
@@ -84,15 +45,25 @@ export interface SharedPlanetLeaderboardData {
   topFactionsAgainst: CrusadeFactionStanding[];
   sideFor: SharedSideLeaderboard | null;
   sideAgainst: SharedSideLeaderboard | null;
+  // One specific faction's players ranked against each other (distinct from topFactionsFor/
+  // topFactionsAgainst above, which are the account-independent faction-level aggregate) - keyed
+  // by factionId, covering every faction (src/factions/faction-side.ts's FACTION_SIDE) so any
+  // visitor can pick any faction on the logged-out home page, or a logged-in user's own faction
+  // can be looked up immediately at first paint. Missing key (not a stored null) means that
+  // faction's leaderboard didn't come back for this planet.
+  perFaction: Record<string, SharedSideLeaderboard>;
 }
 
 export interface SharedPlanetLeaderboard extends SharedPlanetLeaderboardData {
   fetchedAt: number;
 }
 
-// Fetches and shapes one planet's shareable leaderboard data - the same 4 leaderboard ids
-// fetchPlanetLeaderboard's "side" half queries (factionFor/factionAgainst/playerFor/
-// playerAgainst), one GET_LEADERBOARD_2 call.
+// Fetches and shapes one planet's shareable leaderboard data: the same 4 side-leaderboard ids
+// fetchPlanetLeaderboard's "side" half queries (factionFor/factionAgainst/playerFor/playerAgainst),
+// plus every faction's own player leaderboard (factionPlayerLeaderboardId, one id per faction in
+// FACTION_SIDE) - all batched into one GET_LEADERBOARD_2 call via fetchLeaderboardDataWithSession,
+// which already accepts an arbitrary id list, so this stays a single network round trip regardless
+// of id count.
 export async function fetchSharedPlanetLeaderboard(
   session: Session,
   userId: string,
@@ -101,19 +72,29 @@ export async function fetchSharedPlanetLeaderboard(
   planetId: string,
 ): Promise<SharedPlanetLeaderboardData> {
   const ids = leaderboardIdsForPlanet(crusadeId, seasonNumber, planetId);
-  const { parsed } = await fetchLeaderboardDataWithSession(session, userId, [ids.factionFor, ids.factionAgainst, ids.playerFor, ids.playerAgainst]);
+  const factionIds = Object.keys(FACTION_SIDE);
+  const perFactionIds = factionIds.map((factionId) => factionPlayerLeaderboardId(crusadeId, seasonNumber, planetId, factionId));
+
+  const { parsed } = await fetchLeaderboardDataWithSession(session, userId, [ids.factionFor, ids.factionAgainst, ids.playerFor, ids.playerAgainst, ...perFactionIds]);
   const leaderboards = parsed?.eventResult?.eventResponseData?.leaderboards;
 
-  const factionFor = readLeaderboard(leaderboards, ids.factionFor);
-  const factionAgainst = readLeaderboard(leaderboards, ids.factionAgainst);
-  const playerFor = readLeaderboard(leaderboards, ids.playerFor);
-  const playerAgainst = readLeaderboard(leaderboards, ids.playerAgainst);
+  const factionFor = readLeaderboard(leaderboards, ids.factionFor, userId);
+  const factionAgainst = readLeaderboard(leaderboards, ids.factionAgainst, userId);
+  const playerFor = readLeaderboard(leaderboards, ids.playerFor, userId);
+  const playerAgainst = readLeaderboard(leaderboards, ids.playerAgainst, userId);
+
+  const perFaction: Record<string, SharedSideLeaderboard> = {};
+  for (let i = 0; i < factionIds.length; i++) {
+    const shared = buildSharedSide(readLeaderboard(leaderboards, perFactionIds[i], userId));
+    if (shared) perFaction[factionIds[i]] = shared;
+  }
 
   return {
     topFactionsFor: topFactionStandings(factionFor),
     topFactionsAgainst: topFactionStandings(factionAgainst),
     sideFor: buildSharedSide(playerFor),
     sideAgainst: buildSharedSide(playerAgainst),
+    perFaction,
   };
 }
 

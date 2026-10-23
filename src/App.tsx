@@ -518,7 +518,11 @@ export function App() {
             for (const [planetId, entry] of merged) {
               const cachedLeaderboard = entries[planetId];
               if (!cachedLeaderboard) continue;
-              merged.set(planetId, { ...entry, leaderboard: toSeededPlanetLeaderboard(planetId, cachedLeaderboard, seededCrusadeData.chosenSide), lastSuccessAt: cachedLeaderboard.fetchedAt });
+              merged.set(planetId, {
+                ...entry,
+                leaderboard: toSeededPlanetLeaderboard(planetId, cachedLeaderboard, seededCrusadeData.chosenSide, resolveMyFactionId(seededCrusadeData)),
+                lastSuccessAt: cachedLeaderboard.fetchedAt,
+              });
             }
             planetRefreshStateRef.current = merged;
             setPlanetRefreshState(merged);
@@ -799,6 +803,7 @@ export function App() {
         try {
           const { entries } = await fetchLeaderboardCache();
           const chosenSide = crusadeDataRef.current?.chosenSide ?? "";
+          const factionId = crusadeDataRef.current ? resolveMyFactionId(crusadeDataRef.current) : null;
           const current = planetRefreshStateRef.current;
           const next = new Map(current);
           let changed = false;
@@ -807,7 +812,7 @@ export function App() {
             if (!entry || entry.isLoading) continue;
             if (entry.lastSuccessAt !== null && cached.fetchedAt <= entry.lastSuccessAt) continue;
             next.set(planetId, {
-              leaderboard: toSeededPlanetLeaderboard(planetId, cached, chosenSide),
+              leaderboard: toSeededPlanetLeaderboard(planetId, cached, chosenSide, factionId),
               lastSuccessAt: cached.fetchedAt,
               lastAttemptAt: Date.now(),
               lastAttemptFailed: false,
