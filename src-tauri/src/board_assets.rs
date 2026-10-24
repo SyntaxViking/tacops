@@ -59,3 +59,27 @@ pub fn read_local_board_image(board_id: String) -> Result<Option<String>, String
     let bytes = std::fs::read(&path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
     Ok(Some(format!("data:image/png;base64,{}", BASE64.encode(bytes))))
 }
+
+// Same dev-only purpose as read_local_board_image above, but for the spawn-point manifest -
+// board-assets/spawn-points.json is the active development copy (growing as new boards get
+// extracted) and is ahead of whatever's actually been deployed to the live Worker, unlike a board
+// image's "missing or not" fallback, this file is never simply absent/404 remotely - the remote
+// fetch always succeeds, just with a stale/incomplete manifest. fetchSpawnPointManifest
+// (board-layout.ts) merges this on top of that remote result, local winning per board id, rather
+// than treating this as an error-path fallback. Returns Ok(None) when the file isn't there at all
+// (e.g. a fresh checkout before any local extraction), same convention as read_local_board_image.
+#[tauri::command]
+pub fn read_local_spawn_points() -> Result<Option<Value>, String> {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("..");
+    path.push("board-assets");
+    path.push("spawn-points.json");
+
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let bytes = std::fs::read(&path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|e| format!("failed to parse {}: {e}", path.display()))?;
+    Ok(Some(value))
+}

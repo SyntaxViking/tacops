@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { equippedRelicDamageProfiles, getCharacterProfile } from "./character-profile";
+import { equippedRelicDamageProfiles, getCharacterProfile, relicAbilityDamageProfiles } from "./character-profile";
 
 // Shapes copied from a real prod player export: unit.items (slot -> instance id) and
 // player.hero.items.items (instance id -> { itemId, level, boundTo }) for deathRotbone.
@@ -55,5 +55,26 @@ describe("equippedRelicDamageProfiles", () => {
     expect(equippedRelicDamageProfiles(undefined, rotbonePlayerItems)).toEqual([]);
     expect(equippedRelicDamageProfiles(rotboneEquipped, undefined)).toEqual([]);
     expect(equippedRelicDamageProfiles("nope", null)).toEqual([]);
+  });
+});
+
+describe("relicAbilityDamageProfiles", () => {
+  it("returns Toxic for an already-resolved Orbs of Decay ability id (same relic as above, no items table needed)", () => {
+    expect(relicAbilityDamageProfiles([{ abilityId: "OrbsOfDecay", level: 1 }])).toEqual(["Toxic"]);
+  });
+
+  it("collapses duplicates and skips unknown ability ids or malformed input instead of throwing", () => {
+    expect(
+      relicAbilityDamageProfiles([
+        { abilityId: "OrbsOfDecay", level: 1 },
+        { abilityId: "OrbsOfDecay", level: 10 },
+        { abilityId: "NotARealAbility" },
+        {},
+      ]),
+    ).toEqual(["Toxic"]);
+    expect(relicAbilityDamageProfiles(undefined)).toEqual([]);
+    expect(relicAbilityDamageProfiles(null)).toEqual([]);
+    expect(relicAbilityDamageProfiles("nope")).toEqual([]);
+    expect(relicAbilityDamageProfiles([])).toEqual([]);
   });
 });

@@ -83,6 +83,22 @@ export function equippedRelicDamageProfiles(equipped: unknown, playerItems: unkn
   return [...profiles];
 }
 
+// Same idea as equippedRelicDamageProfiles, but for a source (the guild war snapshot) that
+// already hands back each equipped relic's resolved ability id directly, with no items/instance
+// table to cross-reference. Never throws - an unknown ability id is just skipped.
+export function relicAbilityDamageProfiles(relicAbilities: unknown): string[] {
+  if (!Array.isArray(relicAbilities)) return [];
+
+  const profiles = new Set<string>();
+  for (const entry of relicAbilities) {
+    const abilityId = (entry as { abilityId?: unknown })?.abilityId;
+    if (typeof abilityId !== "string") continue;
+    const ability = abilityById.get(abilityId);
+    if (ability) addDamageProfilesFrom(profiles, ability);
+  }
+  return [...profiles];
+}
+
 // extraDamageProfiles are the player's own additions (see equippedRelicDamageProfiles) - omitted
 // for anything that isn't evaluating a specific player's unit, like the static coverage catalog.
 export function getCharacterProfile(characterId: string, extraDamageProfiles: readonly string[] = []): CharacterProfile {
