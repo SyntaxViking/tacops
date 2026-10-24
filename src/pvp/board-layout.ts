@@ -50,16 +50,36 @@ let cachedManifest: Promise<SpawnPointManifest> | null = null;
 // problem (same-origin - the site IS tacops.cpunerd.workers.dev), so it fetches directly.
 export function fetchSpawnPointManifest(): Promise<SpawnPointManifest> {
   if (!cachedManifest) {
-    cachedManifest = isTauri()
-      ? invokeWithTimeout<SpawnPointManifest>("fetch_spawn_points", undefined, 30_000)
-      : fetch(`${BOARD_ASSET_ORIGIN}/spawn-points.json`).then((res) => {
-          if (!res.ok) {
-            throw new Error(`failed to fetch spawn-points.json: HTTP ${res.status}`);
-          }
-          return res.json();
-        });
+    cachedManifest = isTauri() ? fetchTauriManifest() : fetchWebManifest();
   }
   return cachedManifest;
+}
+
+function fetchWebManifest(): Promise<SpawnPointManifest> {
+  return fetch(`${BOARD_ASSET_ORIGIN}/spawn-points.json`).then((res) => {
+    if (!res.ok) {
+      throw new Error(`failed to fetch spawn-points.json: HTTP ${res.status}`);
+    }
+    return res.json();
+  });
+}
+
+// Tauri-only: merges board-assets/spawn-points.json straight off disk (read_local_spawn_points)
+// on top of the live Worker's copy, local winning per board id. Unlike read_local_board_image's
+// fallback (which only kicks in once the remote image outright fails to load), the remote
+// manifest fetch here always succeeds - it's just potentially stale/incomplete, since newly
+// extracted boards land in the local file well before they're deployed to the Worker (confirmed:
+// the live manifest was missing 13 of 15 guild war boards present locally). A failed local read
+// (e.g. malformed JSON, or no local extraction at all) falls back to the remote copy alone rather
+// than failing the whole fetch.
+async function fetchTauriManifest(): Promise<SpawnPointManifest> {
+  const remote = invokeWithTimeout<SpawnPointManifest>("fetch_spawn_points", undefined, 30_000);
+  const local = invokeWithTimeout<SpawnPointManifest | null>("read_local_spawn_points", undefined, 10_000).catch((error) => {
+    console.error("[board-layout] read_local_spawn_points failed - using the remote manifest alone", error);
+    return null;
+  });
+  const [remoteManifest, localManifest] = await Promise.all([remote, local]);
+  return localManifest ? { ...remoteManifest, ...localManifest } : remoteManifest;
 }
 
 // Opponent's side is TeamWithPlayerIndex === 1 - confirmed by datamine_tacticus's own
@@ -72,14 +92,15 @@ const OPPONENT_TEAM_INDEX = 1;
 // more entries than the 5 fielded characters (boards are shared across other game modes with
 // different unit counts) - this pairs from the start and places at most as many characters as
 // there are points, rather than assuming an exact count match.
-export function resolveCharacterSpawnPositions(
+export function resolveSpawnPositionsForTeam(
   manifest: SpawnPointManifest,
   boardId: string,
   spawnPointsSet: number,
+  teamWithPlayerIndex: number,
   lineup: readonly string[],
 ): CharacterSpawnPosition[] {
   const set = manifest[boardId]?.find((s) => s.spawnPointsSetIndex === spawnPointsSet);
-  const group = set?.groups.find((g) => g.teamWithPlayerIndex === OPPONENT_TEAM_INDEX);
+  const group = set?.groups.find((g) => g.teamWithPlayerIndex === teamWithPlayerIndex);
   if (!group) return [];
 
   const points = [...group.spawnPoints].sort((a, b) => a.index - b.index);
@@ -89,4 +110,13 @@ export function resolveCharacterSpawnPositions(
     x: points[i].x,
     y: points[i].y,
   }));
+}
+
+export function resolveCharacterSpawnPositions(
+  manifest: SpawnPointManifest,
+  boardId: string,
+  spawnPointsSet: number,
+  lineup: readonly string[],
+): CharacterSpawnPosition[] {
+  return resolveSpawnPositionsForTeam(manifest, boardId, spawnPointsSet, OPPONENT_TEAM_INDEX, lineup);
 }

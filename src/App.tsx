@@ -13,6 +13,7 @@ import { MowTable } from "./components/MowTable";
 import { GuildChatTab } from "./components/GuildChatTab";
 import { ArenaTab } from "./components/ArenaTab";
 import { OnslaughtTab } from "./components/OnslaughtTab";
+import { GuildWarTab } from "./components/GuildWarTab";
 import { BoardCoverageTab } from "./components/BoardCoverageTab";
 import { CrusadeTab } from "./components/CrusadeTab";
 import { MonitorTab } from "./components/MonitorTab";
@@ -46,7 +47,7 @@ import { trackUsage } from "./track-usage";
 import type { BoardAssignmentResult } from "./board/board-solver";
 import type { SolveRequest, SolveResponse } from "./board/board-solver.worker";
 import type { PriorityKey } from "./board/reward-amount";
-import type { CrusadeData, CrusadeSectorMap, Environment, ExpeditionBoardEntry, OnslaughtBoards, PlanetDefenseCounts, PlanetLeaderboard, PlanetRefreshEntry, PlayerResources, RawUnit } from "./api/types";
+import type { CrusadeData, CrusadeSectorMap, Environment, ExpeditionBoardEntry, GuildWarData, OnslaughtBoards, PlanetDefenseCounts, PlanetLeaderboard, PlanetRefreshEntry, PlayerResources, RawUnit } from "./api/types";
 import type { HeroQuestJar } from "./hero-quests/hero-quest-view-model";
 import type { TrackedPlanetSample, TrackedPlanetState } from "./crusade/planet-tracker-view-model";
 
@@ -57,6 +58,7 @@ const TABS = [
   { id: "guildchat", label: "Guild Chat" },
   { id: "arena", label: "Arena" },
   { id: "onslaught", label: "Onslaught" },
+  { id: "guildwar", label: "Guild War" },
   { id: "characters", label: "Characters" },
   { id: "mows", label: "Machines of War" },
   { id: "coverage", label: "Board Coverage" },
@@ -151,6 +153,7 @@ export function App() {
   const [sectorMap, setSectorMap] = useState<CrusadeSectorMap>({ planets: [], connections: [] });
   const [planetDefenses, setPlanetDefenses] = useState<Record<string, PlanetDefenseCounts>>({});
   const [onslaughtBoards, setOnslaughtBoards] = useState<OnslaughtBoards>({ Imperial: [], Chaos: [], Xenos: [] });
+  const [guildWar, setGuildWar] = useState<GuildWarData>({ attack: null, defense: null });
   const [rawPlayerData, setRawPlayerData] = useState<unknown>(null);
   const [crusadeData, setCrusadeData] = useState<CrusadeData | null>(null);
   // Mirrors crusadeData for the dedicated tracker loop below (see the tracker effect) - that loop
@@ -592,6 +595,7 @@ export function App() {
       setSectorMap(data.sectorMap);
       setPlanetDefenses(data.planetDefenses);
       setOnslaughtBoards(data.onslaughtBoards);
+      setGuildWar(data.guildWar);
       setRawPlayerData(data.raw);
       setFetchState("success");
       if (!isTauri()) {
@@ -731,6 +735,7 @@ export function App() {
     setSectorMap({ planets: [], connections: [] });
     setPlanetDefenses({});
     setOnslaughtBoards({ Imperial: [], Chaos: [], Xenos: [] });
+    setGuildWar({ attack: null, defense: null });
     setRawPlayerData(null);
     setFavoritedCharacterIds(new Set());
     setAntiFavoritedCharacterIds(new Set());
@@ -1387,6 +1392,7 @@ export function App() {
               />
             )}
             {activeTab === "onslaught" && <OnslaughtTab onslaughtBoards={onslaughtBoards} />}
+            {activeTab === "guildwar" && <GuildWarTab guildWar={guildWar} />}
             {activeTab === "coverage" && <BoardCoverageTab />}
             {activeTab === "heroquests" && <HeroQuestsTab jars={heroQuestJars} activeQuestIds={activeQuestIds} viewMode={viewMode} />}
             {activeTab === "crusade" && (

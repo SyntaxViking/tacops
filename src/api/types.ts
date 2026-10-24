@@ -107,6 +107,81 @@ export interface OnslaughtTierBoard {
 
 export type OnslaughtBoards = Record<OnslaughtAlliance, OnslaughtTierBoard[]>;
 
+// Everything optional here mirrors what the guild war snapshot itself omits for a unit that's
+// never been touched by combat (e.g. remainingHp) - see guild-war-extraction.ts.
+export interface GuildWarCharacterSlot {
+  unitId: string;
+  rank?: number;
+  progressionIndex?: number;
+  xpLevel?: number;
+  activeAbilityLevel?: number;
+  passiveAbilityLevel?: number;
+  // Damage profiles from this unit's equipped relic ability, if any - the closest "equipment"
+  // signal the guild war snapshot carries. There's no item/instance data here (unlike the
+  // Characters tab's own `items`), just the relic's already-resolved ability id, so this is
+  // resolved straight from that (see guild-war-extraction.ts's relicAbilityDamageProfiles).
+  extraDamageProfiles: string[];
+  defeated: boolean;
+}
+
+export interface GuildWarMachineOfWar {
+  unitId: string;
+  progressionIndex?: number;
+  xpLevel?: number;
+  activeAbilityLevel?: number;
+  passiveAbilityLevel?: number;
+  defeated: boolean;
+}
+
+// One player's lineup within a site - the game's own cap is 5 characters, but this passes
+// through whatever the API actually sent rather than padding/truncating.
+export interface GuildWarLineup {
+  characters: GuildWarCharacterSlot[];
+  // Null only if the game sent no machine of war for this lineup at all (not the same as it
+  // being defeated).
+  machineOfWar: GuildWarMachineOfWar | null;
+  // Whole-lineup clear flag (defeatedByUserId on the API side) - every character's own
+  // `defeated` already folds this in, so this is only for lineup-level UI (e.g. graying out a
+  // lineup's machine of war, which carries no defeat signal of its own).
+  defeated: boolean;
+}
+
+export interface GuildWarSite {
+  zoneId: string;
+  // The game's own zone type id (e.g. "Trenches1", "HQ", "ArtilleryPosition1"). Null means this
+  // site hasn't been revealed to us yet - the GET_PLAYER response itself omits everything but
+  // zoneId for a site we can't see (see guild-war-extraction.ts), so there's no type to show.
+  zoneType: string | null;
+  // One rarity cap per lineup slot (5 entries, index-aligned with each player's `lineups`),
+  // looked up from the current battlefield level's zone-tier config. Null when zoneType is
+  // unknown (hidden site) - there's nothing to look up.
+  rarityCaps: string[] | null;
+  // The board art id for this site's zone type (config.zoneTypeConfigs[zoneType].boardId), for
+  // the detail view's thumbnail. Null when zoneType is unknown (hidden site).
+  boardId: string | null;
+  // config.zoneTypeConfigs[zoneType].spawnPointsSet - which of that board's spawn-point layouts
+  // this site uses, for placing a selected lineup's characters on the board thumbnail. Defaults
+  // to 0 when the zone type's config omits the field (same absent-means-0 convention already
+  // confirmed for RawPvpEncounter.spawnPointsSet below). Null only when zoneType itself is
+  // unknown (hidden site) - there's no config entry to default from at all.
+  spawnPointsSet: number | null;
+  // The two players occupying this site, each with their own 5 lineups - null when the site
+  // hasn't been revealed yet (hidden sites carry no lineup data at all).
+  players: [GuildWarLineup[], GuildWarLineup[]] | null;
+}
+
+// Always 5 rows x 3 columns, matching the in-game grid exactly. Row 0 is the front line (the row
+// closest to the player in the game's own window); row 4 is the far/back row.
+export type GuildWarBattlefield = GuildWarSite[][];
+
+export interface GuildWarData {
+  // The battlefield the player's guild is attacking (the other guild's board). Null when no
+  // guild war is currently active for this player.
+  attack: GuildWarBattlefield | null;
+  // The battlefield the player's guild is defending (their own board, always fully revealed).
+  defense: GuildWarBattlefield | null;
+}
+
 export interface CrusadeData {
   crusadeId: string;
   seasonNumber: number;
