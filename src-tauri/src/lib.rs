@@ -6,7 +6,7 @@ mod export;
 mod guild_chat;
 mod loki;
 
-use board_assets::{fetch_spawn_points, read_local_board_image};
+use board_assets::{fetch_spawn_points, read_local_board_image, read_local_spawn_points};
 use credentials::find_credentials;
 use crusades::{fetch_crusade_data, fetch_leaderboard_data, fetch_pvp_state};
 use dev_data_source::{proxy_worker_get, proxy_worker_post};
@@ -33,6 +33,7 @@ pub fn run() {
             fetch_pvp_state,
             fetch_spawn_points,
             read_local_board_image,
+            read_local_spawn_points,
             proxy_worker_get,
             proxy_worker_post,
             guild_feed_init,

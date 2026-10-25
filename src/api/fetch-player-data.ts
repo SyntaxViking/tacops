@@ -8,6 +8,7 @@ import { equippedRelicDamageProfiles } from "../characters/character-profile";
 import { extractSectorMap } from "../crusade/sector-map-extraction";
 import { extractPlanetDefenses } from "../crusade/planet-defenses-extraction";
 import { extractOnslaughtBoards } from "../onslaught/onslaught-extraction";
+import { extractGuildWar } from "../guild-war/guild-war-extraction";
 import { extractActiveQuestIds } from "../hero-quests/active-quest-extraction";
 import { computeHeroQuestJars, type HeroQuestJar } from "../hero-quests/hero-quest-view-model";
 import {
@@ -20,7 +21,7 @@ import {
   computeTreasureBeachTimings,
   computeWavesTimings,
 } from "./resource-regen";
-import type { Credentials, CrusadeSectorMap, Environment, ExpeditionBoardEntry, OnslaughtBoards, PlanetDefenseCounts, PlayerResources, RawUnit } from "./types";
+import type { Credentials, CrusadeSectorMap, Environment, ExpeditionBoardEntry, GuildWarData, OnslaughtBoards, PlanetDefenseCounts, PlayerResources, RawUnit } from "./types";
 
 const characterIds = new Set((characterData as { id: string }[]).map((c) => c.id));
 const mowIds = new Set((mowData as { mows: { snowprintId: string }[] }).mows.map((m) => m.snowprintId));
@@ -42,6 +43,7 @@ export interface PlayerData {
   sectorMap: CrusadeSectorMap;
   planetDefenses: Record<string, PlanetDefenseCounts>;
   onslaughtBoards: OnslaughtBoards;
+  guildWar: GuildWarData;
   // The untouched GET_PLAYER envelope, kept around only so it can be exported as-is.
   raw: unknown;
 }
@@ -190,6 +192,7 @@ export async function fetchPlayerData(
   const sectorMap = extractSectorMap(hero);
   const planetDefenses = extractPlanetDefenses(hero);
   const onslaughtBoards = extractOnslaughtBoards(hero);
+  const guildWar = extractGuildWar(hero);
 
   return {
     board,
@@ -204,6 +207,7 @@ export async function fetchPlayerData(
     sectorMap,
     planetDefenses,
     onslaughtBoards,
+    guildWar,
     raw: response,
   };
 }

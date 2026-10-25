@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveCharacterSpawnPositions, type SpawnPointManifest } from "./board-layout";
+import { resolveCharacterSpawnPositions, resolveSpawnPositionsForTeam, type SpawnPointManifest } from "./board-layout";
 
 // A real slice of board-assets/spawn-points.json (board C1_02, spawnPointsSetIndex 3) - team 0 is
 // the player's own deploy side, team 1 is the opponent's.
@@ -56,5 +56,20 @@ describe("resolveCharacterSpawnPositions", () => {
   it("caps at however many spawn points the group actually has, rather than throwing on a mismatch", () => {
     const positions = resolveCharacterSpawnPositions(manifest, "C1_02", 3, [...lineup, "ultraTitus"]);
     expect(positions).toHaveLength(5);
+  });
+});
+
+describe("resolveSpawnPositionsForTeam", () => {
+  it("resolves team 0's own group instead of the hardcoded opponent (team 1)", () => {
+    const positions = resolveSpawnPositionsForTeam(manifest, "C1_02", 3, 0, ["ultraTigurius"]);
+    expect(positions).toEqual([{ characterId: "ultraTigurius", x: 35.45, y: 309.39 }]);
+  });
+
+  it("matches resolveCharacterSpawnPositions when asked for team 1", () => {
+    expect(resolveSpawnPositionsForTeam(manifest, "C1_02", 3, 1, lineup)).toEqual(resolveCharacterSpawnPositions(manifest, "C1_02", 3, lineup));
+  });
+
+  it("returns an empty array for a team index the board has no group for", () => {
+    expect(resolveSpawnPositionsForTeam(manifest, "C1_02", 3, 2, lineup)).toEqual([]);
   });
 });
