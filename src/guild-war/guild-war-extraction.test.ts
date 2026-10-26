@@ -41,6 +41,7 @@ function heroWithGuildWar(
   battlefieldConfig?: any,
   battlefieldLevel = 5,
   zoneTypeConfigs?: any,
+  team2GuildWarGuildData?: any,
 ) {
   return {
     liveEvents: {
@@ -61,7 +62,33 @@ function heroWithGuildWar(
                   zoneTypeConfigs: zoneTypeConfigs ?? {},
                 },
                 team1: { defendingFrontLine: { warZones: team1WarZones } },
-                team2: { defendingFrontLine: { warZones: team2WarZones } },
+                team2: { defendingFrontLine: { warZones: team2WarZones }, guildWarGuildData: team2GuildWarGuildData },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+function heroWithGuildWarPrep(teamWarZones: unknown[]) {
+  return {
+    liveEvents: {
+      liveEvents: [
+        {
+          type: "event",
+          name: "guildWarPrep",
+          modules: [
+            {
+              type: "guildWarPrep",
+              module: {
+                type: "guildWarPrep",
+                moduleType: "guildWarPrep",
+                personalState: { teamIndex: 1 },
+                battlefieldLevel: 5,
+                config: { battlefieldConfig: { battleFieldLevels: [], zoneTiers: [] }, zoneTypeConfigs: {} },
+                team: { defendingFrontLine: { warZones: teamWarZones } },
               },
             },
           ],
@@ -129,7 +156,7 @@ describe("extractGuildWar", () => {
 
     const result = extractGuildWar(heroWithGuildWar(2, [], team2WarZones));
 
-    const defeatedLineup = result.defense?.[0][0].players?.[0][0];
+    const defeatedLineup = result.defense?.[0][0].players?.[0].lineups[0];
     expect(defeatedLineup?.defeated).toBe(true);
     expect(defeatedLineup?.characters.map((c) => ({ unitId: c.unitId, defeated: c.defeated }))).toEqual([
       { unitId: "tauCrisis", defeated: true },
@@ -137,7 +164,7 @@ describe("extractGuildWar", () => {
     ]);
     expect(defeatedLineup?.machineOfWar).toEqual({ unitId: "deathCrawler", defeated: true });
 
-    const standingLineup = result.defense?.[0][0].players?.[1][0];
+    const standingLineup = result.defense?.[0][0].players?.[1].lineups[0];
     expect(standingLineup?.defeated).toBe(false);
     expect(standingLineup?.characters).toEqual([{ unitId: "genesPrimus", defeated: false, extraDamageProfiles: [] }]);
     expect(standingLineup?.machineOfWar).toEqual({ unitId: "tyranBiovore", defeated: false });
@@ -156,7 +183,7 @@ describe("extractGuildWar", () => {
     ];
 
     const result = extractGuildWar(heroWithGuildWar(2, [], team2WarZones));
-    const lineup = result.defense?.[0][0].players?.[0][0];
+    const lineup = result.defense?.[0][0].players?.[0].lineups[0];
 
     expect(lineup?.characters.map((c) => ({ unitId: c.unitId, defeated: c.defeated }))).toEqual([
       { unitId: "tauCrisis", defeated: true },
@@ -181,7 +208,7 @@ describe("extractGuildWar", () => {
 
     const result = extractGuildWar(heroWithGuildWar(2, [], team2WarZones));
 
-    expect(result.defense?.[0][0].players?.[0][0].characters[0].extraDamageProfiles).toEqual(["Toxic"]);
+    expect(result.defense?.[0][0].players?.[0].lineups[0].characters[0].extraDamageProfiles).toEqual(["Toxic"]);
   });
 
   it("resolves each site's rarity caps via the active battlefield level's zone tier", () => {
@@ -234,5 +261,96 @@ describe("extractGuildWar", () => {
     const result = extractGuildWar(heroWithGuildWar(2, [], team2WarZones));
 
     expect(result.defense?.[0][0].spawnPointsSet).toBeNull();
+  });
+
+  it("resolves each player's userId and display name from the owning team's own guildWarGuildData.members", () => {
+    const team2WarZones = [
+      [
+        {
+          zoneId: "zone-Trenches1",
+          warZoneType: "Trenches1",
+          zonePart1: { occupiedByUserId: "user-1", warZoneSlots: [slot([unit("tauCrisis")])] },
+          zonePart2: { occupiedByUserId: "user-2", warZoneSlots: [slot([unit("bloodMephiston")])] },
+        },
+      ],
+    ];
+    const hero = heroWithGuildWar(2, [], team2WarZones, undefined, 5, undefined, {
+      members: [
+        { userId: "user-1", displayName: "TIMONIMUS" },
+        { userId: "user-2", displayName: "Hooligan《EoT》" },
+      ],
+    });
+
+    const result = extractGuildWar(hero);
+    const players = result.defense?.[0][0].players;
+
+    expect(players?.[0]).toMatchObject({ userId: "user-1", displayName: "TIMONIMUS" });
+    expect(players?.[1]).toMatchObject({ userId: "user-2", displayName: "Hooligan《EoT》" });
+  });
+
+  it("falls back to a null display name for an occupant missing from the member roster, instead of throwing", () => {
+    const team2WarZones = [warZoneRow("Trenches1")];
+
+    const result = extractGuildWar(heroWithGuildWar(2, [], team2WarZones));
+    const players = result.defense?.[0][0].players;
+
+    // warZoneRow's zones never set occupiedByUserId, and heroWithGuildWar's team2 has no
+    // guildWarGuildData at all - both missing-data paths should degrade gracefully.
+    expect(players?.[0]).toMatchObject({ userId: null, displayName: null });
+  });
+
+  describe("during the Preparation phase (moduleType guildWarPrep)", () => {
+    it("resolves the player's own defense from the single `team` field, with attack null since no opponent is matched yet", () => {
+      const teamWarZones = [warZoneRow("Trenches1", "Trenches2", "Trenches3")];
+
+      const result = extractGuildWar(heroWithGuildWarPrep(teamWarZones));
+
+      expect(result.attack).toBeNull();
+      expect(result.defense?.[0].map((s) => s.zoneType)).toEqual(["Trenches1", "Trenches2", "Trenches3"]);
+    });
+
+    it("still resolves rarity caps and board ids for the defense board during Prep", () => {
+      const battlefieldConfig = {
+        battleFieldLevels: [{ battlefieldLevel: 5, zoneTiers: [{ warZoneType: "Trenches1", zoneTierId: "Veteran" }] }],
+        zoneTiers: [{ zoneTierId: "Veteran", rarityCaps: ["Epic", "Epic", "Rare", "Rare", "Rare"] }],
+      };
+      const teamWarZones = [warZoneRow("Trenches1")];
+
+      const result = extractGuildWar({
+        liveEvents: {
+          liveEvents: [
+            {
+              type: "event",
+              name: "guildWarPrep",
+              modules: [
+                {
+                  type: "guildWarPrep",
+                  module: {
+                    type: "guildWarPrep",
+                    moduleType: "guildWarPrep",
+                    personalState: { teamIndex: 1 },
+                    battlefieldLevel: 5,
+                    config: { battlefieldConfig, zoneTypeConfigs: { Trenches1: { boardId: "C1_23", spawnPointsSet: 5 } } },
+                    team: { defendingFrontLine: { warZones: teamWarZones } },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+      expect(result.defense?.[0][0].rarityCaps).toEqual(["Epic", "Epic", "Rare", "Rare", "Rare"]);
+      expect(result.defense?.[0][0].boardId).toBe("C1_23");
+      expect(result.defense?.[0][0].spawnPointsSet).toBe(5);
+    });
+
+    it("reads a not-yet-attacked lineup as not defeated", () => {
+      const teamWarZones = [warZoneRow("Trenches1")];
+
+      const result = extractGuildWar(heroWithGuildWarPrep(teamWarZones));
+
+      expect(result.defense?.[0][0].players?.[0].lineups[0].defeated).toBe(false);
+    });
   });
 });

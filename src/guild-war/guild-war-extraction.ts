@@ -1,15 +1,19 @@
 import { relicAbilityDamageProfiles } from "../characters/character-profile";
-import type { GuildWarBattlefield, GuildWarCharacterSlot, GuildWarData, GuildWarLineup, GuildWarMachineOfWar } from "../api/types";
+import type { GuildWarBattlefield, GuildWarCharacterSlot, GuildWarData, GuildWarLineup, GuildWarMachineOfWar, GuildWarPlayer } from "../api/types";
 
-// hero is GET_PLAYER's player.hero. Matched by the module's own moduleType ("guildWarEvent"),
-// not by the live event's own id/name - same convention as fetch-player-data.ts's other
-// recurring-module lookups (LHE, seasonal event, Legendary Event), since those can vary across
-// runs while the module type stays fixed. Confirmed against a real capture where the live
-// event's own `name` was "guildWar".
+// hero is GET_PLAYER's player.hero. Matched by the module's own moduleType, not by the live
+// event's own id/name - same convention as fetch-player-data.ts's other recurring-module lookups
+// (LHE, seasonal event, Legendary Event), since those can vary across runs while the module type
+// stays fixed. Two module types exist, confirmed against real captures of each: "guildWarEvent"
+// once the war itself is live (live event name "guildWar"), and "guildWarPrep" during the
+// Preparation phase beforehand (live event name "guildWarPrep") - see extractGuildWar for how
+// their shapes differ.
+const GUILD_WAR_MODULE_TYPES = new Set(["guildWarEvent", "guildWarPrep"]);
+
 function findGuildWarModule(hero: any): any {
   return hero?.liveEvents?.liveEvents
-    ?.find((event: any) => event?.modules?.some((m: any) => m.type === "guildWarEvent"))
-    ?.modules?.find((m: any) => m.type === "guildWarEvent")?.module;
+    ?.find((event: any) => event?.modules?.some((m: any) => GUILD_WAR_MODULE_TYPES.has(m.type)))
+    ?.modules?.find((m: any) => GUILD_WAR_MODULE_TYPES.has(m.type))?.module;
 }
 
 // Rarity caps are keyed by zone *tier* ("Hero"/"Elite"/"Veteran"/"Trooper"), not by zone type
@@ -66,6 +70,20 @@ function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+// A site's two zonePart*.occupiedByUserId only give a bare userId - resolving it to a display
+// name means looking it up against the *owning* guild's own member roster
+// (guildWarGuildData.members), confirmed against a real capture (team.guildWarGuildData.members
+// during Prep, team1/team2's during an active war).
+function buildMemberNameMap(team: any): Map<string, string> {
+  const members = team?.guildWarGuildData?.members;
+  if (!Array.isArray(members)) return new Map();
+  return new Map(
+    members
+      .filter((m: any) => typeof m?.userId === "string" && typeof m?.displayName === "string")
+      .map((m: any): [string, string] => [m.userId, m.displayName]),
+  );
+}
+
 // A lineup (zonePart*.warZoneSlots[i]) carries a `defeatedByUserId` once it's been fully cleared
 // - at that point its individual units no longer carry their own `remainingHp` (confirmed against
 // a real capture), so the whole-lineup flag is the only signal left and applies to every
@@ -113,13 +131,24 @@ function toLineups(part: any): GuildWarLineup[] | null {
   });
 }
 
-function toBattlefield(warZones: unknown, lookup: SiteConfigLookup): GuildWarBattlefield | null {
+function toPlayer(part: any, memberNames: Map<string, string>): GuildWarPlayer | null {
+  const lineups = toLineups(part);
+  if (!lineups) return null;
+  const userId = typeof part?.occupiedByUserId === "string" ? part.occupiedByUserId : null;
+  return {
+    userId,
+    displayName: userId !== null ? memberNames.get(userId) ?? null : null,
+    lineups,
+  };
+}
+
+function toBattlefield(warZones: unknown, lookup: SiteConfigLookup, memberNames: Map<string, string>): GuildWarBattlefield | null {
   if (!Array.isArray(warZones)) return null;
   return warZones.map((row) =>
     (Array.isArray(row) ? row : []).map((zone: any) => {
       const zoneType = zone?.warZoneType ?? null;
-      const lineups1 = toLineups(zone?.zonePart1);
-      const lineups2 = toLineups(zone?.zonePart2);
+      const player1 = toPlayer(zone?.zonePart1, memberNames);
+      const player2 = toPlayer(zone?.zonePart2, memberNames);
       const zoneTypeConfig = zoneType !== null ? lookup.zoneTypeConfigByWarZoneType.get(zoneType) : undefined;
       return {
         zoneId: zone?.zoneId ?? "",
@@ -133,7 +162,7 @@ function toBattlefield(warZones: unknown, lookup: SiteConfigLookup): GuildWarBat
         // set at index 0). Only an unrevealed site (no zoneTypeConfig entry to look up at all)
         // reads as null - there's nothing to default there.
         spawnPointsSet: zoneTypeConfig ? zoneTypeConfig.spawnPointsSet ?? 0 : null,
-        players: lineups1 && lineups2 ? ([lineups1, lineups2] as [GuildWarLineup[], GuildWarLineup[]]) : null,
+        players: player1 && player2 ? ([player1, player2] as [GuildWarPlayer, GuildWarPlayer]) : null,
       };
     }),
   );
@@ -147,6 +176,19 @@ export function extractGuildWar(hero: any): GuildWarData {
   const module = findGuildWarModule(hero);
   if (!module) return { attack: null, defense: null };
 
+  const lookup = buildSiteConfigLookup(module);
+
+  // During Prep (moduleType "guildWarPrep"), no opponent has been matched yet - the module only
+  // carries the player's own side as a single `team` (not `team1`/`team2`), confirmed against a
+  // real Prep-phase capture. Their own defense board is still fully set up and revealed at this
+  // point (same as it is mid-war); there's just nothing yet to attack.
+  if (module.moduleType === "guildWarPrep") {
+    return {
+      attack: null,
+      defense: toBattlefield(module.team?.defendingFrontLine?.warZones, lookup, buildMemberNameMap(module.team)),
+    };
+  }
+
   // personalState.teamIndex (1 or 2) says which of team1/team2 is the player's own guild -
   // confirmed against a real capture by cross-referencing the player's own display name against
   // team2.guildWarGuildData.members, which matched teamIndex exactly.
@@ -154,10 +196,8 @@ export function extractGuildWar(hero: any): GuildWarData {
   const myTeam = myTeamIndex === 1 ? module.team1 : myTeamIndex === 2 ? module.team2 : null;
   const theirTeam = myTeamIndex === 1 ? module.team2 : myTeamIndex === 2 ? module.team1 : null;
 
-  const lookup = buildSiteConfigLookup(module);
-
   return {
-    attack: toBattlefield(theirTeam?.defendingFrontLine?.warZones, lookup),
-    defense: toBattlefield(myTeam?.defendingFrontLine?.warZones, lookup),
+    attack: toBattlefield(theirTeam?.defendingFrontLine?.warZones, lookup, buildMemberNameMap(theirTeam)),
+    defense: toBattlefield(myTeam?.defendingFrontLine?.warZones, lookup, buildMemberNameMap(myTeam)),
   };
 }
