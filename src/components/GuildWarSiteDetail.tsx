@@ -16,7 +16,7 @@ interface SelectedLineup {
 export function GuildWarSiteDetail({ site, onBack }: GuildWarSiteDetailProps) {
   const [selected, setSelected] = useState<SelectedLineup | null>(null);
 
-  const selectedLineup = selected ? site.players?.[selected.playerIndex][selected.lineupIndex] : undefined;
+  const selectedLineup = selected ? site.players?.[selected.playerIndex].lineups[selected.lineupIndex] : undefined;
   const selection: GuildWarLineupSelection | null = selected && selectedLineup
     ? {
         // Both players place from player 2's spawn point group (teamWithPlayerIndex 1), not
@@ -48,10 +48,12 @@ export function GuildWarSiteDetail({ site, onBack }: GuildWarSiteDetailProps) {
 
       {site.players ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {site.players.map((lineups, playerIndex) => (
+          {site.players.map((player, playerIndex) => (
             <div key={playerIndex} className="flex flex-col gap-2">
-              <h3 className="text-sm font-medium text-neutral-600 dark:text-neutral-400">Player {playerIndex + 1}</h3>
-              {lineups.map((lineup, lineupIndex) => (
+              <h3 className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
+                {player.displayName ?? `Player ${playerIndex + 1}`}
+              </h3>
+              {player.lineups.map((lineup, lineupIndex) => (
                 <GuildWarLineupRow
                   key={lineupIndex}
                   lineup={lineup}

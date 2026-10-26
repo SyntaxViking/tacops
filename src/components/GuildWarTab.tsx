@@ -43,9 +43,9 @@ function SiteCell({ site, onSelect }: { site: GuildWarSite; onSelect: () => void
       <div>{site.zoneType ?? "(hidden)"}</div>
       {site.players && (
         <div className="grid grid-cols-2 gap-x-2">
-          {site.players.map((lineups, playerIndex) => (
+          {site.players.map((player, playerIndex) => (
             <div key={playerIndex} className="flex flex-col gap-1">
-              {lineups.map((lineup, lineupIndex) => (
+              {player.lineups.map((lineup, lineupIndex) => (
                 <LineupRow key={lineupIndex} lineup={lineup} lineupIndex={lineupIndex} rarityCap={site.rarityCaps?.[lineupIndex]} />
               ))}
             </div>
