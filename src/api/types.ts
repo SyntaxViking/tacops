@@ -146,6 +146,15 @@ export interface GuildWarLineup {
   defeated: boolean;
 }
 
+export interface GuildWarPlayer {
+  userId: string | null;
+  // Resolved from the owning guild's own guildWarGuildData.members (userId -> displayName) -
+  // null if that lookup fails (e.g. a member who's since left the guild) or there's no userId at
+  // all to look up.
+  displayName: string | null;
+  lineups: GuildWarLineup[];
+}
+
 export interface GuildWarSite {
   zoneId: string;
   // The game's own zone type id (e.g. "Trenches1", "HQ", "ArtilleryPosition1"). Null means this
@@ -165,9 +174,9 @@ export interface GuildWarSite {
   // confirmed for RawPvpEncounter.spawnPointsSet below). Null only when zoneType itself is
   // unknown (hidden site) - there's no config entry to default from at all.
   spawnPointsSet: number | null;
-  // The two players occupying this site, each with their own 5 lineups - null when the site
-  // hasn't been revealed yet (hidden sites carry no lineup data at all).
-  players: [GuildWarLineup[], GuildWarLineup[]] | null;
+  // The two players occupying this site, each with their own identity and 5 lineups - null when
+  // the site hasn't been revealed yet (hidden sites carry no lineup data at all).
+  players: [GuildWarPlayer, GuildWarPlayer] | null;
 }
 
 // Always 5 rows x 3 columns, matching the in-game grid exactly. Row 0 is the front line (the row
