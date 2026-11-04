@@ -54,6 +54,7 @@ import type { TrackedPlanetSample, TrackedPlanetState } from "./crusade/planet-t
 
 const TABS = [
   { id: "operations", label: "Operations" },
+  { id: "status", label: "Status" },
   { id: "crusade", label: "Crusade" },
   { id: "monitor", label: "Monitor" },
   { id: "guildchat", label: "Guild Chat" },
@@ -94,7 +95,29 @@ export function App() {
     setDevDataSource(source);
     setDevDataSourceState(source);
   }
-  const [activeTab, setActiveTab] = useState(TABS[0].id);
+  const ACTIVE_TAB_STORAGE_KEY = "tacops.activeTab";
+  // Initialized from localStorage so the choice survives reloads - falls back to TABS[0].id both
+  // when nothing's saved yet and when the saved id no longer matches any current tab (e.g. a
+  // future rename/removal), same guard shape as devDataSource above.
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+      return saved && TABS.some((tab) => tab.id === saved) ? saved : TABS[0].id;
+    } catch {
+      return TABS[0].id;
+    }
+  });
+  // Only the Tabs bar's onChange goes through this - resetToAnonymousView below intentionally
+  // keeps calling the plain setActiveTab so logging out / turning off dev mode resets the
+  // in-memory tab without clobbering the user's saved preference for next time.
+  function setActiveTabPersisted(id: string) {
+    setActiveTab(id);
+    try {
+      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, id);
+    } catch {
+      // Best-effort - worst case the tab choice doesn't persist across reloads.
+    }
+  }
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [selectedExpeditionId, setSelectedExpeditionId] = useState<string | null>(null);
   const [devModeEnabled, setDevModeEnabled] = useState(false);
@@ -1311,7 +1334,6 @@ export function App() {
                   )}
                 </div>
               </form>
-              {resources && <ResourceTokens resources={resources} adViewsRemaining={adViewsRemaining} />}
               <p className="inline-flex items-center gap-2">
                 {fetchState === "loading" && <Spinner seconds={secondsRemaining} />}
                 {fetchState === "error" && <ErrorIcon />}
@@ -1320,7 +1342,7 @@ export function App() {
             </>
           )}
 
-          {devModeEnabled && <Tabs tabs={TABS} active={activeTab} onChange={setActiveTab} />}
+          {devModeEnabled && <Tabs tabs={TABS} active={activeTab} onChange={setActiveTabPersisted} />}
 
           <div className="w-full overflow-x-auto pt-2">
             {activeTab === "operations" && (
@@ -1374,6 +1396,11 @@ export function App() {
                     </div>
                   </div>
                 </>
+              </ErrorBoundary>
+            )}
+            {activeTab === "status" && (
+              <ErrorBoundary fallbackLabel="Status">
+                {resources && <ResourceTokens resources={resources} adViewsRemaining={adViewsRemaining} />}
               </ErrorBoundary>
             )}
             {activeTab === "characters" && (
