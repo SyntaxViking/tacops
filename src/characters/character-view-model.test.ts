@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { sortCharacterRows } from "./character-view-model";
+import { getSafeCharacterRow, sortCharacterRows } from "./character-view-model";
 import type { CharacterRow } from "./character-view-model";
+import type { RawUnit } from "../api/types";
 
 function row(overrides: Partial<CharacterRow> = {}): CharacterRow {
   return {
@@ -41,5 +42,17 @@ describe("sortCharacterRows", () => {
     const rows = [row({ id: "b", power: 1 }), row({ id: "a", power: 2 })];
     sortCharacterRows(rows, "powerDesc");
     expect(rows.map((r) => r.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("getSafeCharacterRow", () => {
+  it("resolves a known character", () => {
+    const hero: RawUnit = { id: "deathRotbone" };
+    expect(getSafeCharacterRow(hero, "test")?.id).toBe("deathRotbone");
+  });
+
+  it("returns null instead of throwing for an unrecognized character id", () => {
+    const hero: RawUnit = { id: "notARealCharacterId" };
+    expect(getSafeCharacterRow(hero, "test")).toBeNull();
   });
 });

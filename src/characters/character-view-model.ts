@@ -45,6 +45,9 @@ export function sortCharacterRows(rows: CharacterRow[], mode: CharacterSortMode)
   return sorted;
 }
 
+// Throws for an unrecognized character id (hero.id not in character-data.json, or no portrait
+// mapped for it) - callers that treat that as a hard invariant (e.g. coverage-solver.ts iterating
+// its own full catalog) rely on this. For live/untrusted data, use getSafeCharacterRow instead.
 export function getCharacterRow(hero: RawUnit): CharacterRow {
   const rank = intToRank(hero.rank);
   const rarity = ProgressionIndexMapper.toRarity(hero.progressionIndex);
@@ -67,4 +70,17 @@ export function getCharacterRow(hero: RawUnit): CharacterRow {
       .map((trait) => traitIconUrl(trait))
       .filter((url): url is string => url !== undefined),
   };
+}
+
+// Returns null (rather than throwing) for a character id the bundled data doesn't know about -
+// e.g. a character added to the game since this build's data was last extracted - so one
+// unrecognized unit can't take down the whole view it's rendered in. logTag identifies the
+// caller in the console.error, e.g. "characters", "pvp", "guild-war".
+export function getSafeCharacterRow(hero: RawUnit, logTag: string): CharacterRow | null {
+  try {
+    return getCharacterRow(hero);
+  } catch (error) {
+    console.error(`[${logTag}] getCharacterRow failed for ${hero.id}`, error);
+    return null;
+  }
 }

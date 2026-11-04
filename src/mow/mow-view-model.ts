@@ -22,6 +22,8 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+// Throws for an unrecognized machine of war id. For live/untrusted data, use getSafeMowRow
+// instead - see character-view-model.ts's getCharacterRow/getSafeCharacterRow for the same split.
 export function getMowRow(mow: RawUnit): MowRow {
   // Machines of war carry both `progressionIndex` and an identical `starLevel`;
   // either one maps to rarity and stars exactly like a character's does.
@@ -40,4 +42,15 @@ export function getMowRow(mow: RawUnit): MowRow {
     passiveLevel: asNumber(mow.passive),
     power: mow.power,
   };
+}
+
+// Returns null (rather than throwing) for a MoW id the bundled data doesn't know about - see
+// getSafeCharacterRow's comment for the full reasoning.
+export function getSafeMowRow(mow: RawUnit, logTag: string): MowRow | null {
+  try {
+    return getMowRow(mow);
+  } catch (error) {
+    console.error(`[${logTag}] getMowRow failed for ${mow.id}`, error);
+    return null;
+  }
 }

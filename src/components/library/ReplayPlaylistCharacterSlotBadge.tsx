@@ -10,7 +10,11 @@ export function ReplayPlaylistCharacterSlotBadge({ row }: { row: ReplayPlaylistC
   return (
     <div className="flex w-16 flex-col items-center gap-1">
       <div className="relative h-16 w-16">
-        <img src={row.portraitUrl} title={row.name} className="h-16 w-16 rounded-full object-cover" />
+        {row.portraitUrl ? (
+          <img src={row.portraitUrl} title={row.name} className="h-16 w-16 rounded-full object-cover" />
+        ) : (
+          <span className="block h-16 w-16 rounded-full bg-neutral-700" title={row.name} />
+        )}
         <img src={row.rankIconUrl} title="Rank" className="absolute -top-1 -left-1 h-5 w-5 rounded-full" />
         <img src={row.rarityIconUrl} title="Rarity" className="absolute -top-1 -right-1 h-5 w-5 rounded-full" />
         {row.starIconUrls.length > 0 && (

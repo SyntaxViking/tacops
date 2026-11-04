@@ -1,6 +1,6 @@
 import { Icon } from "./Icon";
 import { IconRow } from "./IconRow";
-import { getMowRow } from "../mow/mow-view-model";
+import { getSafeMowRow } from "../mow/mow-view-model";
 import type { RawUnit } from "../api/types";
 
 const cellClass = "border-b border-black/10 px-3 py-2 align-top dark:border-white/15";
@@ -28,7 +28,8 @@ export function MowTable({ machinesOfWar }: { machinesOfWar: RawUnit[] }) {
       </thead>
       <tbody>
         {sortedMachinesOfWar.map((mow) => {
-          const row = getMowRow(mow);
+          const row = getSafeMowRow(mow, "mows");
+          if (!row) return null;
           return (
             <tr key={row.id}>
               <td className={cellClass}>{row.name}</td>

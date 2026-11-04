@@ -46,15 +46,34 @@ export interface ReplayPlaylistCharacterSlotRow {
   abilityLevel2: number;
 }
 
+// Falls back to a placeholder (raw id as the name, no portrait) instead of throwing when
+// slot.characterId isn't in the bundled data - e.g. a typo, or a character added to the game
+// since this build's data was last extracted. This page always wants exactly its fixed lineup
+// slots rendered, so a failure here degrades to a visible placeholder rather than dropping the
+// slot or crashing the whole page (there's no React error boundary covering it).
 export function getReplayPlaylistCharacterSlotRow(slot: ReplayPlaylistCharacterSlot): ReplayPlaylistCharacterSlotRow {
-  return {
-    characterId: slot.characterId,
-    name: getCharacterProfile(slot.characterId).name,
-    portraitUrl: characterPortraitUrl(slot.characterId),
-    rankIconUrl: rankIconUrl(slot.rank),
-    rarityIconUrl: rarityIconUrl(slot.rarity),
-    starIconUrls: starIconUrls(slot.stars),
-    abilityLevel1: slot.abilityLevel1,
-    abilityLevel2: slot.abilityLevel2,
-  };
+  try {
+    return {
+      characterId: slot.characterId,
+      name: getCharacterProfile(slot.characterId).name,
+      portraitUrl: characterPortraitUrl(slot.characterId),
+      rankIconUrl: rankIconUrl(slot.rank),
+      rarityIconUrl: rarityIconUrl(slot.rarity),
+      starIconUrls: starIconUrls(slot.stars),
+      abilityLevel1: slot.abilityLevel1,
+      abilityLevel2: slot.abilityLevel2,
+    };
+  } catch (error) {
+    console.error(`[library] getReplayPlaylistCharacterSlotRow failed for ${slot.characterId}`, error);
+    return {
+      characterId: slot.characterId,
+      name: slot.characterId,
+      portraitUrl: "",
+      rankIconUrl: rankIconUrl(slot.rank),
+      rarityIconUrl: rarityIconUrl(slot.rarity),
+      starIconUrls: starIconUrls(slot.stars),
+      abilityLevel1: slot.abilityLevel1,
+      abilityLevel2: slot.abilityLevel2,
+    };
+  }
 }

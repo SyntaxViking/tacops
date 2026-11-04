@@ -43,7 +43,7 @@ describe("getPvpCharacterSlot", () => {
       passive: 51,
       items: { Slot1: "1", Slot2: "2" },
     };
-    const slot = getPvpCharacterSlot("ultraTigurius", unit, itemsById);
+    const slot = getPvpCharacterSlot("ultraTigurius", unit, itemsById)!;
     expect(slot.kind).toBe("character");
     expect(slot.activeLevel).toBe(50);
     expect(slot.passiveLevel).toBe(51);
@@ -54,19 +54,27 @@ describe("getPvpCharacterSlot", () => {
   });
 
   it("handles a unit with no items at all (every slot empty)", () => {
-    const slot = getPvpCharacterSlot("ultraTigurius", { progressionIndex: 0 }, itemsById);
+    const slot = getPvpCharacterSlot("ultraTigurius", { progressionIndex: 0 }, itemsById)!;
     expect(slot.equipment).toEqual([null, null, null]);
     expect(slot.activeLevel).toBeNull();
     expect(slot.passiveLevel).toBeNull();
+  });
+
+  it("returns null instead of throwing for an unrecognized character id", () => {
+    expect(getPvpCharacterSlot("notARealCharacterId", { progressionIndex: 0 }, itemsById)).toBeNull();
   });
 });
 
 describe("getPvpMowSlot", () => {
   it("resolves a Machine of War slot with no equipment field", () => {
-    const slot = getPvpMowSlot("blackForgefiend", { progressionIndex: 12, active: 10, passive: 20 });
+    const slot = getPvpMowSlot("blackForgefiend", { progressionIndex: 12, active: 10, passive: 20 })!;
     expect(slot.kind).toBe("mow");
     expect(slot).not.toHaveProperty("equipment");
     expect(slot.activeLevel).toBe(10);
+  });
+
+  it("returns null instead of throwing for an unrecognized machine of war id", () => {
+    expect(getPvpMowSlot("notARealMowId", { progressionIndex: 0 })).toBeNull();
   });
 });
 
@@ -131,5 +139,30 @@ describe("getPvpOpponentCard", () => {
     const { spawnPointsSet, ...withoutSpawnPointsSet } = encounter;
     const card = getPvpOpponentCard(withoutSpawnPointsSet as typeof encounter);
     expect(card.spawnPointsSet).toBe(0);
+  });
+
+  it("omits an unrecognized character fielded by the opponent instead of throwing, keeping the rest of the card", () => {
+    const encounterWithUnknownCharacter: RawPvpEncounter = {
+      ...encounter,
+      opponent: {
+        ...encounter.opponent,
+        units: {
+          ...encounter.opponent.units,
+          units: {
+            ...encounter.opponent.units.units,
+            notARealCharacterId: { progressionIndex: 0 },
+          },
+          lineup: { pvp: ["notARealCharacterId", ...encounter.opponent.units.lineup.pvp] },
+        },
+      },
+    };
+
+    const card = getPvpOpponentCard(encounterWithUnknownCharacter);
+
+    // 5 real characters + 1 MoW, same as the happy-path test - the unrecognized one is dropped,
+    // not left in as a broken slot, and `lineup` (used for board-overlay placement, see
+    // ArenaBoardMap.tsx) still carries it unfiltered.
+    expect(card.units).toHaveLength(6);
+    expect(card.lineup).toContain("notARealCharacterId");
   });
 });
