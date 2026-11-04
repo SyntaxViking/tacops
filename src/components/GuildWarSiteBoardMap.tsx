@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { BoardImage } from "./BoardImage";
-import { characterPortraitUrl } from "../characters/character-portraits";
+import { characterPortraitUrl, hasCharacterPortrait } from "../characters/character-portraits";
 import { fetchSpawnPointManifest, resolveSpawnPositionsForTeam, type SpawnPointManifest } from "../pvp/board-layout";
 
 // Both players place from the same spawn-point group - teamWithPlayerIndex 1 ("player 2's" side)
@@ -61,17 +61,19 @@ export function GuildWarSiteBoardMap({ boardId, spawnPointsSet, selection }: Gui
     <div className="relative inline-block max-w-full">
       <BoardImage boardId={boardId} imgRef={handleImgRef} className="block max-w-full rounded" onLoadSize={setNaturalSize} />
       {naturalSize &&
-        positions.map((position, i) => (
-          <img
-            key={`${position.characterId}-${i}`}
-            src={characterPortraitUrl(position.characterId)}
-            title={position.characterId}
-            className={`absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 object-cover shadow ${
-              selection?.defeatedByCharacterId.get(position.characterId) ? "opacity-40 grayscale" : ""
-            }`}
-            style={{ left: `${(position.x / naturalSize.width) * 100}%`, top: `${(position.y / naturalSize.height) * 100}%` }}
-          />
-        ))}
+        positions
+          .filter((position) => hasCharacterPortrait(position.characterId))
+          .map((position, i) => (
+            <img
+              key={`${position.characterId}-${i}`}
+              src={characterPortraitUrl(position.characterId)}
+              title={position.characterId}
+              className={`absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 object-cover shadow ${
+                selection?.defeatedByCharacterId.get(position.characterId) ? "opacity-40 grayscale" : ""
+              }`}
+              style={{ left: `${(position.x / naturalSize.width) * 100}%`, top: `${(position.y / naturalSize.height) * 100}%` }}
+            />
+          ))}
       {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
     </div>
   );

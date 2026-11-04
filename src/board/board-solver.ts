@@ -51,7 +51,7 @@ function buildRoster(
   antiFavoritedCharacterIds: ReadonlySet<string>,
 ): RosterCharacter[] {
   return heroes
-    .filter((hero) => !excludedIds.has(hero.id))
+    .filter((hero) => !excludedIds.has(hero.id) && isCharacterId(hero.id))
     .map((hero) => ({
       id: hero.id,
       rank: intToRank(hero.rank),

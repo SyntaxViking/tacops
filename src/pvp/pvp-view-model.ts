@@ -85,43 +85,59 @@ export function getPvpEquipmentSlot(
   };
 }
 
+// Returns null (rather than throwing) for a character id the bundled data doesn't know about -
+// e.g. a character added to the game since this build's data was last extracted - so one
+// opponent fielding an unrecognized unit can't take down the whole Arena tab. Wraps the whole
+// body, not just getCharacterProfile: characterPortraitUrl below is an independent throwing
+// lookup (its own hand-maintained table, not character-data.json) that can fail on its own.
 export function getPvpCharacterSlot(
   characterId: string,
   unit: RawPvpUnit,
   itemsById: Record<string, RawPvpItemInstance>,
-): PvpCharacterSlot {
-  const stars = ProgressionIndexMapper.toStars(unit.progressionIndex);
-  const rarity = ProgressionIndexMapper.toRarity(unit.progressionIndex);
-  return {
-    kind: "character",
-    characterId,
-    name: getCharacterProfile(characterId).name,
-    portraitUrl: characterPortraitUrl(characterId),
-    rankIconUrl: rankIconUrl(intToRank(unit.rank)),
-    rarity,
-    rarityIconUrl: rarityIconUrl(rarity),
-    starIconUrls: starIconUrls(stars),
-    activeLevel: unit.active ?? null,
-    passiveLevel: unit.passive ?? null,
-    equipment: EQUIPMENT_SLOT_KEYS.map((slotKey) => getPvpEquipmentSlot(unit.items?.[slotKey], itemsById)),
-  };
+): PvpCharacterSlot | null {
+  try {
+    const stars = ProgressionIndexMapper.toStars(unit.progressionIndex);
+    const rarity = ProgressionIndexMapper.toRarity(unit.progressionIndex);
+    return {
+      kind: "character",
+      characterId,
+      name: getCharacterProfile(characterId).name,
+      portraitUrl: characterPortraitUrl(characterId),
+      rankIconUrl: rankIconUrl(intToRank(unit.rank)),
+      rarity,
+      rarityIconUrl: rarityIconUrl(rarity),
+      starIconUrls: starIconUrls(stars),
+      activeLevel: unit.active ?? null,
+      passiveLevel: unit.passive ?? null,
+      equipment: EQUIPMENT_SLOT_KEYS.map((slotKey) => getPvpEquipmentSlot(unit.items?.[slotKey], itemsById)),
+    };
+  } catch (error) {
+    console.error(`[pvp] getPvpCharacterSlot failed for ${characterId}`, error);
+    return null;
+  }
 }
 
-export function getPvpMowSlot(mowId: string, unit: RawPvpUnit): PvpMowSlot {
-  const profile = getMowProfile(mowId);
-  const stars = ProgressionIndexMapper.toStars(unit.progressionIndex);
-  const rarity = ProgressionIndexMapper.toRarity(unit.progressionIndex);
-  return {
-    kind: "mow",
-    mowId,
-    name: profile.name,
-    portraitUrl: mowPortraitUrl(profile.portraitFile),
-    rarity,
-    rarityIconUrl: rarityIconUrl(rarity),
-    starIconUrls: starIconUrls(stars),
-    activeLevel: unit.active ?? null,
-    passiveLevel: unit.passive ?? null,
-  };
+// Same reasoning as getPvpCharacterSlot above.
+export function getPvpMowSlot(mowId: string, unit: RawPvpUnit): PvpMowSlot | null {
+  try {
+    const profile = getMowProfile(mowId);
+    const stars = ProgressionIndexMapper.toStars(unit.progressionIndex);
+    const rarity = ProgressionIndexMapper.toRarity(unit.progressionIndex);
+    return {
+      kind: "mow",
+      mowId,
+      name: profile.name,
+      portraitUrl: mowPortraitUrl(profile.portraitFile),
+      rarity,
+      rarityIconUrl: rarityIconUrl(rarity),
+      starIconUrls: starIconUrls(stars),
+      activeLevel: unit.active ?? null,
+      passiveLevel: unit.passive ?? null,
+    };
+  } catch (error) {
+    console.error(`[pvp] getPvpMowSlot failed for ${mowId}`, error);
+    return null;
+  }
 }
 
 export function getPvpOpponentCard(encounter: RawPvpEncounter): PvpOpponentCard {
@@ -131,10 +147,12 @@ export function getPvpOpponentCard(encounter: RawPvpEncounter): PvpOpponentCard 
 
   const characterSlots = opponent.units.lineup.pvp
     .filter((characterId) => unitsById[characterId])
-    .map((characterId) => getPvpCharacterSlot(characterId, unitsById[characterId], itemsById));
+    .map((characterId) => getPvpCharacterSlot(characterId, unitsById[characterId], itemsById))
+    .filter((slot): slot is PvpCharacterSlot => slot !== null);
 
   const mowId = opponent.units.mowLineup.pvp;
-  const mowSlot = mowId && unitsById[mowId] ? [getPvpMowSlot(mowId, unitsById[mowId])] : [];
+  const resolvedMowSlot = mowId && unitsById[mowId] ? getPvpMowSlot(mowId, unitsById[mowId]) : null;
+  const mowSlot = resolvedMowSlot ? [resolvedMowSlot] : [];
 
   return {
     userId: opponent.userId,
