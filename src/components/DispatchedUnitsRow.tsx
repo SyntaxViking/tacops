@@ -5,7 +5,16 @@ import { classifyDispatchedCharacters } from "../board/board-solver";
 import { formatDateTime } from "../format-date-time";
 import type { ExpeditionBoardEntry, RawUnit } from "../api/types";
 
-export function DispatchedUnitsRow({ entry, heroes }: { entry: ExpeditionBoardEntry; heroes: RawUnit[] }) {
+export function DispatchedUnitsRow({
+  entry,
+  heroes,
+  size,
+}: {
+  entry: ExpeditionBoardEntry;
+  heroes: RawUnit[];
+  // See Icon.tsx's own comment - only OperationCard's card-view row passes "sm".
+  size?: "sm" | "md";
+}) {
   const dispatchedUnits = getDispatchedUnits(entry);
   if (!dispatchedUnits) {
     return null;
@@ -29,6 +38,7 @@ export function DispatchedUnitsRow({ entry, heroes }: { entry: ExpeditionBoardEn
               src={unit.portraitUrl}
               title={unit.unitId}
               halo={requiredIds.has(unit.unitId) ? "required" : optionalIds.has(unit.unitId) ? "optional" : undefined}
+              size={size}
             />
           ) : (
             <span key={unit.unitId}>{unit.unitId}</span>

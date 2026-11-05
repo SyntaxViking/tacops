@@ -13,7 +13,18 @@ interface IconProps {
   // source PNG has around it. Three stacked shadows at increasing blur radii for a real bloom
   // that's actually visible at this icon's small (30px) size, not just a faint 1-2px edge.
   halo?: "required" | "optional";
+  // "sm" only exists for OperationCard's own character row (see PortraitList/DispatchedUnitsRow) -
+  // on a narrow phone screen, that row shares its card with a rewards column (OperationCard.tsx's
+  // grid-cols-2), leaving too little width for all 5 of the default 30px icons to sit on one line
+  // without wrapping, which makes the card taller than it needs to be. Every other caller keeps
+  // the default "md".
+  size?: "sm" | "md";
 }
+
+const SIZE_CLASS: Record<"sm" | "md", string> = {
+  sm: "h-[22px]",
+  md: "h-[30px]",
+};
 
 // Ruby (#9B111E) and olive (#808000) - not Tailwind's red-500/orange-500, picked specifically for
 // a richer, less primary-colored pair.
@@ -24,9 +35,10 @@ const HALO_FILTER: Record<"required" | "optional", string> = {
     "drop-shadow(0 0 3px rgba(128,128,0,1)) drop-shadow(0 0 6px rgba(128,128,0,1)) drop-shadow(0 0 10px rgba(128,128,0,0.9))",
 };
 
-export function Icon({ src, title, halo }: IconProps) {
+export function Icon({ src, title, halo, size = "md" }: IconProps) {
+  const sizeClass = SIZE_CLASS[size];
   if (!halo) {
-    return <img className="block h-[30px] w-auto" src={src} title={title} />;
+    return <img className={`block ${sizeClass} w-auto`} src={src} title={title} />;
   }
   // Wrapped in its own isolated, z-raised box: a drop-shadow's paint region can otherwise get
   // clipped or painted-over at odd boundaries when a card grid stretches cards to match a row's
@@ -35,7 +47,7 @@ export function Icon({ src, title, halo }: IconProps) {
   // so neither the stretch nor a neighboring card's paint order can interfere with it.
   return (
     <span className="relative z-10 inline-block" style={{ isolation: "isolate" }}>
-      <img className="block h-[30px] w-auto" src={src} title={title} style={{ filter: HALO_FILTER[halo] }} />
+      <img className={`block ${sizeClass} w-auto`} src={src} title={title} style={{ filter: HALO_FILTER[halo] }} />
     </span>
   );
 }

@@ -6,6 +6,7 @@ import { EnvironmentToggle } from "./components/EnvironmentToggle";
 import { DataSourceToggle } from "./components/DataSourceToggle";
 import { ViewModeToggle, type ViewMode } from "./components/ViewModeToggle";
 import { Tabs } from "./components/Tabs";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { OperationsTable } from "./components/OperationsTable";
 import { OperationsCards } from "./components/OperationsCards";
 import { CharactersTable } from "./components/CharactersTable";
@@ -53,6 +54,7 @@ import type { TrackedPlanetSample, TrackedPlanetState } from "./crusade/planet-t
 
 const TABS = [
   { id: "operations", label: "Operations" },
+  { id: "status", label: "Status" },
   { id: "crusade", label: "Crusade" },
   { id: "monitor", label: "Monitor" },
   { id: "guildchat", label: "Guild Chat" },
@@ -96,7 +98,29 @@ export function App() {
     setDevDataSource(source);
     setDevDataSourceState(source);
   }
-  const [activeTab, setActiveTab] = useState(TABS[0].id);
+  const ACTIVE_TAB_STORAGE_KEY = "tacops.activeTab";
+  // Initialized from localStorage so the choice survives reloads - falls back to TABS[0].id both
+  // when nothing's saved yet and when the saved id no longer matches any current tab (e.g. a
+  // future rename/removal), same guard shape as devDataSource above.
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+      return saved && TABS.some((tab) => tab.id === saved) ? saved : TABS[0].id;
+    } catch {
+      return TABS[0].id;
+    }
+  });
+  // Only the Tabs bar's onChange goes through this - resetToAnonymousView below intentionally
+  // keeps calling the plain setActiveTab so logging out / turning off dev mode resets the
+  // in-memory tab without clobbering the user's saved preference for next time.
+  function setActiveTabPersisted(id: string) {
+    setActiveTab(id);
+    try {
+      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, id);
+    } catch {
+      // Best-effort - worst case the tab choice doesn't persist across reloads.
+    }
+  }
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [selectedExpeditionId, setSelectedExpeditionId] = useState<string | null>(null);
   // Defaults to true so the full app is shown on load (no anonymous-crusade gate, no title tap
@@ -1450,12 +1474,6 @@ export function App() {
                   )}
                 </div>
               </form>
-              {resources && (
-                <ResourceTokens
-                  resources={resources}
-                  adViewsRemaining={adViewsRemaining}
-                />
-              )}
               <p className="inline-flex items-center gap-2">
                 {fetchState === "loading" && (
                   <Spinner seconds={secondsRemaining} />
@@ -1466,118 +1484,149 @@ export function App() {
             </>
           )}
 
-          {devModeEnabled && (
-            <Tabs tabs={TABS} active={activeTab} onChange={setActiveTab} />
-          )}
+          {devModeEnabled && <Tabs tabs={TABS} active={activeTab} onChange={setActiveTabPersisted} />}
 
           <div className="w-full overflow-x-auto pt-2">
             {activeTab === "operations" && (
-              <>
-                {board.length > 0 && (
-                  <>
-                    <RewardPriorityPicker
-                      value={priorityOrder}
-                      onChange={setPriorityOrder}
-                    />
-                    {solverError && (
-                      <p className="mt-2 text-red-600 dark:text-red-400">
-                        Couldn't compute a suggested assignment: {solverError}
-                      </p>
-                    )}
-                    {solverIncompleteReason && (
-                      <p className="mt-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-base font-semibold text-amber-700 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
-                        {solverIncompleteReason}
-                      </p>
-                    )}
-                    <RequiredCharacterPool
-                      assignment={assignment}
-                      heroes={heroes}
-                    />
-                  </>
-                )}
-                <div className="relative w-full">
-                  {solverOptimizing && (
-                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/70 dark:bg-neutral-900/70">
-                      <p className="font-medium">{solverState === "success" ? "Optimizing" : "Solving"}</p>
-                      <Spinner size={64} seconds={solverSecondsRemaining} />
-                    </div>
+              <ErrorBoundary fallbackLabel="Operations">
+                <>
+                  {board.length > 0 && (
+                    <>
+                      <RewardPriorityPicker value={priorityOrder} onChange={setPriorityOrder} />
+                      {solverError && (
+                        <p className="mt-2 text-red-600 dark:text-red-400">
+                          Couldn't compute a suggested assignment: {solverError}
+                        </p>
+                      )}
+                      {solverIncompleteReason && (
+                        <p className="mt-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-base font-semibold text-amber-700 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                          {solverIncompleteReason}
+                        </p>
+                      )}
+                      <RequiredCharacterPool assignment={assignment} heroes={heroes} />
+                    </>
                   )}
-                  <div className={solverOptimizing ? "pointer-events-none" : ""}>
-                    {viewMode === "table" ? (
-                      <OperationsTable
-                        board={board}
-                        environment={environment}
-                        assignment={assignment}
-                        solverReady={solverState === "success"}
-                        selectedExpeditionId={selectedExpeditionId}
-                        onSelect={toggleSelection}
-                        heroes={heroes}
-                      />
-                    ) : (
-                      <OperationsCards
-                        board={board}
-                        environment={environment}
-                        assignment={assignment}
-                        solverReady={solverState === "success"}
-                        selectedExpeditionId={selectedExpeditionId}
-                        onSelect={toggleSelection}
-                        heroes={heroes}
-                      />
+                  <div className="relative w-full">
+                    {solverOptimizing && (
+                      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/70 dark:bg-neutral-900/70">
+                        <p className="font-medium">{solverState === "success" ? "Optimizing" : "Solving"}</p>
+                        <Spinner size={64} seconds={solverSecondsRemaining} />
+                      </div>
                     )}
+                    <div className={solverOptimizing ? "pointer-events-none" : ""}>
+                      {viewMode === "table" ? (
+                        <OperationsTable
+                          board={board}
+                          environment={environment}
+                          assignment={assignment}
+                          solverReady={solverState === "success"}
+                          selectedExpeditionId={selectedExpeditionId}
+                          onSelect={toggleSelection}
+                          heroes={heroes}
+                        />
+                      ) : (
+                        <OperationsCards
+                          board={board}
+                          environment={environment}
+                          assignment={assignment}
+                          solverReady={solverState === "success"}
+                          selectedExpeditionId={selectedExpeditionId}
+                          onSelect={toggleSelection}
+                          heroes={heroes}
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
-              </>
+                </>
+              </ErrorBoundary>
+            )}
+            {activeTab === "status" && (
+              <ErrorBoundary fallbackLabel="Status">
+                {resources && <ResourceTokens resources={resources} adViewsRemaining={adViewsRemaining} />}
+              </ErrorBoundary>
             )}
             {activeTab === "characters" && (
-              <CharactersTable
-                heroes={heroes}
-                favoritedCharacterIds={favoritedCharacterIds}
-                onToggleFavorite={toggleFavoriteCharacter}
-                antiFavoritedCharacterIds={antiFavoritedCharacterIds}
-                onToggleAntiFavorite={toggleAntiFavoriteCharacter}
-              />
+              <ErrorBoundary fallbackLabel="Characters">
+                <CharactersTable
+                  heroes={heroes}
+                  favoritedCharacterIds={favoritedCharacterIds}
+                  onToggleFavorite={toggleFavoriteCharacter}
+                  antiFavoritedCharacterIds={antiFavoritedCharacterIds}
+                  onToggleAntiFavorite={toggleAntiFavoriteCharacter}
+                />
+              </ErrorBoundary>
             )}
-            {activeTab === "mows" && <MowTable machinesOfWar={machinesOfWar} />}
-            {activeTab === "guildchat" && <GuildChatTab environment={environment} />}
+            {activeTab === "mows" && (
+              <ErrorBoundary fallbackLabel="Machines of War">
+                <MowTable machinesOfWar={machinesOfWar} />
+              </ErrorBoundary>
+            )}
+            {activeTab === "guildchat" && (
+              <ErrorBoundary fallbackLabel="Guild Chat">
+                <GuildChatTab environment={environment} />
+              </ErrorBoundary>
+            )}
             {activeTab === "arena" && (
-              <ArenaTab
-                environment={environment}
-                pvpPosition={resources?.pvpPosition ?? null}
-                webCredentials={{ userId, clientSecret }}
-              />
+              <ErrorBoundary fallbackLabel="Arena">
+                <ArenaTab
+                  environment={environment}
+                  pvpPosition={resources?.pvpPosition ?? null}
+                  webCredentials={{ userId, clientSecret }}
+                />
+              </ErrorBoundary>
             )}
-            {activeTab === "onslaught" && <OnslaughtTab onslaughtBoards={onslaughtBoards} />}
-            {activeTab === "guildwar" && <GuildWarTab guildWar={guildWar} />}
-            {activeTab === "coverage" && <BoardCoverageTab />}
-            {activeTab === "heroquests" && <HeroQuestsTab jars={heroQuestJars} activeQuestIds={activeQuestIds} viewMode={viewMode} />}
+            {activeTab === "onslaught" && (
+              <ErrorBoundary fallbackLabel="Onslaught">
+                <OnslaughtTab onslaughtBoards={onslaughtBoards} />
+              </ErrorBoundary>
+            )}
+            {activeTab === "guildwar" && (
+              <ErrorBoundary fallbackLabel="Guild War">
+                <GuildWarTab guildWar={guildWar} />
+              </ErrorBoundary>
+            )}
+            {activeTab === "coverage" && (
+              <ErrorBoundary fallbackLabel="Board Coverage">
+                <BoardCoverageTab />
+              </ErrorBoundary>
+            )}
+            {activeTab === "heroquests" && (
+              <ErrorBoundary fallbackLabel="Hero Quests">
+                <HeroQuestsTab jars={heroQuestJars} activeQuestIds={activeQuestIds} viewMode={viewMode} />
+              </ErrorBoundary>
+            )}
             {activeTab === "crusade" && (
-              <CrusadeTab
-                crusadeData={crusadeData}
-                planetRefreshState={planetRefreshState}
-                sectorMap={sectorMap}
-                error={crusadeError}
-                viewMode={viewMode}
-                onRefreshPlanet={refreshPlanetNow}
-                favoritedPlanetIds={favoritedPlanetIds}
-                onToggleFavoritePlanet={toggleFavoritePlanet}
-                trackedPlanetId={trackedPlanetId}
-                trackedPlanetState={trackedPlanetState}
-                onToggleTrackPlanet={toggleTrackedPlanet}
-                historyByPlanet={planetHistoryByPlanet}
-                planetDefenses={planetDefenses}
-                onRefreshAllPlanets={refreshAllPlanetsNow}
-                isRefreshingAllPlanets={isRefreshingAllPlanets}
-              />
+              <ErrorBoundary fallbackLabel="Crusade">
+                <CrusadeTab
+                  crusadeData={crusadeData}
+                  planetRefreshState={planetRefreshState}
+                  sectorMap={sectorMap}
+                  error={crusadeError}
+                  viewMode={viewMode}
+                  onRefreshPlanet={refreshPlanetNow}
+                  favoritedPlanetIds={favoritedPlanetIds}
+                  onToggleFavoritePlanet={toggleFavoritePlanet}
+                  trackedPlanetId={trackedPlanetId}
+                  trackedPlanetState={trackedPlanetState}
+                  onToggleTrackPlanet={toggleTrackedPlanet}
+                  historyByPlanet={planetHistoryByPlanet}
+                  planetDefenses={planetDefenses}
+                  onRefreshAllPlanets={refreshAllPlanetsNow}
+                  isRefreshingAllPlanets={isRefreshingAllPlanets}
+                />
+              </ErrorBoundary>
             )}
             {activeTab === "monitor" && (
-              <MonitorTab
-                crusadeData={crusadeData}
-                planetRefreshState={planetRefreshState}
-                favoritedPlanetIds={favoritedPlanetIds}
-                error={crusadeError}
-                sectorMap={sectorMap}
-                historyByPlanet={planetHistoryByPlanet}
-              />
+              <ErrorBoundary fallbackLabel="Monitor">
+                <MonitorTab
+                  crusadeData={crusadeData}
+                  planetRefreshState={planetRefreshState}
+                  favoritedPlanetIds={favoritedPlanetIds}
+                  error={crusadeError}
+                  sectorMap={sectorMap}
+                  historyByPlanet={planetHistoryByPlanet}
+                />
+              </ErrorBoundary>
             )}
           </div>
         </>

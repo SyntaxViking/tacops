@@ -125,3 +125,10 @@ export function characterPortraitUrl(characterId: string): string {
   }
   return new URL(`../assets/portraits/${file}`, import.meta.url).href;
 }
+
+// Non-throwing membership check, for a caller that needs to skip an unrecognized id (e.g. a
+// board overlay placing portraits from a live, unfiltered lineup) rather than treat a miss as
+// the hard invariant characterPortraitUrl's every other caller relies on.
+export function hasCharacterPortrait(characterId: string): boolean {
+  return characterId in CHARACTER_PORTRAIT_FILE;
+}

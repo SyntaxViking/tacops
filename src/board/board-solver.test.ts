@@ -393,6 +393,24 @@ describe("solveBoardAssignment", () => {
     expect(status).toBe("ok");
     expect(assignment.get("exp")!.run).toBe(true);
   });
+
+  it("excludes a hero with an unrecognized character id from the roster instead of throwing", () => {
+    // buildRoster calls getCharacterProfile for every hero passed in - mixing in an id the
+    // bundled character data doesn't know about (e.g. a character added to the game since this
+    // build's data was last extracted) must not take down the whole solve.
+    const knownHero: RawUnit = { id: "ultraTigurius", power: 9999 };
+    const unknownHero: RawUnit = { id: "notARealCharacterId", power: 100 };
+    const openBoard = board({ rarity: "Common", category: "all_vanguard" });
+
+    const { assignment, status } = solveBoardAssignment(
+      [openBoard],
+      [knownHero, unknownHero],
+      ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
+    );
+
+    expect(status).toBe("ok");
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
+  });
 });
 
 describe("classifyDispatchedCharacters", () => {

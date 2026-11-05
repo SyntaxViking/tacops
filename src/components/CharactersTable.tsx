@@ -4,7 +4,7 @@ import { IconRow } from "./IconRow";
 import { StarIconButton } from "./StarIconButton";
 import { ThumbsDownIconButton } from "./ThumbsDownIconButton";
 import { CharacterSortModeToggle } from "./CharacterSortModeToggle";
-import { getCharacterRow, sortCharacterRows, type CharacterSortMode } from "../characters/character-view-model";
+import { getSafeCharacterRow, sortCharacterRows, type CharacterRow, type CharacterSortMode } from "../characters/character-view-model";
 import type { RawUnit } from "../api/types";
 
 const cellClass = "border-b border-black/10 px-3 py-2 align-top dark:border-white/15";
@@ -30,7 +30,10 @@ export function CharactersTable({
     return <p>No characters found.</p>;
   }
 
-  const sortedRows = sortCharacterRows(heroes.map(getCharacterRow), sortMode);
+  const rows = heroes
+    .map((hero) => getSafeCharacterRow(hero, "characters"))
+    .filter((row): row is CharacterRow => row !== null);
+  const sortedRows = sortCharacterRows(rows, sortMode);
 
   return (
     <>

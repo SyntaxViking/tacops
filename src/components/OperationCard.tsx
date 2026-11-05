@@ -71,11 +71,11 @@ export function OperationCard({
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-2">
           {unavailable ? (
-            <DispatchedUnitsRow entry={entry} heroes={heroes} />
+            <DispatchedUnitsRow entry={entry} heroes={heroes} size="sm" />
           ) : (
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium opacity-70">Suggested characters</span>
-              <PortraitList ids={combinedIds} haloById={haloById} />
+              <PortraitList ids={combinedIds} haloById={haloById} size="sm" />
             </div>
           )}
         </div>
