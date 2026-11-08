@@ -50,6 +50,11 @@ export function CrusadeDominationTable({
 }: CrusadeDominationTableProps) {
   const trackedPlanetName = trackedPlanetId ? planets.find((p) => p.planetId === trackedPlanetId)?.name : undefined;
   const nowMs = Date.now();
+  // What's eligible to actually consume background refresh budget right now (see
+  // isStarDisabled's own comment) - planetRefreshState is already scoped to this exact set, not
+  // the narrower on-screen `planets` (which the side/faction filters above can shrink further
+  // without stopping a filtered-out planet from still refreshing in the background).
+  const relevantPlanetIds = new Set(planetRefreshState.keys());
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
       <thead>
@@ -107,7 +112,7 @@ export function CrusadeDominationTable({
                   <StarIconButton
                     isFavorited={favoritedPlanetIds.has(planet.planetId)}
                     onToggle={() => onToggleFavoritePlanet(planet.planetId)}
-                    disabled={isStarDisabled(favoritedPlanetIds, planet.planetId)}
+                    disabled={isStarDisabled(favoritedPlanetIds, planet.planetId, relevantPlanetIds)}
                   />
                 )}
               </td>

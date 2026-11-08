@@ -1283,7 +1283,10 @@ export function App() {
   }
 
   function toggleFavoritePlanet(planetId: string) {
-    const next = toggleStarredPlanet(favoritedPlanetIds, planetId);
+    // Same cap scoping as isStarDisabled's call sites in the Crusade/Domination tables - only
+    // planets currently in planetRefreshState can actually cost anything in background polling.
+    const relevantPlanetIds = new Set(planetRefreshState.keys());
+    const next = toggleStarredPlanet(favoritedPlanetIds, planetId, relevantPlanetIds);
     if (next === favoritedPlanetIds) return; // at the star cap (the UI disables starring then; belt and braces)
     setFavoritedPlanetIds(new Set(next));
     setFavoritedPlanets(userId, clientSecret, [...next])

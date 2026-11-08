@@ -23,6 +23,9 @@ export function CrusadePlanetsCards({
   onToggleFavoritePlanet,
   onSelectPlanet,
 }: CrusadePlanetsCardsProps) {
+  // What's eligible to actually consume background refresh budget right now (see
+  // isStarDisabled's own comment) - planetRefreshState is already scoped to this exact set.
+  const relevantPlanetIds = new Set(planetRefreshState.keys());
   return (
     <div className="mt-4 grid w-full grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
       {planets.map((planet) => (
@@ -33,7 +36,7 @@ export function CrusadePlanetsCards({
           onRefresh={onRefreshPlanet ? () => onRefreshPlanet(planet.planetId) : undefined}
           isFavorited={favoritedPlanetIds.has(planet.planetId)}
           onToggleFavorite={onToggleFavoritePlanet ? () => onToggleFavoritePlanet(planet.planetId) : undefined}
-          starDisabled={isStarDisabled(favoritedPlanetIds, planet.planetId)}
+          starDisabled={isStarDisabled(favoritedPlanetIds, planet.planetId, relevantPlanetIds)}
           onSelectPlanet={() => onSelectPlanet(planet.planetId)}
         />
       ))}
