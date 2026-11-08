@@ -188,3 +188,13 @@ ready and its `endsAt` being set are two separate asks - don't assume the develo
 the previous season's `endsAt` as `null` just because they didn't mention it while handing over the
 new data. If they don't have the date yet, that's fine - say so explicitly rather than silently
 leaving it unset.
+
+## Personal Claude skills
+
+Tacticus-specific skills live in the private repo `unrstuart/tacticus-claude-skills` (cloned at `~/src/tacticus-claude-skills`, each skill symlinked into `~/.claude/skills/`). Use the matching skill when the task fits, and change a skill in that repo (never in a copy):
+
+- `patch-notes-presentation` - build/refine the patch "lightning" slide deck in `~/src/videos/<patch> lightning/`.
+- `lre-analysis`, `lre-points` - legendary event analysis from a roster-export SQLite DB.
+- `raid-teams` - meta raid team ranks from a roster-export DB.
+- `youtube-thumbnail` - thumbnails for videos in `~/src/videos`.
+- `deploy` - "please deploy to prod/dev" workflow (honours repo embargo/hold markers).
