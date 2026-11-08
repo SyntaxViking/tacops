@@ -62,4 +62,22 @@ describe("isStarDisabled", () => {
     expect(isStarDisabled(full, "planet_99")).toBe(true);
     expect(isStarDisabled(toggleStarredPlanet(full, "planet_1"), "planet_99")).toBe(false);
   });
+
+  it("with relevantPlanetIds, only counts stars that fall within it toward the cap", () => {
+    // All 10 stars are from a since-rotated-out zone (none in relevantPlanetIds) - none of them
+    // cost anything in background polling today, so they shouldn't block starring a new,
+    // currently-relevant planet.
+    const full = new Set(ids(MAX_STARRED_PLANETS));
+    const relevantPlanetIds = new Set(["current_zone_planet"]);
+    expect(isStarDisabled(full, "current_zone_planet", relevantPlanetIds)).toBe(false);
+    expect(toggleStarredPlanet(full, "current_zone_planet", relevantPlanetIds)).not.toBe(full);
+  });
+
+  it("with relevantPlanetIds, still enforces the cap once that many relevant planets are starred", () => {
+    const relevantPlanetIds = new Set(ids(MAX_STARRED_PLANETS));
+    // Mixed in with 5 old, now-irrelevant stars that shouldn't count at all.
+    const starred = new Set([...ids(MAX_STARRED_PLANETS), "old_zone_1", "old_zone_2", "old_zone_3", "old_zone_4", "old_zone_5"]);
+    expect(isStarDisabled(starred, "planet_99", relevantPlanetIds)).toBe(true);
+    expect(toggleStarredPlanet(starred, "planet_99", relevantPlanetIds)).toBe(starred);
+  });
 });

@@ -31,6 +31,11 @@ export function CrusadeDominationCards({
   planetDefenses,
 }: CrusadeDominationCardsProps) {
   const trackedPlanetName = trackedPlanetId ? planets.find((p) => p.planetId === trackedPlanetId)?.name : undefined;
+  // What's eligible to actually consume background refresh budget right now (see
+  // isStarDisabled's own comment) - planetRefreshState is already scoped to this exact set, not
+  // the narrower on-screen `planets` (which the side/faction filters above can shrink further
+  // without stopping a filtered-out planet from still refreshing in the background).
+  const relevantPlanetIds = new Set(planetRefreshState.keys());
   return (
     <div className="mt-4 grid w-full grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
       {planets.map((planet) => (
@@ -42,7 +47,7 @@ export function CrusadeDominationCards({
           onRefresh={onRefreshPlanet ? () => onRefreshPlanet(planet.planetId) : undefined}
           isFavorited={favoritedPlanetIds.has(planet.planetId)}
           onToggleFavorite={onToggleFavoritePlanet ? () => onToggleFavoritePlanet(planet.planetId) : undefined}
-          starDisabled={isStarDisabled(favoritedPlanetIds, planet.planetId)}
+          starDisabled={isStarDisabled(favoritedPlanetIds, planet.planetId, relevantPlanetIds)}
           isTracked={trackedPlanetId === planet.planetId}
           onToggleTrack={onToggleTrackPlanet ? () => onToggleTrackPlanet(planet.planetId) : undefined}
           trackDisabled={isTrackDisabled(trackedPlanetId, planet)}

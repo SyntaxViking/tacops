@@ -29,6 +29,9 @@ export function CrusadePlanetsTable({
   onToggleFavoritePlanet,
   onSelectPlanet,
 }: CrusadePlanetsTableProps) {
+  // What's eligible to actually consume background refresh budget right now (see
+  // isStarDisabled's own comment) - planetRefreshState is already scoped to this exact set.
+  const relevantPlanetIds = new Set(planetRefreshState.keys());
   return (
     <table className="mt-4 w-full table-auto border-collapse text-left">
       <thead>
@@ -62,7 +65,7 @@ export function CrusadePlanetsTable({
                   <StarIconButton
                     isFavorited={favoritedPlanetIds.has(planet.planetId)}
                     onToggle={() => onToggleFavoritePlanet(planet.planetId)}
-                    disabled={isStarDisabled(favoritedPlanetIds, planet.planetId)}
+                    disabled={isStarDisabled(favoritedPlanetIds, planet.planetId, relevantPlanetIds)}
                   />
                 )}
               </td>
