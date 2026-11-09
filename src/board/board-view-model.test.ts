@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entryFinishAt, entryIsUnavailable, entryStatusLabel } from "./board-view-model";
+import { entryFinishAt, entryIsUnavailable, entryStatusLabel, getDispatchedUnits } from "./board-view-model";
 import type { ExpeditionBoardEntry } from "../api/types";
 
 function entry(status: string, overrides: Partial<ExpeditionBoardEntry> = {}): ExpeditionBoardEntry {
@@ -56,5 +56,18 @@ describe("entryFinishAt", () => {
 
   it("returns null for a non-dispatched entry", () => {
     expect(entryFinishAt(entry("Available", { startedOn: 1000 }))).toBeNull();
+  });
+});
+
+describe("getDispatchedUnits", () => {
+  // Regression: a character id can be recognized (in character-data.json) before its portrait
+  // asset lands in character-portraits.ts - e.g. orksWeirdboy (Zapspitta) right after it was added
+  // to the catalog. That used to crash the whole board view via characterPortraitUrl's throw;
+  // it should fall back to no portrait instead, same as an unrecognized id.
+  it("falls back to no portrait for a recognized character id with no mapped portrait", () => {
+    const dispatched = entry("Dispatched", { units: ["orksWeirdboy"] });
+
+    expect(() => getDispatchedUnits(dispatched)).not.toThrow();
+    expect(getDispatchedUnits(dispatched)).toEqual([{ unitId: "orksWeirdboy", portraitUrl: undefined }]);
   });
 });

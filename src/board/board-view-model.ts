@@ -3,7 +3,7 @@ import { RarityMapper } from "../rarity/rarity.mapper";
 import { rarityIconUrl } from "../rarity/rarity-icon";
 import { traitIconUrl } from "../characters/trait-icon";
 import { damageProfileIconUrl } from "../characters/damage-profile-icon";
-import { characterPortraitUrl } from "../characters/character-portraits";
+import { characterPortraitUrl, hasCharacterPortrait } from "../characters/character-portraits";
 import { factionIconUrl } from "../factions/faction-icon";
 import { rangedAttackIconUrl } from "./ranged-attack-icon";
 import { rewardIconUrl } from "./reward-icon";
@@ -117,6 +117,9 @@ export function getDispatchedUnits(entry: ExpeditionBoardEntry): DispatchedUnit[
   }
   return entry.units.map((unitId) => ({
     unitId,
-    portraitUrl: isCharacterId(unitId) ? characterPortraitUrl(unitId) : undefined,
+    // A unit can be a recognized character id without a mapped portrait (e.g. one added to
+    // character-data.json before its portrait asset lands) - same guard as the board-overlay
+    // callers in character-portraits.ts's own hasCharacterPortrait comment.
+    portraitUrl: isCharacterId(unitId) && hasCharacterPortrait(unitId) ? characterPortraitUrl(unitId) : undefined,
   }));
 }
