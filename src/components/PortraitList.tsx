@@ -1,6 +1,6 @@
 import { Icon } from "./Icon";
 import { IconRow } from "./IconRow";
-import { characterPortraitUrl } from "../characters/character-portraits";
+import { characterPortraitUrl, hasCharacterPortrait } from "../characters/character-portraits";
 
 interface PortraitListProps {
   ids: string[];
@@ -17,9 +17,16 @@ export function PortraitList({ ids, haloById, size }: PortraitListProps) {
   }
   return (
     <IconRow>
-      {ids.map((id) => (
-        <Icon key={id} src={characterPortraitUrl(id)} title={id} halo={haloById?.get(id)} size={size} />
-      ))}
+      {ids.map((id) =>
+        // A recognized character id can still lack a mapped portrait (e.g. one added to
+        // character-data.json before its portrait asset lands) - fall back to the id as text
+        // instead of taking down the whole board view, same as DispatchedUnitsRow.
+        hasCharacterPortrait(id) ? (
+          <Icon key={id} src={characterPortraitUrl(id)} title={id} halo={haloById?.get(id)} size={size} />
+        ) : (
+          <span key={id}>{id}</span>
+        ),
+      )}
     </IconRow>
   );
 }

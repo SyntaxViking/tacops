@@ -1,6 +1,6 @@
 import { Icon } from "./Icon";
 import { IconRow } from "./IconRow";
-import { characterPortraitUrl } from "../characters/character-portraits";
+import { characterPortraitUrl, hasCharacterPortrait } from "../characters/character-portraits";
 import type { BoardAssignmentResult } from "../board/board-solver";
 import type { RawUnit } from "../api/types";
 
@@ -25,9 +25,11 @@ export function RequiredCharacterPool({ assignment, heroes }: { assignment: Boar
     <div className="mt-4 w-full text-left">
       <h3 className="font-medium">Required characters (reserved by the suggested solution)</h3>
       <IconRow>
-        {sortedIds.map((id) => (
-          <Icon key={id} src={characterPortraitUrl(id)} title={id} />
-        ))}
+        {sortedIds.map((id) =>
+          // See PortraitList's own comment - a recognized character id can still lack a mapped
+          // portrait.
+          hasCharacterPortrait(id) ? <Icon key={id} src={characterPortraitUrl(id)} title={id} /> : <span key={id}>{id}</span>,
+        )}
       </IconRow>
     </div>
   );
