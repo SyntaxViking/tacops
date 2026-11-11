@@ -265,7 +265,13 @@ function isIntegralResult(model: LpModel, result: SolveResult): boolean {
   return true;
 }
 
-type PassesResult = { result: SolveResult; status: "ok" | "degraded" } | { result: null; status: "failed" };
+// failedPassIndex (degraded only) is the index into PASS_ORDER of the pass that couldn't finish -
+// solveBoardAssignment uses it to tell "only the tiebreak passes were lost" (every board-run and
+// bonus outcome is still optimal, see refillSlotsGreedily) from "a priority pass was lost".
+type PassesResult =
+  | { result: SolveResult; status: "ok" }
+  | { result: SolveResult; status: "degraded"; failedPassIndex: number }
+  | { result: null; status: "failed" };
 
 // If a later pass can't finish in time, falling back to the last pass that DID complete is still
 // a fully valid, feasible assignment - just not optimized for the lower-priority tiers beyond
@@ -285,7 +291,7 @@ function runPasses(model: LpModel): PassesResult {
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) {
       console.warn(`[board-solver] out of time before pass "${pass.key}" could even start`);
-      return lastGoodResult ? { result: lastGoodResult, status: "degraded" } : { result: null, status: "failed" };
+      return lastGoodResult ? { result: lastGoodResult, status: "degraded", failedPassIndex: i } : { result: null, status: "failed" };
     }
     model.optimize = pass.key;
     model.opType = pass.opType;
@@ -307,7 +313,7 @@ function runPasses(model: LpModel): PassesResult {
     if (!usable) {
       if (lastGoodResult) {
         console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result${hitTimeout ? " (timed out)" : ""} - falling back to the last completed pass's solution`);
-        return { result: lastGoodResult, status: "degraded" };
+        return { result: lastGoodResult, status: "degraded", failedPassIndex: i };
       }
       console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result${hitTimeout ? " (timed out)" : ""} and there's no earlier fallback - falling back to the greedy solver`);
       return { result: null, status: "failed" };
@@ -530,6 +536,51 @@ export function solveGreedyFallback(openBoards: ExpeditionBoardEntry[], roster: 
   return solutions;
 }
 
+// Used when the LP's priority passes all finished (so every board-run and bonus outcome is optimal,
+// and each board's required characters are known) but a later tiebreak pass - xpGain,
+// runCount, favoriteScore or powerUsed - timed out, leaving the optional slots filled arbitrarily
+// (that's how XP-capped characters ended up in free slots). Keeps every board's run/bonus outcome
+// and required characters exactly as the LP found them and re-fills only the optional slots with
+// the greedy fillComparator ordering (XP-capped last, then anti-favorited, then favorited, then
+// power). Boards go highest rarity first since a board's XP scales with its rarity. This is
+// polynomial and instant, so it runs outside the LP's time budget. Returns null (caller keeps the
+// LP's assignment) if any board can't be fully re-filled - the LP's assignment is always valid, so
+// that's strictly a no-op rather than an error.
+export function refillSlotsGreedily(
+  assignment: BoardAssignmentResult,
+  openBoards: ExpeditionBoardEntry[],
+  roster: RosterCharacter[],
+): BoardAssignmentResult | null {
+  const powerById = buildPowerById(roster);
+  const pool = new Map(roster.map((unit) => [unit.id, unit]));
+  for (const solution of assignment.values()) {
+    for (const id of solution.requiredCharacterIds) pool.delete(id);
+  }
+
+  const refilled: BoardAssignmentResult = new Map(assignment);
+  const runningBoards = openBoards.filter((entry) => assignment.get(entry.expeditionId)?.run);
+  for (const entry of [...runningBoards].sort((a, b) => entryRarity(b) - entryRarity(a))) {
+    const solution = assignment.get(entry.expeditionId)!;
+    const slots = entry.participants - solution.requiredCharacterIds.length;
+    const rarity = entryRarity(entry);
+    const allianceRequirement = requiredAlliance(entry.category);
+    const chosen = [...pool.values()]
+      .filter((unit) => isEligibleForBoard(unit, rarity, allianceRequirement))
+      .sort(fillComparator)
+      .slice(0, Math.max(0, slots));
+    if (chosen.length !== Math.max(0, slots)) return null;
+    for (const unit of chosen) pool.delete(unit.id);
+    refilled.set(entry.expeditionId, {
+      ...solution,
+      optionalCharacterIds: sortIdsByPower(
+        chosen.map((unit) => unit.id),
+        powerById,
+      ),
+    });
+  }
+  return refilled;
+}
+
 function extractSolution(
   built: BuiltModel,
   result: SolveResult,
@@ -594,9 +645,16 @@ function extractSolution(
 const INCOMPLETE_BOARD_MESSAGE =
   "Could not find an optimal board with priorities in the order you gave. Please try adjusting priority order.";
 
+// Shown when only the XP/favorite/power tiebreak passes timed out - the board-run and bonus outcomes
+// are still optimal, but which characters fill the free slots (and so total XP gained) may not be.
+const TIEBREAK_DEGRADED_MESSAGE =
+  "The full XP optimization timed out, so the remaining slots were filled with a quick fallback. Bonus objectives are still optimal, but XP gain might not be.";
+
+// "ok" - fully optimized. "degraded" - bonus/run outcomes optimal, XP tiebreaks approximate (see
+// TIEBREAK_DEGRADED_MESSAGE). "incomplete" - at least one board couldn't be run at all.
 export interface SolveBoardAssignmentResult {
   assignment: BoardAssignmentResult;
-  status: "ok" | "incomplete";
+  status: "ok" | "degraded" | "incomplete";
   message?: string;
 }
 
@@ -652,9 +710,21 @@ export function solveBoardAssignment(
     );
   }
 
+  // Only the tiebreak passes (after all PRIORITY_TIER_COUNT priority passes) were lost: keep the
+  // LP's board/bonus outcomes and fix up the free slots greedily, outside the LP's timer.
+  let tiebreakDegraded = false;
+  if (passesResult.status === "degraded" && passesResult.failedPassIndex >= PRIORITY_TIER_COUNT) {
+    const refilled = refillSlotsGreedily(assignment, openBoards, roster);
+    if (refilled) assignment = refilled;
+    tiebreakDegraded = true;
+  }
+
   const incomplete = [...assignment.values()].some((solution) => !solution.run);
   if (incomplete) {
     return { assignment, status: "incomplete", message: INCOMPLETE_BOARD_MESSAGE };
+  }
+  if (tiebreakDegraded) {
+    return { assignment, status: "degraded", message: TIEBREAK_DEGRADED_MESSAGE };
   }
   return { assignment, status: "ok" };
 }

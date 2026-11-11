@@ -430,7 +430,7 @@ export function App() {
       clearTimeout(watchdogTimer);
       if (event.data.status === "success") {
         setAssignment(new Map(event.data.assignmentEntries));
-        setSolverIncompleteReason(event.data.solveStatus === "incomplete" ? event.data.message : undefined);
+        setSolverIncompleteReason(event.data.solveStatus !== "ok" ? event.data.message : undefined);
         setSolverError(undefined);
         setSolverState("success");
         setSolverOptimizing(false);

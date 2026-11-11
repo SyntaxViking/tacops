@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyDispatchedCharacters,
   findMinimalRequiredSubset,
+  refillSlotsGreedily,
   solveBoardAssignment,
   solveGreedyFallback,
   type GroupRequirement,
@@ -410,6 +411,50 @@ describe("solveBoardAssignment", () => {
 
     expect(status).toBe("ok");
     expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
+  });
+});
+
+describe("refillSlotsGreedily", () => {
+  const cappedHigh = () => character("cappedHigh", { rarity: Rarity.Mythic, xpLevel: 60, power: 900 }); // xpLevelCap[Mythic] = 60
+  const growing = () => character("growing", { rarity: Rarity.Mythic, xpLevel: 10, power: 100 });
+  const needed = () => character("needed", { rarity: Rarity.Mythic, xpLevel: 10, power: 50 });
+
+  it("keeps the LP's required characters and replaces a capped optional one with an uncapped one", () => {
+    const entry = board({ participants: 2 });
+    const roster = [cappedHigh(), growing(), needed()];
+    const lp = new Map([
+      ["exp", { expeditionId: "exp", run: true, bonusCompleted: true, requiredCharacterIds: ["needed"], optionalCharacterIds: ["cappedHigh"] }],
+    ]);
+
+    const result = refillSlotsGreedily(lp, [entry], roster)!.get("exp")!;
+
+    expect(result.requiredCharacterIds).toEqual(["needed"]);
+    expect(result.optionalCharacterIds).toEqual(["growing"]);
+    expect(result.bonusCompleted).toBe(true);
+  });
+
+  it("never reuses a character another board requires", () => {
+    const a = board({ expeditionId: "a", participants: 1 });
+    const b = board({ expeditionId: "b", participants: 1 });
+    const roster = [growing(), needed()];
+    const lp = new Map([
+      ["a", { expeditionId: "a", run: true, bonusCompleted: false, requiredCharacterIds: [], optionalCharacterIds: ["growing"] }],
+      ["b", { expeditionId: "b", run: true, bonusCompleted: true, requiredCharacterIds: ["growing"], optionalCharacterIds: [] }],
+    ]);
+
+    const result = refillSlotsGreedily(lp, [a, b], roster)!;
+
+    expect(result.get("b")!.requiredCharacterIds).toEqual(["growing"]);
+    expect(result.get("a")!.optionalCharacterIds).toEqual(["needed"]);
+  });
+
+  it("returns null (keep the LP's answer) when a board can't be fully re-filled", () => {
+    const entry = board({ participants: 2 });
+    const lp = new Map([
+      ["exp", { expeditionId: "exp", run: true, bonusCompleted: false, requiredCharacterIds: [], optionalCharacterIds: ["growing", "needed"] }],
+    ]);
+
+    expect(refillSlotsGreedily(lp, [entry], [growing()])).toBeNull();
   });
 });
 
