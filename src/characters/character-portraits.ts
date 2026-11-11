@@ -37,6 +37,7 @@ export const CHARACTER_PORTRAIT_FILE: Record<string, string> = {
   orksKillaKan: "ui_image_RoundPortrait_orkss_killakan_01.png",
   orksNob: "ui_image_RoundPortrait_orkss_nob_01.png",
   orksWarboss: "ui_image_RoundPortrait_orkss_warboss_01.png",
+  orksWeirdboy: "ui_image_RoundPortrait_orkss_weirdboy_01.png",
   templSwordBrother: "ui_image_RoundPortrait_templ_brother_01.png",
   templAggressor: "ui_image_RoundPortrait_templ_aggressor_01.png",
   templAncient: "ui_image_RoundPortrait_templ_ancient_01.png",
@@ -116,6 +117,7 @@ export const CHARACTER_PORTRAIT_FILE: Record<string, string> = {
   astarCyrus: "ui_image_RoundPortrait_astar_cyrus_01.png",
   astarLysander: "ui_image_RoundPortrait_astar_lysander_01.png",
   astarEradicator: "ui_image_RoundPortrait_astar_eradicator_01.png",
+  lostaBile: "ui_image_RoundPortrait_losta_bile_01.png",
 };
 
 export function characterPortraitUrl(characterId: string): string {
