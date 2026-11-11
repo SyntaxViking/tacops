@@ -581,6 +581,132 @@ export function refillSlotsGreedily(
   return refilled;
 }
 
+// Max cross-board hops in one replacement chain (see upgradeAssignmentByReplacement).
+const MAX_REPLACEMENT_CHAIN_DEPTH = 2;
+
+interface ReplacementStep {
+  boardId: string;
+  outId: string;
+  inId: string;
+}
+
+// The solver's priority passes only check that a bonus is MET, so among equally good teams they
+// pick arbitrarily - which is how a maxed character ends up required on one board while an uncapped
+// character who could do the same job is used on another board (or, here, sits on a board that has
+// plenty of other options). Fixing that needs a move the plain "refill the optional slots" step
+// can't make: put the uncapped character where the maxed one was, and re-cover the board she left
+// from the unused pool. This local search finds exactly that. It repeatedly looks for an assigned
+// unit A and an unused unit C that fillComparator prefers over A, such that A can be taken out and
+// C brought in - directly, or through a chain of up to MAX_REPLACEMENT_CHAIN_DEPTH moves where each
+// vacated slot is re-covered by a unit from another board (whose own slot is re-covered in turn).
+// Every board keeps its participant count, stays eligible, and - if its bonus was met - still
+// satisfies every objective group, so run/bonus outcomes never change. The net effect of any chain
+// is just "A out, C in", so each accepted move strictly improves the fillComparator ordering and
+// the search terminates. Polynomial and instant, so it runs outside the LP's time budget.
+export function upgradeAssignmentByReplacement(
+  assignment: BoardAssignmentResult,
+  openBoards: ExpeditionBoardEntry[],
+  roster: RosterCharacter[],
+): BoardAssignmentResult {
+  const unitById = new Map(roster.map((unit) => [unit.id, unit]));
+  const entryById = new Map(openBoards.map((entry) => [entry.expeditionId, entry]));
+  const groupsById = new Map(openBoards.map((entry) => [entry.expeditionId, groupObjectives(entry.bonusObjectives)]));
+
+  const assignedByBoard = new Map<string, string[]>();
+  const placed = new Set<string>();
+  for (const [boardId, solution] of assignment) {
+    if (!solution.run) continue;
+    const ids = [...solution.requiredCharacterIds, ...solution.optionalCharacterIds];
+    assignedByBoard.set(boardId, ids);
+    for (const id of ids) placed.add(id);
+  }
+  if (assignedByBoard.size === 0) return assignment;
+
+  function canHold(boardId: string, ids: string[]): boolean {
+    const entry = entryById.get(boardId)!;
+    const rarity = entryRarity(entry);
+    const allianceRequirement = requiredAlliance(entry.category);
+    const units = ids.map((id) => unitById.get(id)!);
+    if (!units.every((unit) => isEligibleForBoard(unit, rarity, allianceRequirement))) return false;
+    if (!assignment.get(boardId)!.bonusCompleted) return true;
+    return groupsById
+      .get(boardId)!
+      .every((group) => units.filter((unit) => characterSatisfiesObjective(unit.profile, group.objective)).length >= group.count);
+  }
+
+  function swapped(boardId: string, outId: string, inId: string): string[] {
+    return assignedByBoard.get(boardId)!.map((id) => (id === outId ? inId : id));
+  }
+
+  // Vacate `outId`'s slot on `boardId` and re-cover it so the net change is exactly "outId leaves,
+  // targetId (an unused unit) arrives", hopping through other boards if needed.
+  function findChain(boardId: string, outId: string, targetId: string, depth: number, visited: Set<string>): ReplacementStep[] | null {
+    if (canHold(boardId, swapped(boardId, outId, targetId))) {
+      return [{ boardId, outId, inId: targetId }];
+    }
+    if (depth === 0) return null;
+    const nextVisited = new Set(visited).add(boardId);
+    for (const [otherId, otherIds] of assignedByBoard) {
+      if (nextVisited.has(otherId)) continue;
+      for (const hopId of otherIds) {
+        if (!canHold(boardId, swapped(boardId, outId, hopId))) continue;
+        const rest = findChain(otherId, hopId, targetId, depth - 1, nextVisited);
+        if (rest) return [{ boardId, outId, inId: hopId }, ...rest];
+      }
+    }
+    return null;
+  }
+
+  for (let iteration = 0; iteration < roster.length; iteration++) {
+    const assignedWorstFirst = [...placed].map((id) => unitById.get(id)!).sort((a, b) => fillComparator(b, a));
+    const poolBestFirst = roster.filter((unit) => !placed.has(unit.id)).sort(fillComparator);
+    let improved = false;
+
+    search: for (const worse of assignedWorstFirst) {
+      const boardId = [...assignedByBoard].find(([, ids]) => ids.includes(worse.id))![0];
+      for (const better of poolBestFirst) {
+        if (fillComparator(better, worse) >= 0) break; // pool is best-first: nothing later improves on `worse` either
+        const chain = findChain(boardId, worse.id, better.id, MAX_REPLACEMENT_CHAIN_DEPTH, new Set());
+        if (!chain) continue;
+        // Apply the whole chain on top of the pre-move assignment: each step swaps exactly one
+        // unit within one board, and chained hops move a unit between boards.
+        for (const step of chain) {
+          assignedByBoard.set(step.boardId, swapped(step.boardId, step.outId, step.inId));
+        }
+        placed.delete(worse.id);
+        placed.add(better.id);
+        improved = true;
+        break search;
+      }
+    }
+    if (!improved) break;
+  }
+
+  const powerById = buildPowerById(roster);
+  const upgraded: BoardAssignmentResult = new Map(assignment);
+  for (const [boardId, ids] of assignedByBoard) {
+    const solution = assignment.get(boardId)!;
+    let required = new Set<string>();
+    if (solution.bonusCompleted) {
+      const groupRequirements: GroupRequirement[] = groupsById.get(boardId)!.map((group) => ({
+        key: group.key,
+        count: group.count,
+        eligibleAssignedIds: ids.filter((id) => characterSatisfiesObjective(unitById.get(id)!.profile, group.objective)),
+      }));
+      required = findMinimalRequiredSubset(ids, groupRequirements);
+    }
+    upgraded.set(boardId, {
+      ...solution,
+      requiredCharacterIds: sortIdsByPower(required, powerById),
+      optionalCharacterIds: sortIdsByPower(
+        ids.filter((id) => !required.has(id)),
+        powerById,
+      ),
+    });
+  }
+  return upgraded;
+}
+
 function extractSolution(
   built: BuiltModel,
   result: SolveResult,
@@ -716,6 +842,7 @@ export function solveBoardAssignment(
   if (passesResult.status === "degraded" && passesResult.failedPassIndex >= PRIORITY_TIER_COUNT) {
     const refilled = refillSlotsGreedily(assignment, openBoards, roster);
     if (refilled) assignment = refilled;
+    assignment = upgradeAssignmentByReplacement(assignment, openBoards, roster);
     tiebreakDegraded = true;
   }
 
