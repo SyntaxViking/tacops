@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   classifyDispatchedCharacters,
   findMinimalRequiredSubset,
@@ -302,6 +302,23 @@ describe("solveBoardAssignment", () => {
     expect(solution.optionalCharacterIds).toEqual(["ultraEliminatorSgt"]);
   });
 
+  it("skips a tiebreak pass whose objective is zero for everyone instead of running it", () => {
+    // With nobody favorited, favoriteScore is 0 for every variable. Maximizing a constant is a
+    // degenerate LP that can hang the library outright, so runPasses must not run it.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const priority: Parameters<typeof solveBoardAssignment>[2] = ["rarity", "intel", "crusadeBomb", "crusadeNpc"];
+      const result = solveBoardAssignment([board()], [{ id: "deathRotbone", power: 100 }], priority);
+
+      const messages = log.mock.calls.map((call) => String(call[0]));
+      expect(messages.some((m) => m.includes('pass "favoriteScore"') && m.includes("skipped"))).toBe(true);
+      expect(messages.some((m) => m.includes('pass "favoriteScore"') && m.includes("feasible="))).toBe(false);
+      expect(result.assignment.get("exp")!.run).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("orders a board's optionalCharacterIds by power descending", () => {
     const low: RawUnit = { id: "ultraTigurius", power: 50 };
     const mid: RawUnit = { id: "ultraEliminatorSgt", power: 500 };
@@ -524,6 +541,16 @@ describe("upgradeAssignmentByReplacement", () => {
 
     expect(result.get("custodes")!.requiredCharacterIds).toEqual(["kari"]);
     expect(result.get("resilient")!.requiredCharacterIds).toEqual(["tyrith"]);
+  });
+
+  it("stops searching and keeps the current assignment when its time budget is already spent", () => {
+    const kari = custodes("kari", { xpLevel: 60, power: 900 });
+    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
+    const lp = new Map([["custodes", solution("custodes", ["kari"])]]);
+
+    const result = upgradeAssignmentByReplacement(lp, [custodesBoard], [kari, tyrith], 0);
+
+    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["kari"]);
   });
 
   it("leaves a board that isn't running untouched", () => {

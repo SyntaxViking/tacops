@@ -293,6 +293,16 @@ function runPasses(model: LpModel): PassesResult {
       console.warn(`[board-solver] out of time before pass "${pass.key}" could even start`);
       return lastGoodResult ? { result: lastGoodResult, status: "degraded", failedPassIndex: i } : { result: null, status: "failed" };
     }
+    // A pass whose objective is zero for every variable (e.g. favoriteScore when the player has no
+    // favorites) can't change anything - every feasible solution scores 0 - so there's nothing to
+    // lock in or optimize. Running it anyway isn't just wasted work: maximizing a constant is a
+    // fully degenerate problem and javascript-lp-solver can fail to return from it at all, which
+    // its deadline can't interrupt (it's only checked between branch-and-bound nodes).
+    const hasSignal = Object.values(model.variables).some((coefficients) => (coefficients[pass.key] ?? 0) !== 0);
+    if (!hasSignal) {
+      console.log(`[board-solver] pass "${pass.key}" (${i + 1}/${PASS_ORDER.length}): skipped - objective is zero for every variable`);
+      continue;
+    }
     model.optimize = pass.key;
     model.opType = pass.opType;
     model.timeout = remainingMs;
@@ -584,6 +594,12 @@ export function refillSlotsGreedily(
 // Max cross-board hops in one replacement chain (see upgradeAssignmentByReplacement).
 const MAX_REPLACEMENT_CHAIN_DEPTH = 2;
 
+// The swap search gets its OWN budget, independent of (and starting only after) the LP's
+// SOLVE_TIMEOUT_MS and the greedy refill. It's normally tens of milliseconds; this is a safety net
+// so a pathological roster can never stall the result - every accepted move leaves a complete,
+// valid assignment, so stopping early just returns the best one found so far.
+export const REPLACEMENT_SEARCH_TIMEOUT_MS = 2_000;
+
 interface ReplacementStep {
   boardId: string;
   outId: string;
@@ -607,7 +623,9 @@ export function upgradeAssignmentByReplacement(
   assignment: BoardAssignmentResult,
   openBoards: ExpeditionBoardEntry[],
   roster: RosterCharacter[],
+  timeBudgetMs: number = REPLACEMENT_SEARCH_TIMEOUT_MS,
 ): BoardAssignmentResult {
+  const deadline = performance.now() + timeBudgetMs;
   const unitById = new Map(roster.map((unit) => [unit.id, unit]));
   const entryById = new Map(openBoards.map((entry) => [entry.expeditionId, entry]));
   const groupsById = new Map(openBoards.map((entry) => [entry.expeditionId, groupObjectives(entry.bonusObjectives)]));
@@ -657,7 +675,8 @@ export function upgradeAssignmentByReplacement(
     return null;
   }
 
-  for (let iteration = 0; iteration < roster.length; iteration++) {
+  let timedOut = false;
+  for (let iteration = 0; iteration < roster.length && !timedOut; iteration++) {
     const assignedWorstFirst = [...placed].map((id) => unitById.get(id)!).sort((a, b) => fillComparator(b, a));
     const poolBestFirst = roster.filter((unit) => !placed.has(unit.id)).sort(fillComparator);
     let improved = false;
@@ -666,6 +685,11 @@ export function upgradeAssignmentByReplacement(
       const boardId = [...assignedByBoard].find(([, ids]) => ids.includes(worse.id))![0];
       for (const better of poolBestFirst) {
         if (fillComparator(better, worse) >= 0) break; // pool is best-first: nothing later improves on `worse` either
+        if (performance.now() >= deadline) {
+          console.warn(`[board-solver] replacement search hit its ${timeBudgetMs}ms budget - keeping the best assignment found so far`);
+          timedOut = true;
+          break search;
+        }
         const chain = findChain(boardId, worse.id, better.id, MAX_REPLACEMENT_CHAIN_DEPTH, new Set());
         if (!chain) continue;
         // Apply the whole chain on top of the pre-move assignment: each step swaps exactly one
@@ -840,9 +864,14 @@ export function solveBoardAssignment(
   // LP's board/bonus outcomes and fix up the free slots greedily, outside the LP's timer.
   let tiebreakDegraded = false;
   if (passesResult.status === "degraded" && passesResult.failedPassIndex >= PRIORITY_TIER_COUNT) {
+    const refillStartedAt = performance.now();
     const refilled = refillSlotsGreedily(assignment, openBoards, roster);
     if (refilled) assignment = refilled;
+    const upgradeStartedAt = performance.now();
     assignment = upgradeAssignmentByReplacement(assignment, openBoards, roster);
+    console.log(
+      `[board-solver] post-LP fallback: refill ${Math.round(upgradeStartedAt - refillStartedAt)}ms, replacement search ${Math.round(performance.now() - upgradeStartedAt)}ms`,
+    );
     tiebreakDegraded = true;
   }
 
