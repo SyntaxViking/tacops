@@ -62,12 +62,21 @@ describe("entryFinishAt", () => {
 describe("getDispatchedUnits", () => {
   // Regression: a character id can be recognized (in character-data.json) before its portrait
   // asset lands in character-portraits.ts - e.g. orksWeirdboy (Zapspitta) right after it was added
-  // to the catalog. That used to crash the whole board view via characterPortraitUrl's throw;
-  // it should fall back to no portrait instead, same as an unrecognized id.
-  it("falls back to no portrait for a recognized character id with no mapped portrait", () => {
+  // to the catalog, briefly had this exact gap. That used to crash the whole board view via
+  // characterPortraitUrl's throw; the guard (isCharacterId && hasCharacterPortrait, see
+  // character-portraits.test.ts for that combination's own coverage) should fall back to no
+  // portrait instead, same as an unrecognized id - this just confirms the real catalog agrees,
+  // now that orksWeirdboy's portrait has landed too.
+  it("resolves a portrait for a recognized character id that has one mapped", () => {
     const dispatched = entry("Dispatched", { units: ["orksWeirdboy"] });
 
     expect(() => getDispatchedUnits(dispatched)).not.toThrow();
-    expect(getDispatchedUnits(dispatched)).toEqual([{ unitId: "orksWeirdboy", portraitUrl: undefined }]);
+    expect(getDispatchedUnits(dispatched)?.[0].portraitUrl).toBeDefined();
+  });
+
+  it("falls back to no portrait for an unrecognized character id instead of throwing", () => {
+    const dispatched = entry("Dispatched", { units: ["notARealCharacterId"] });
+
+    expect(getDispatchedUnits(dispatched)).toEqual([{ unitId: "notARealCharacterId", portraitUrl: undefined }]);
   });
 });
