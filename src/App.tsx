@@ -30,6 +30,7 @@ import { StaleVersionBanner } from "./components/StaleVersionBanner";
 import { Toast } from "./components/Toast";
 import { registerStaleVersionHandler, startVersionCheck } from "./version-check";
 import { fetchPlayerData } from "./api/fetch-player-data";
+import { buildPlayerDataExport } from "./api/player-data-export";
 import { entryIsUnavailable } from "./board/board-view-model";
 import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
 import { clearWebCredential, retrieveWebCredential, storeWebCredential } from "./api/store-web-credential";
@@ -1206,7 +1207,13 @@ export function App() {
   }
 
   async function exportPlayerData() {
-    const contents = JSON.stringify(rawPlayerData, null, 2);
+    // Bundles the user's solver-affecting settings (favorites, priority order) into the export so a
+    // bug report carries everything needed to reproduce the exact solve they saw.
+    const contents = JSON.stringify(
+      buildPlayerDataExport(rawPlayerData, { priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds, favoritedPlanetIds }),
+      null,
+      2,
+    );
     const defaultFileName = `tacops-${environment}-player-data.json`;
     if (isTauri()) {
       const { save } = await import("@tauri-apps/plugin-dialog");

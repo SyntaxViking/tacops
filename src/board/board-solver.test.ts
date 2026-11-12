@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   classifyDispatchedCharacters,
   findMinimalRequiredSubset,
+  rarityWeights,
   refillSlotsGreedily,
   solveBoardAssignment,
   solveGreedyFallback,
@@ -282,10 +283,9 @@ describe("solveGreedyFallback", () => {
 });
 
 describe("solveBoardAssignment", () => {
-  it("prefers assigning the higher-power character when the LP has no other signal to break the tie", () => {
-    // A single Common-rarity slot with no bonus objectives and no bonus rewards: every priority
-    // tier, xpGain, and runCount all tie between the two candidates, leaving the final powerUsed
-    // pass as the only thing that can decide which one gets the slot.
+  it("still fills the slot when nothing distinguishes the candidates", () => {
+    // A single Common-rarity slot with no bonus objectives and no preferences: every pass ties
+    // between the two candidates, so either may take the slot - but it must be filled.
     const weakHero: RawUnit = { id: "ultraTigurius", power: 100 };
     const strongHero: RawUnit = { id: "ultraEliminatorSgt", power: 9999 };
     const openBoard = board({ rarity: "Common", category: "all_vanguard" });
@@ -299,7 +299,38 @@ describe("solveBoardAssignment", () => {
     expect(status).toBe("ok");
     const solution = assignment.get("exp")!;
     expect(solution.run).toBe(true);
-    expect(solution.optionalCharacterIds).toEqual(["ultraEliminatorSgt"]);
+    expect(solution.optionalCharacterIds).toHaveLength(1);
+  });
+
+  describe("rarity priority", () => {
+    // Mythic-eligible units: progressionIndex 19 is Mythic; intToRank adds 1 to the raw rank.
+    const mythicUnit = (id: string): RawUnit => ({ id, power: 100, progressionIndex: 19, rank: Rank.Adamantine2 - 1 });
+    const priority: Parameters<typeof solveBoardAssignment>[2] = ["rarity", "intel", "crusadeBomb", "crusadeNpc"];
+    const mythicOp = board({ expeditionId: "mythic", rarity: "Mythic", participants: 2 });
+    const legendaryA = board({ expeditionId: "legendaryA", rarity: "Legendary", participants: 1 });
+    const legendaryB = board({ expeditionId: "legendaryB", rarity: "Legendary", participants: 1 });
+
+    it("runs the one Mythic operation over two Legendary ones when the roster can only cover one option", () => {
+      // Two characters: either both go to the Mythic operation (2 slots) or one each to the two
+      // Legendary ones. Summing rarity numbers (Mythic 5 vs Legendary 4 + 4) would pick the
+      // Legendaries; strict rarity order must pick the Mythic however many Legendaries it displaces.
+      const roster = [mythicUnit("ultraTigurius"), mythicUnit("ultraEliminatorSgt")];
+
+      const { assignment } = solveBoardAssignment([legendaryA, legendaryB, mythicOp], roster, priority);
+
+      expect(assignment.get("mythic")!.run).toBe(true);
+      expect(assignment.get("legendaryA")!.run).toBe(false);
+      expect(assignment.get("legendaryB")!.run).toBe(false);
+    });
+
+    it("still runs the lower-rarity operations the higher one doesn't need characters for", () => {
+      const roster = [mythicUnit("ultraTigurius"), mythicUnit("ultraEliminatorSgt"), mythicUnit("ultraTitus")];
+
+      const { assignment } = solveBoardAssignment([legendaryA, legendaryB, mythicOp], roster, priority);
+
+      expect(assignment.get("mythic")!.run).toBe(true);
+      expect([assignment.get("legendaryA")!.run, assignment.get("legendaryB")!.run].filter(Boolean)).toHaveLength(1);
+    });
   });
 
   it("skips a tiebreak pass whose objective is zero for everyone instead of running it", () => {
@@ -321,22 +352,52 @@ describe("solveBoardAssignment", () => {
 
   it("orders a board's optionalCharacterIds by power descending", () => {
     const low: RawUnit = { id: "ultraTigurius", power: 50 };
-    const mid: RawUnit = { id: "ultraEliminatorSgt", power: 500 };
     const high: RawUnit = { id: "ultraInceptorSgt", power: 5000 };
     const openBoard = board({ rarity: "Common", category: "all_vanguard", participants: 2 });
 
     const { assignment } = solveBoardAssignment(
       [openBoard],
-      [low, mid, high],
+      [low, high],
       ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
     );
 
-    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraInceptorSgt", "ultraEliminatorSgt"]);
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraInceptorSgt", "ultraTigurius"]);
   });
 
-  it("prefers a favorited character over a higher-power one, since favoriteScore outranks powerUsed", () => {
-    // Both start with xpLevel 0 (estimateXpGain 0 either way), so xpGain and runCount tie - only
-    // the new favoriteScore pass (which runs before powerUsed) can decide this.
+  describe("anti-favorites", () => {
+    const priority: Parameters<typeof solveBoardAssignment>[2] = ["rarity", "intel", "crusadeBomb", "crusadeNpc"];
+    const openBoard = () => board({ rarity: "Common", category: "all_vanguard" });
+
+    it("avoids an anti-favorited character when another one can fill the slot", () => {
+      const { assignment } = solveBoardAssignment(
+        [openBoard()],
+        [{ id: "ultraTigurius", power: 9999 }, { id: "ultraEliminatorSgt", power: 100 }],
+        priority,
+        new Set(),
+        new Set(["ultraTigurius"]),
+      );
+
+      expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraEliminatorSgt"]);
+    });
+
+    it("still uses an anti-favorited character when nobody else can fill the slot", () => {
+      const { assignment } = solveBoardAssignment(
+        [openBoard()],
+        [{ id: "ultraTigurius", power: 100 }],
+        priority,
+        new Set(),
+        new Set(["ultraTigurius"]),
+      );
+
+      const solution = assignment.get("exp")!;
+      expect(solution.run).toBe(true);
+      expect(solution.optionalCharacterIds).toEqual(["ultraTigurius"]);
+    });
+  });
+
+  it("prefers a favorited character over a higher-power one, since favoriteScore outranks xpGain", () => {
+    // Both start with xpLevel 0 (estimateXpGain 0 either way), so xpGain ties - only the
+    // favoriteScore pass (which runs before xpGain) can decide this.
     const favoritedWeak: RawUnit = { id: "ultraTigurius", power: 100 };
     const neutralStrong: RawUnit = { id: "ultraEliminatorSgt", power: 9999 };
     const openBoard = board({ rarity: "Common", category: "all_vanguard" });
@@ -604,5 +665,19 @@ describe("classifyDispatchedCharacters", () => {
 
     expect(result.requiredIds).toEqual(new Set());
     expect(result.optionalIds).toEqual(new Set(["ultraTigurius", "ultraEliminatorSgt"]));
+  });
+});
+
+describe("rarityWeights", () => {
+  it("makes one operation worth more than every lower-rarity operation together", () => {
+    const weights = rarityWeights([
+      Rarity.Mythic, Rarity.Mythic, Rarity.Legendary,
+      Rarity.Rare, Rarity.Rare, Rarity.Rare, Rarity.Rare,
+    ]);
+
+    expect(weights.get(Rarity.Rare)).toBe(1);
+    expect(weights.get(Rarity.Legendary)).toBe(5); // 4 Rares (4) + 1
+    expect(weights.get(Rarity.Mythic)).toBe(10); // 4 Rares (4) + 1 Legendary (5) + 1
+    expect(weights.has(Rarity.Epic)).toBe(false);
   });
 });
