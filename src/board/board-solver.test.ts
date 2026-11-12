@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   classifyDispatchedCharacters,
   findMinimalRequiredSubset,
+  refillSlotsGreedily,
   solveBoardAssignment,
   solveGreedyFallback,
+  upgradeAssignmentByReplacement,
   type GroupRequirement,
   type RosterCharacter,
 } from "./board-solver";
@@ -300,6 +302,23 @@ describe("solveBoardAssignment", () => {
     expect(solution.optionalCharacterIds).toEqual(["ultraEliminatorSgt"]);
   });
 
+  it("skips a tiebreak pass whose objective is zero for everyone instead of running it", () => {
+    // With nobody favorited, favoriteScore is 0 for every variable. Maximizing a constant is a
+    // degenerate LP that can hang the library outright, so runPasses must not run it.
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const priority: Parameters<typeof solveBoardAssignment>[2] = ["rarity", "intel", "crusadeBomb", "crusadeNpc"];
+      const result = solveBoardAssignment([board()], [{ id: "deathRotbone", power: 100 }], priority);
+
+      const messages = log.mock.calls.map((call) => String(call[0]));
+      expect(messages.some((m) => m.includes('pass "favoriteScore"') && m.includes("skipped"))).toBe(true);
+      expect(messages.some((m) => m.includes('pass "favoriteScore"') && m.includes("feasible="))).toBe(false);
+      expect(result.assignment.get("exp")!.run).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("orders a board's optionalCharacterIds by power descending", () => {
     const low: RawUnit = { id: "ultraTigurius", power: 50 };
     const mid: RawUnit = { id: "ultraEliminatorSgt", power: 500 };
@@ -410,6 +429,134 @@ describe("solveBoardAssignment", () => {
 
     expect(status).toBe("ok");
     expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
+  });
+});
+
+describe("refillSlotsGreedily", () => {
+  const cappedHigh = () => character("cappedHigh", { rarity: Rarity.Mythic, xpLevel: 60, power: 900 }); // xpLevelCap[Mythic] = 60
+  const growing = () => character("growing", { rarity: Rarity.Mythic, xpLevel: 10, power: 100 });
+  const needed = () => character("needed", { rarity: Rarity.Mythic, xpLevel: 10, power: 50 });
+
+  it("keeps the LP's required characters and replaces a capped optional one with an uncapped one", () => {
+    const entry = board({ participants: 2 });
+    const roster = [cappedHigh(), growing(), needed()];
+    const lp = new Map([
+      ["exp", { expeditionId: "exp", run: true, bonusCompleted: true, requiredCharacterIds: ["needed"], optionalCharacterIds: ["cappedHigh"] }],
+    ]);
+
+    const result = refillSlotsGreedily(lp, [entry], roster)!.get("exp")!;
+
+    expect(result.requiredCharacterIds).toEqual(["needed"]);
+    expect(result.optionalCharacterIds).toEqual(["growing"]);
+    expect(result.bonusCompleted).toBe(true);
+  });
+
+  it("never reuses a character another board requires", () => {
+    const a = board({ expeditionId: "a", participants: 1 });
+    const b = board({ expeditionId: "b", participants: 1 });
+    const roster = [growing(), needed()];
+    const lp = new Map([
+      ["a", { expeditionId: "a", run: true, bonusCompleted: false, requiredCharacterIds: [], optionalCharacterIds: ["growing"] }],
+      ["b", { expeditionId: "b", run: true, bonusCompleted: true, requiredCharacterIds: ["growing"], optionalCharacterIds: [] }],
+    ]);
+
+    const result = refillSlotsGreedily(lp, [a, b], roster)!;
+
+    expect(result.get("b")!.requiredCharacterIds).toEqual(["growing"]);
+    expect(result.get("a")!.optionalCharacterIds).toEqual(["needed"]);
+  });
+
+  it("returns null (keep the LP's answer) when a board can't be fully re-filled", () => {
+    const entry = board({ participants: 2 });
+    const lp = new Map([
+      ["exp", { expeditionId: "exp", run: true, bonusCompleted: false, requiredCharacterIds: [], optionalCharacterIds: ["growing", "needed"] }],
+    ]);
+
+    expect(refillSlotsGreedily(lp, [entry], [growing()])).toBeNull();
+  });
+});
+
+describe("upgradeAssignmentByReplacement", () => {
+  const custodes = (id: string, overrides: Partial<RosterCharacter> = {}) =>
+    character(id, { rarity: Rarity.Mythic, profile: profile({ faction: "Custodes", traits: ["Resilient"] }), ...overrides });
+  const resilient = (id: string, overrides: Partial<RosterCharacter> = {}) =>
+    character(id, { rarity: Rarity.Mythic, profile: profile({ faction: "Other", traits: ["Resilient"] }), ...overrides });
+  const solution = (expeditionId: string, required: string[], optional: string[] = [], bonusCompleted = true) => ({
+    expeditionId,
+    run: true,
+    bonusCompleted,
+    requiredCharacterIds: required,
+    optionalCharacterIds: optional,
+  });
+  const custodesBoard = board({ expeditionId: "custodes", bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Custodes" }] });
+  const resilientBoard = board({ expeditionId: "resilient", bonusObjectives: [{ objectiveType: "Trait", objectiveTarget: "Resilient" }] });
+
+  it("swaps an uncapped character in for a maxed one and re-covers the board she left from the pool", () => {
+    // Kariyan/Tyrith: both are Custodes and Resilient. Tyrith (uncapped) was put on the Resilient
+    // board while maxed Kariyan took the only Custodes slot. Moving Tyrith to the Custodes board
+    // needs the Resilient board re-covered by an unused uncapped unit.
+    const kari = custodes("kari", { xpLevel: 60, power: 900 }); // xpLevelCap[Mythic] = 60
+    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
+    const spare = resilient("spare", { xpLevel: 30, power: 100 });
+    const lp = new Map([
+      ["custodes", solution("custodes", ["kari"])],
+      ["resilient", solution("resilient", ["tyrith"])],
+    ]);
+
+    const result = upgradeAssignmentByReplacement(lp, [custodesBoard, resilientBoard], [kari, tyrith, spare]);
+
+    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["tyrith"]);
+    expect(result.get("resilient")!.requiredCharacterIds).toEqual(["spare"]);
+  });
+
+  it("replaces a maxed required character directly from the pool when the pool unit also satisfies the objective", () => {
+    const kari = custodes("kari", { xpLevel: 60, power: 900 });
+    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
+    const lp = new Map([["custodes", solution("custodes", ["kari"])]]);
+
+    const result = upgradeAssignmentByReplacement(lp, [custodesBoard], [kari, tyrith]);
+
+    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["tyrith"]);
+  });
+
+  it("never swaps in a unit that would break a met bonus", () => {
+    const kari = custodes("kari", { xpLevel: 60, power: 900 });
+    const outsider = resilient("outsider", { xpLevel: 10, power: 100 }); // uncapped but not Custodes
+    const lp = new Map([["custodes", solution("custodes", ["kari"])]]);
+
+    const result = upgradeAssignmentByReplacement(lp, [custodesBoard], [kari, outsider]);
+
+    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["kari"]);
+  });
+
+  it("keeps a maxed character when no uncapped alternative can cover the board she would leave", () => {
+    const kari = custodes("kari", { xpLevel: 60, power: 900 });
+    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
+    const lp = new Map([
+      ["custodes", solution("custodes", ["kari"])],
+      ["resilient", solution("resilient", ["tyrith"])],
+    ]);
+
+    const result = upgradeAssignmentByReplacement(lp, [custodesBoard, resilientBoard], [kari, tyrith]);
+
+    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["kari"]);
+    expect(result.get("resilient")!.requiredCharacterIds).toEqual(["tyrith"]);
+  });
+
+  it("stops searching and keeps the current assignment when its time budget is already spent", () => {
+    const kari = custodes("kari", { xpLevel: 60, power: 900 });
+    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
+    const lp = new Map([["custodes", solution("custodes", ["kari"])]]);
+
+    const result = upgradeAssignmentByReplacement(lp, [custodesBoard], [kari, tyrith], 0);
+
+    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["kari"]);
+  });
+
+  it("leaves a board that isn't running untouched", () => {
+    const lp = new Map([["custodes", { expeditionId: "custodes", run: false, bonusCompleted: false, requiredCharacterIds: [], optionalCharacterIds: [] }]]);
+
+    expect(upgradeAssignmentByReplacement(lp, [custodesBoard], [custodes("kari")]).get("custodes")!.run).toBe(false);
   });
 });
 

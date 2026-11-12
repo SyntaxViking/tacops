@@ -19,13 +19,13 @@ export interface SolveRequest {
 // "solveStatus" is solveBoardAssignment's own normal, non-exceptional outcome - "incomplete"
 // means at least one board didn't end up fully assigned (whether the LP degraded, failed
 // entirely, or the greedy fallback couldn't fully solve it), regardless of which path produced
-// it - still a "success" at this level, just with a message worth surfacing.
+// it; "degraded" means only the XP tiebreaks timed out (bonus outcomes still optimal) - still a "success" at this level, just with a message worth surfacing.
 export type SolveResponse =
   | {
       requestId: number;
       status: "success";
       assignmentEntries: Array<[string, BoardSolution]>;
-      solveStatus: "ok" | "incomplete";
+      solveStatus: "ok" | "degraded" | "incomplete";
       message?: string;
     }
   | {
