@@ -132,13 +132,6 @@ interface PassSpec {
   opType: "max" | "min";
 }
 
-interface PassPlan {
-  passes: PassSpec[];
-  // Index of the first pass after the user's priority tiers - everything from here on only decides
-  // WHICH characters fill an already-decided set of run/bonus outcomes.
-  tiebreakStartIndex: number;
-}
-
 // The first passes are the user's priority tiers in their chosen order (lexicographic - each pass's
 // achieved value gets locked in via an `equal` constraint before the next pass runs, see
 // runPasses), followed by the fixed tail that always applies regardless of priority order:
@@ -150,15 +143,14 @@ interface PassPlan {
 //      finds is the final answer.
 // Each tail pass only ever decides WHICH specific characters fill an already-decided set of
 // run/bonus outcomes, so none of them can cost a bonus or a run.
-function buildPassPlan(priorityOrder: readonly PriorityKey[]): PassPlan {
+function buildPassPlan(priorityOrder: readonly PriorityKey[]): PassSpec[] {
   const passes: PassSpec[] = priorityOrder.map((_, tierIndex) => ({ key: priorityPassKey(tierIndex), opType: "max" }));
-  const tiebreakStartIndex = passes.length;
   passes.push(
     { key: "antiFavoriteCount", opType: "min" },
     { key: "favoriteScore", opType: "max" },
     { key: "xpGain", opType: "max" },
   );
-  return { passes, tiebreakStartIndex };
+  return passes;
 }
 
 interface AssignRef {
@@ -239,7 +231,7 @@ function buildModel(
       addCoef(assignVar, slotConstraint, 1);
       addCoef(assignVar, `excl::${unit.id}`, 1);
       addCoef(assignVar, "antiFavoriteCount", unit.isAntiFavorited ? 1 : 0);
-      addCoef(assignVar, "xpGain", effectiveXpGain(unit));
+      addCoef(assignVar, "xpGain", estimateXpGain(rarity, unit.rarity, unit.xpLevel, unit.power));
       addCoef(assignVar, "favoriteScore", unit.isFavorited ? 1 : 0);
       assignRefs.push({ varName: assignVar, characterId: unit.id, boardId });
       usedCharacterIds.add(unit.id);
@@ -307,41 +299,51 @@ function isIntegralResult(model: LpModel, result: SolveResult): boolean {
   return true;
 }
 
-// failedPassIndex (degraded only) is the index into the pass plan of the pass that couldn't finish -
-// solveBoardAssignment uses it to tell "only the tiebreak passes were lost" (every board-run and
-// bonus outcome is still optimal, see refillSlotsGreedily) from "a priority pass was lost".
+// "partial" means the sequence stopped early (a pass timed out or came back unusable) and `result`
+// is the last pass that DID complete - a full, valid assignment that's optimal for every criterion
+// up to that pass and arbitrary beyond it. unfinishedPassKeys lists the passes that had anything to
+// optimize but never completed. "failed" means not even the first pass produced a usable result.
 type PassesResult =
   | { result: SolveResult; status: "ok" }
-  | { result: SolveResult; status: "degraded"; failedPassIndex: number }
+  | { result: SolveResult; status: "partial"; unfinishedPassKeys: PassKey[] }
   | { result: null; status: "failed" };
 
-// If a later pass can't finish in time, falling back to the last pass that DID complete is still
-// a fully valid, feasible assignment - just not optimized for the lower-priority tiers beyond
-// that point. If even the first pass can't produce a usable result, there's nothing to fall back
-// to - report that as a normal "failed" outcome rather than throwing, so the caller can fall back
-// to the greedy solver instead of an exception. Whether the caller needs to warn the user at all
-// depends on whether the resulting assignment actually leaves a board unrun - see
-// solveBoardAssignment - not on which of these internal paths produced it.
-function runPasses(model: LpModel, passOrder: PassSpec[]): PassesResult {
+// Called after every usable pass that still has later passes with something to optimize. The
+// final pass never checkpoints - its result is the return value.
+type CheckpointHandler = (result: SolveResult, unfinishedPassKeys: PassKey[]) => void;
+
+// A pass whose objective is zero for every variable (e.g. favoriteScore when the player has no
+// favorites) can't change anything - every feasible solution scores 0 - so there's nothing to
+// lock in or optimize. Running it anyway isn't just wasted work: maximizing a constant is a
+// fully degenerate problem and javascript-lp-solver can fail to return from it at all, which
+// its deadline can't interrupt (it's only checked between branch-and-bound nodes).
+function passHasSignal(model: LpModel, pass: PassSpec): boolean {
+  return Object.values(model.variables).some((coefficients) => (coefficients[pass.key] ?? 0) !== 0);
+}
+
+// If a later pass can't finish in time, the last pass that DID complete is still a fully valid,
+// feasible assignment - just not optimized beyond that point. It's returned as "partial" for the
+// caller to present as non-optimal. If even the first pass can't produce a usable result there's
+// nothing to return - a normal "failed" outcome rather than an exception.
+function runPasses(model: LpModel, passOrder: PassSpec[], onCheckpoint?: CheckpointHandler): PassesResult {
   // One shared deadline for the entire sequence - each pass's own model.timeout is however much
   // of that budget is still left, not a fresh SOLVE_TIMEOUT_MS every time (see SOLVE_TIMEOUT_MS's
   // own comment for why that matters).
   const deadline = Date.now() + SOLVE_TIMEOUT_MS;
   let lastGoodResult: SolveResult | undefined;
+  const unfinishedFrom = (index: number): PassKey[] =>
+    passOrder.slice(index).filter((pass) => passHasSignal(model, pass)).map((pass) => pass.key);
+  const stopAt = (index: number): PassesResult =>
+    lastGoodResult ? { result: lastGoodResult, status: "partial", unfinishedPassKeys: unfinishedFrom(index) } : { result: null, status: "failed" };
+
   for (let i = 0; i < passOrder.length; i++) {
     const pass = passOrder[i];
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) {
       console.warn(`[board-solver] out of time before pass "${pass.key}" could even start`);
-      return lastGoodResult ? { result: lastGoodResult, status: "degraded", failedPassIndex: i } : { result: null, status: "failed" };
+      return stopAt(i);
     }
-    // A pass whose objective is zero for every variable (e.g. favoriteScore when the player has no
-    // favorites) can't change anything - every feasible solution scores 0 - so there's nothing to
-    // lock in or optimize. Running it anyway isn't just wasted work: maximizing a constant is a
-    // fully degenerate problem and javascript-lp-solver can fail to return from it at all, which
-    // its deadline can't interrupt (it's only checked between branch-and-bound nodes).
-    const hasSignal = Object.values(model.variables).some((coefficients) => (coefficients[pass.key] ?? 0) !== 0);
-    if (!hasSignal) {
+    if (!passHasSignal(model, pass)) {
       console.log(`[board-solver] pass "${pass.key}" (${i + 1}/${passOrder.length}): skipped - objective is zero for every variable`);
       continue;
     }
@@ -355,24 +357,21 @@ function runPasses(model: LpModel, passOrder: PassSpec[]): PassesResult {
     // A timed-out branch-and-bound search can land on a value that happens to look feasible and
     // integral without actually being the true optimum for this pass - trusting it anyway would
     // lock in a possibly-wrong `equal` constraint for every later pass. Treat a timeout exactly
-    // like "not usable" so this bails out (to the last fully-completed pass, or straight to the
-    // greedy fallback) immediately rather than locking in a questionable result and continuing.
+    // like "not usable" so this stops at the last fully-completed pass immediately.
     const isIntegral = result.feasible && isIntegralResult(model, result);
     const usable = !hitTimeout && isIntegral;
     console.log(
       `[board-solver] pass "${pass.key}" (${i + 1}/${passOrder.length}): feasible=${result.feasible} integral=${isIntegral} result=${result.result} took ${elapsedMs}ms${hitTimeout ? " (HIT TIMEOUT)" : ""}`,
     );
     if (!usable) {
-      if (lastGoodResult) {
-        console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result${hitTimeout ? " (timed out)" : ""} - falling back to the last completed pass's solution`);
-        return { result: lastGoodResult, status: "degraded", failedPassIndex: i };
-      }
-      console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result${hitTimeout ? " (timed out)" : ""} and there's no earlier fallback - falling back to the greedy solver`);
-      return { result: null, status: "failed" };
+      console.warn(`[board-solver] pass "${pass.key}" didn't produce a usable result${hitTimeout ? " (timed out)" : ""}`);
+      return stopAt(i);
     }
     lastGoodResult = result;
     if (i < passOrder.length - 1) {
       model.constraints[pass.key] = { equal: Math.round(Number(result.result)) };
+      const unfinished = unfinishedFrom(i + 1);
+      if (unfinished.length > 0) onCheckpoint?.(result, unfinished);
     }
   }
   return { result: lastGoodResult!, status: "ok" };
@@ -411,39 +410,23 @@ export function findMinimalRequiredSubset(assignedIds: string[], groupRequiremen
   return best ?? new Set(assignedIds);
 }
 
-// How undesirable a unit is to deploy when there's no objective-coverage signal to go on - higher
-// is worse. XP-capped sinks to the very bottom (rank 2): it's not just undesirable, it's strictly
-// the least optimal pick possible, since deploying it buys literally nothing (no growth left to
-// gain) for the same opportunity cost as any other choice. Anti-favorited (rank 1) works against
-// the player's own stated intent, which is worse than a neutral pick but still strictly better
-// than an XP-capped one - it can still gain real XP, it's just not wanted. Both are only ever used
-// when no better-ranked eligible unit can fill the slot.
-function avoidRank(unit: RosterCharacter): number {
-  if (isXpCapped(unit.rarity, unit.xpLevel)) return 2;
-  if (unit.isAntiFavorited) return 1;
-  return 0;
-}
-
-// XP-capped units earn nothing, so they sit just below a growth-eligible unit that happens to
-// estimate to 0 XP (a small negative value rather than a flat 0). Anti-favorited units are NOT
-// penalized here - the antiFavoriteCount pass already runs before xpGain and decides how many of
-// them get used.
-function effectiveXpGain(unit: RosterCharacter): number {
-  return isXpCapped(unit.rarity, unit.xpLevel) ? -1 : estimateXpGain(unit.rarity, unit.xpLevel);
-}
-
-// Shared "who to prefer when there's no objective-coverage signal to go on" ordering for the
-// greedy fallback: avoidRank ascending (so XP-capped sinks below anti-favorited, below everyone
-// else), then favorited units are preferred, then by power descending (falling back to last-place,
-// not 0, when power is unknown - an uncomputed power shouldn't look weaker than a genuinely
-// low-power character). Negative return means `a` is preferred over `b`, matching
-// Array.prototype.sort's contract.
+// Shared "who to prefer" ordering for the greedy solver, mirroring the order the LP's tail passes
+// optimize in: avoid anti-favorited characters first, then prefer favorited ones, then prefer
+// whoever earns the most XP. XP is power-based (see estimateXpGain), and the operation's rarity
+// scales everyone's XP by the same factor, so ranking units against each other only needs
+// "XP-capped last, then higher power first" (falling back to last place, not 0, when power is
+// unknown - an uncomputed power shouldn't look weaker than a genuinely low-power character).
+// Negative return means `a` is preferred over `b`, matching Array.prototype.sort's contract.
 function fillComparator(a: RosterCharacter, b: RosterCharacter): number {
-  const rankDiff = avoidRank(a) - avoidRank(b);
-  if (rankDiff !== 0) return rankDiff;
+  const aAnti = a.isAntiFavorited ? 1 : 0;
+  const bAnti = b.isAntiFavorited ? 1 : 0;
+  if (aAnti !== bAnti) return aAnti - bAnti;
   const aFav = a.isFavorited ? 1 : 0;
   const bFav = b.isFavorited ? 1 : 0;
   if (aFav !== bFav) return bFav - aFav;
+  const aCapped = isXpCapped(a.rarity, a.xpLevel) ? 1 : 0;
+  const bCapped = isXpCapped(b.rarity, b.xpLevel) ? 1 : 0;
+  if (aCapped !== bCapped) return aCapped - bCapped;
   return (b.power ?? -Infinity) - (a.power ?? -Infinity);
 }
 
@@ -583,191 +566,6 @@ export function solveGreedyFallback(openBoards: ExpeditionBoardEntry[], roster: 
   return solutions;
 }
 
-// Used when the LP's priority passes all finished (so every board-run and bonus outcome is optimal,
-// and each board's required characters are known) but a later tiebreak pass -
-// antiFavoriteCount, favoriteScore or xpGain - timed out, leaving the optional slots filled arbitrarily
-// (that's how XP-capped characters ended up in free slots). Keeps every board's run/bonus outcome
-// and required characters exactly as the LP found them and re-fills only the optional slots with
-// the greedy fillComparator ordering (XP-capped last, then anti-favorited, then favorited, then
-// power). Boards go highest rarity first since a board's XP scales with its rarity. This is
-// polynomial and instant, so it runs outside the LP's time budget. Returns null (caller keeps the
-// LP's assignment) if any board can't be fully re-filled - the LP's assignment is always valid, so
-// that's strictly a no-op rather than an error.
-export function refillSlotsGreedily(
-  assignment: BoardAssignmentResult,
-  openBoards: ExpeditionBoardEntry[],
-  roster: RosterCharacter[],
-): BoardAssignmentResult | null {
-  const powerById = buildPowerById(roster);
-  const pool = new Map(roster.map((unit) => [unit.id, unit]));
-  for (const solution of assignment.values()) {
-    for (const id of solution.requiredCharacterIds) pool.delete(id);
-  }
-
-  const refilled: BoardAssignmentResult = new Map(assignment);
-  const runningBoards = openBoards.filter((entry) => assignment.get(entry.expeditionId)?.run);
-  for (const entry of [...runningBoards].sort((a, b) => entryRarity(b) - entryRarity(a))) {
-    const solution = assignment.get(entry.expeditionId)!;
-    const slots = entry.participants - solution.requiredCharacterIds.length;
-    const rarity = entryRarity(entry);
-    const allianceRequirement = requiredAlliance(entry.category);
-    const chosen = [...pool.values()]
-      .filter((unit) => isEligibleForBoard(unit, rarity, allianceRequirement))
-      .sort(fillComparator)
-      .slice(0, Math.max(0, slots));
-    if (chosen.length !== Math.max(0, slots)) return null;
-    for (const unit of chosen) pool.delete(unit.id);
-    refilled.set(entry.expeditionId, {
-      ...solution,
-      optionalCharacterIds: sortIdsByPower(
-        chosen.map((unit) => unit.id),
-        powerById,
-      ),
-    });
-  }
-  return refilled;
-}
-
-// Max cross-board hops in one replacement chain (see upgradeAssignmentByReplacement).
-const MAX_REPLACEMENT_CHAIN_DEPTH = 2;
-
-// The swap search gets its OWN budget, independent of (and starting only after) the LP's
-// SOLVE_TIMEOUT_MS and the greedy refill. It's normally tens of milliseconds; this is a safety net
-// so a pathological roster can never stall the result - every accepted move leaves a complete,
-// valid assignment, so stopping early just returns the best one found so far.
-export const REPLACEMENT_SEARCH_TIMEOUT_MS = 2_000;
-
-interface ReplacementStep {
-  boardId: string;
-  outId: string;
-  inId: string;
-}
-
-// The solver's priority passes only check that a bonus is MET, so among equally good teams they
-// pick arbitrarily - which is how a maxed character ends up required on one board while an uncapped
-// character who could do the same job is used on another board (or, here, sits on a board that has
-// plenty of other options). Fixing that needs a move the plain "refill the optional slots" step
-// can't make: put the uncapped character where the maxed one was, and re-cover the board she left
-// from the unused pool. This local search finds exactly that. It repeatedly looks for an assigned
-// unit A and an unused unit C that fillComparator prefers over A, such that A can be taken out and
-// C brought in - directly, or through a chain of up to MAX_REPLACEMENT_CHAIN_DEPTH moves where each
-// vacated slot is re-covered by a unit from another board (whose own slot is re-covered in turn).
-// Every board keeps its participant count, stays eligible, and - if its bonus was met - still
-// satisfies every objective group, so run/bonus outcomes never change. The net effect of any chain
-// is just "A out, C in", so each accepted move strictly improves the fillComparator ordering and
-// the search terminates. Polynomial and instant, so it runs outside the LP's time budget.
-export function upgradeAssignmentByReplacement(
-  assignment: BoardAssignmentResult,
-  openBoards: ExpeditionBoardEntry[],
-  roster: RosterCharacter[],
-  timeBudgetMs: number = REPLACEMENT_SEARCH_TIMEOUT_MS,
-): BoardAssignmentResult {
-  const deadline = performance.now() + timeBudgetMs;
-  const unitById = new Map(roster.map((unit) => [unit.id, unit]));
-  const entryById = new Map(openBoards.map((entry) => [entry.expeditionId, entry]));
-  const groupsById = new Map(openBoards.map((entry) => [entry.expeditionId, groupObjectives(entry.bonusObjectives)]));
-
-  const assignedByBoard = new Map<string, string[]>();
-  const placed = new Set<string>();
-  for (const [boardId, solution] of assignment) {
-    if (!solution.run) continue;
-    const ids = [...solution.requiredCharacterIds, ...solution.optionalCharacterIds];
-    assignedByBoard.set(boardId, ids);
-    for (const id of ids) placed.add(id);
-  }
-  if (assignedByBoard.size === 0) return assignment;
-
-  function canHold(boardId: string, ids: string[]): boolean {
-    const entry = entryById.get(boardId)!;
-    const rarity = entryRarity(entry);
-    const allianceRequirement = requiredAlliance(entry.category);
-    const units = ids.map((id) => unitById.get(id)!);
-    if (!units.every((unit) => isEligibleForBoard(unit, rarity, allianceRequirement))) return false;
-    if (!assignment.get(boardId)!.bonusCompleted) return true;
-    return groupsById
-      .get(boardId)!
-      .every((group) => units.filter((unit) => characterSatisfiesObjective(unit.profile, group.objective)).length >= group.count);
-  }
-
-  function swapped(boardId: string, outId: string, inId: string): string[] {
-    return assignedByBoard.get(boardId)!.map((id) => (id === outId ? inId : id));
-  }
-
-  // Vacate `outId`'s slot on `boardId` and re-cover it so the net change is exactly "outId leaves,
-  // targetId (an unused unit) arrives", hopping through other boards if needed.
-  function findChain(boardId: string, outId: string, targetId: string, depth: number, visited: Set<string>): ReplacementStep[] | null {
-    if (canHold(boardId, swapped(boardId, outId, targetId))) {
-      return [{ boardId, outId, inId: targetId }];
-    }
-    if (depth === 0) return null;
-    const nextVisited = new Set(visited).add(boardId);
-    for (const [otherId, otherIds] of assignedByBoard) {
-      if (nextVisited.has(otherId)) continue;
-      for (const hopId of otherIds) {
-        if (!canHold(boardId, swapped(boardId, outId, hopId))) continue;
-        const rest = findChain(otherId, hopId, targetId, depth - 1, nextVisited);
-        if (rest) return [{ boardId, outId, inId: hopId }, ...rest];
-      }
-    }
-    return null;
-  }
-
-  let timedOut = false;
-  for (let iteration = 0; iteration < roster.length && !timedOut; iteration++) {
-    const assignedWorstFirst = [...placed].map((id) => unitById.get(id)!).sort((a, b) => fillComparator(b, a));
-    const poolBestFirst = roster.filter((unit) => !placed.has(unit.id)).sort(fillComparator);
-    let improved = false;
-
-    search: for (const worse of assignedWorstFirst) {
-      const boardId = [...assignedByBoard].find(([, ids]) => ids.includes(worse.id))![0];
-      for (const better of poolBestFirst) {
-        if (fillComparator(better, worse) >= 0) break; // pool is best-first: nothing later improves on `worse` either
-        if (performance.now() >= deadline) {
-          console.warn(`[board-solver] replacement search hit its ${timeBudgetMs}ms budget - keeping the best assignment found so far`);
-          timedOut = true;
-          break search;
-        }
-        const chain = findChain(boardId, worse.id, better.id, MAX_REPLACEMENT_CHAIN_DEPTH, new Set());
-        if (!chain) continue;
-        // Apply the whole chain on top of the pre-move assignment: each step swaps exactly one
-        // unit within one board, and chained hops move a unit between boards.
-        for (const step of chain) {
-          assignedByBoard.set(step.boardId, swapped(step.boardId, step.outId, step.inId));
-        }
-        placed.delete(worse.id);
-        placed.add(better.id);
-        improved = true;
-        break search;
-      }
-    }
-    if (!improved) break;
-  }
-
-  const powerById = buildPowerById(roster);
-  const upgraded: BoardAssignmentResult = new Map(assignment);
-  for (const [boardId, ids] of assignedByBoard) {
-    const solution = assignment.get(boardId)!;
-    let required = new Set<string>();
-    if (solution.bonusCompleted) {
-      const groupRequirements: GroupRequirement[] = groupsById.get(boardId)!.map((group) => ({
-        key: group.key,
-        count: group.count,
-        eligibleAssignedIds: ids.filter((id) => characterSatisfiesObjective(unitById.get(id)!.profile, group.objective)),
-      }));
-      required = findMinimalRequiredSubset(ids, groupRequirements);
-    }
-    upgraded.set(boardId, {
-      ...solution,
-      requiredCharacterIds: sortIdsByPower(required, powerById),
-      optionalCharacterIds: sortIdsByPower(
-        ids.filter((id) => !required.has(id)),
-        powerById,
-      ),
-    });
-  }
-  return upgraded;
-}
-
 function extractSolution(
   built: BuiltModel,
   result: SolveResult,
@@ -826,23 +624,42 @@ function extractSolution(
 }
 
 // The message shown whenever the final assignment leaves any open board unrun - regardless of
-// whether that came from a degraded LP pass, a greedy-fallback board it couldn't fully solve, or
-// (in principle) an "ok" LP result that's still infeasible for some board's roster requirements.
-// A greedy-fallback result that DOES fully cover the board is not warned about at all.
+// whether that came from a greedy result it couldn't fully solve or (in principle) an "ok" LP
+// result that's still infeasible for some board's roster requirements. A greedy result that DOES
+// fully cover the board is not warned about at all.
 const INCOMPLETE_BOARD_MESSAGE =
   "Could not find an optimal board with priorities in the order you gave. Please try adjusting priority order.";
 
-// Shown when only the XP/favorite/power tiebreak passes timed out - the board-run and bonus outcomes
-// are still optimal, but which characters fill the free slots (and so total XP gained) may not be.
-const TIEBREAK_DEGRADED_MESSAGE =
-  "The full XP optimization timed out, so the remaining slots were filled with a quick fallback. Bonus objectives are still optimal, but XP gain might not be.";
-
-// "ok" - fully optimized. "degraded" - bonus/run outcomes optimal, XP tiebreaks approximate (see
-// TIEBREAK_DEGRADED_MESSAGE). "incomplete" - at least one board couldn't be run at all.
+// "ok" - fully optimized. "partial" - the optimizer stopped early; `assignment` is the last pass
+// that completed (optimal up to there, arbitrary beyond - see unfinishedPasses). "failed" - the
+// optimizer produced nothing at all; `assignment` is empty. "incomplete" - at least one board
+// couldn't be run at all.
 export interface SolveBoardAssignmentResult {
   assignment: BoardAssignmentResult;
-  status: "ok" | "degraded" | "incomplete";
+  status: "ok" | "partial" | "failed" | "incomplete";
   message?: string;
+  // Human-readable names of the passes that never completed (partial only).
+  unfinishedPasses?: string[];
+}
+
+const PRIORITY_LABELS: Record<PriorityKey, string> = {
+  rarity: "rarity",
+  crusadeBomb: "crusade bombs",
+  intel: "intel",
+  crusadeNpc: "crusade NPCs",
+};
+
+function passLabel(key: PassKey, priorityOrder: readonly PriorityKey[]): string {
+  switch (key) {
+    case "antiFavoriteCount":
+      return "avoiding anti-favorites";
+    case "favoriteScore":
+      return "using favorites";
+    case "xpGain":
+      return "XP gain";
+    default:
+      return PRIORITY_LABELS[priorityOrder[Number(key.slice("priority".length))]];
+  }
 }
 
 export function solveBoardAssignment(
@@ -851,14 +668,13 @@ export function solveBoardAssignment(
   priorityOrder: [PriorityKey, PriorityKey, PriorityKey, PriorityKey],
   favoritedCharacterIds: ReadonlySet<string> = new Set(),
   antiFavoritedCharacterIds: ReadonlySet<string> = new Set(),
-  // Set by the worker's watchdog retry (see board-solver.worker.ts) when a first attempt never
-  // came back at all - runPasses's own shared deadline (SOLVE_TIMEOUT_MS) bounds a *returning*
-  // solver.Solve() call, but can't help if a single call never returns in the first place (a real
-  // risk with this library - its branch-and-bound loop only checks the deadline between nodes, so
-  // one pathologically slow node, or simplex cycling on a degenerate root relaxation, can run past
-  // it for an unbounded amount of time). skipLp bypasses the LP entirely and goes straight to the
-  // greedy fallback, which has no such risk (polynomial, no search).
+  // True for the greedy worker (see board-solver.worker.ts): skips the LP entirely and uses the
+  // greedy solver, which is polynomial with no search, so it can't hang the way the LP can.
   skipLp = false,
+  // Receives the assignment from the last completed pass after every pass that still has later
+  // passes to run. The worker forwards these to the page so a solve that later hangs inside
+  // solver.Solve() - which can't be interrupted - still leaves a usable partial result behind.
+  onCheckpoint?: (assignment: BoardAssignmentResult, unfinishedPasses: string[]) => void,
 ): SolveBoardAssignmentResult {
   const openBoards = board.filter((entry) => !entryIsUnavailable(entry));
   if (openBoards.length === 0) {
@@ -868,7 +684,6 @@ export function solveBoardAssignment(
   const roster = buildRoster(heroes, committedCharacterIds(board), favoritedCharacterIds, antiFavoritedCharacterIds);
 
   if (skipLp) {
-    console.warn("[board-solver] skipping the LP entirely (watchdog retry) - going straight to the greedy fallback");
     const assignment = solveGreedyFallback(openBoards, roster);
     const incomplete = [...assignment.values()].some((solution) => !solution.run);
     return incomplete ? { assignment, status: "incomplete", message: INCOMPLETE_BOARD_MESSAGE } : { assignment, status: "ok" };
@@ -880,47 +695,28 @@ export function solveBoardAssignment(
   console.log(
     `[board-solver] solving: ${openBoards.length} open board(s), ${roster.length} roster character(s), ${variableCount} variable(s), ${constraintCount} constraint(s)`,
   );
+  const openBoardIds = openBoards.map((entry) => entry.expeditionId);
+  const labelsOf = (keys: PassKey[]) => keys.map((key) => passLabel(key, priorityOrder));
   const solveStartedAt = performance.now();
-  const passPlan = buildPassPlan(priorityOrder);
-  const passesResult = runPasses(built.model, passPlan.passes);
+  const passesResult = runPasses(
+    built.model,
+    buildPassPlan(priorityOrder),
+    onCheckpoint &&
+      ((result, unfinishedPassKeys) => onCheckpoint(extractSolution(built, result, openBoardIds, roster), labelsOf(unfinishedPassKeys))),
+  );
   console.log(`[board-solver] total solve time: ${Math.round(performance.now() - solveStartedAt)}ms`);
 
-  let assignment: BoardAssignmentResult;
-  if (passesResult.result === null) {
-    console.warn("[board-solver] LP failed entirely - falling back to the greedy heuristic solver");
-    assignment = solveGreedyFallback(openBoards, roster);
-  } else {
-    assignment = extractSolution(
-      built,
-      passesResult.result,
-      openBoards.map((entry) => entry.expeditionId),
-      roster,
-    );
+  if (passesResult.status === "failed") {
+    console.warn("[board-solver] the optimizer produced no usable result at all");
+    return { assignment: new Map(), status: "failed" };
   }
 
-  // Only the tiebreak passes (after all the priority-tier passes) were lost: keep the
-  // LP's board/bonus outcomes and fix up the free slots greedily, outside the LP's timer.
-  let tiebreakDegraded = false;
-  if (passesResult.status === "degraded" && passesResult.failedPassIndex >= passPlan.tiebreakStartIndex) {
-    const refillStartedAt = performance.now();
-    const refilled = refillSlotsGreedily(assignment, openBoards, roster);
-    if (refilled) assignment = refilled;
-    const upgradeStartedAt = performance.now();
-    assignment = upgradeAssignmentByReplacement(assignment, openBoards, roster);
-    console.log(
-      `[board-solver] post-LP fallback: refill ${Math.round(upgradeStartedAt - refillStartedAt)}ms, replacement search ${Math.round(performance.now() - upgradeStartedAt)}ms`,
-    );
-    tiebreakDegraded = true;
+  const assignment = extractSolution(built, passesResult.result, openBoardIds, roster);
+  if (passesResult.status === "partial") {
+    return { assignment, status: "partial", unfinishedPasses: labelsOf(passesResult.unfinishedPassKeys) };
   }
-
   const incomplete = [...assignment.values()].some((solution) => !solution.run);
-  if (incomplete) {
-    return { assignment, status: "incomplete", message: INCOMPLETE_BOARD_MESSAGE };
-  }
-  if (tiebreakDegraded) {
-    return { assignment, status: "degraded", message: TIEBREAK_DEGRADED_MESSAGE };
-  }
-  return { assignment, status: "ok" };
+  return incomplete ? { assignment, status: "incomplete", message: INCOMPLETE_BOARD_MESSAGE } : { assignment, status: "ok" };
 }
 
 export interface DispatchedCharacterClassification {
