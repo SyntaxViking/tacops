@@ -6,7 +6,7 @@ import { estimateXpGain, isXpCapped } from "./xp-gain";
 import { requiredAlliance } from "./board-alliance";
 import { entryRarity, entryIsUnavailable } from "./board-view-model";
 import { intToRank } from "../rank/rank.mapper";
-import type { Rarity } from "../rarity/rarity.enum";
+import { Rarity } from "../rarity/rarity.enum";
 import { ProgressionIndexMapper } from "../progression/progression-index";
 import { getCharacterProfile, type CharacterProfile } from "../characters/character-profile";
 import { isCharacterId } from "../api/fetch-player-data";
@@ -93,31 +93,73 @@ export function groupObjectives(objectives: BonusObjective[]): ObjectiveGroup[] 
 }
 
 type PriorityPassKey = `priority${number}`;
-type PassKey = PriorityPassKey | "xpGain" | "runCount" | "favoriteScore" | "powerUsed";
+type PassKey = PriorityPassKey | "antiFavoriteCount" | "favoriteScore" | "xpGain";
 
-const PRIORITY_TIER_COUNT = 4;
+// Strict rarity order, lowest first, used to build the rarity tier's weights (see rarityWeights).
+const RARITIES_LOW_TO_HIGH: Rarity[] = [Rarity.Common, Rarity.Uncommon, Rarity.Rare, Rarity.Epic, Rarity.Legendary, Rarity.Mythic];
 
+// Each priority tier is one pass, keyed by its position in the user's order.
 function priorityPassKey(tierIndex: number): PriorityPassKey {
   return `priority${tierIndex}`;
 }
 
-// The first N passes are the user's priority tiers (lexicographic - each pass's achieved value
-// gets locked in via an `equal` constraint before the next pass runs, see runPasses), followed by
-// the fixed xpGain/runCount/favoriteScore/powerUsed tail that always applies regardless of
-// priority order. Each of these only ever decides WHICH specific characters fill an
-// already-decided set of run/bonus outcomes - by the time favoriteScore runs, run count and total
-// xp gain are already locked in, so maximizing "how many favorited characters got used" can never
-// cost a bonus, a board run, or roster growth (see effectiveXpGain - anti-favorited units already
-// can't compete for xp-growth slots either, same as an xp-capped unit). powerUsed runs last, after
-// favoriteScore is also locked in, purely as a final tiebreaker among assignments that are equally
-// good on every other axis: prefer using the highest-power characters.
-const PASS_ORDER: Array<{ key: PassKey; opType: "max" | "min" }> = [
-  ...Array.from({ length: PRIORITY_TIER_COUNT }, (_, i) => ({ key: priorityPassKey(i), opType: "max" as const })),
-  { key: "xpGain", opType: "max" },
-  { key: "runCount", opType: "max" },
-  { key: "favoriteScore", opType: "max" },
-  { key: "powerUsed", opType: "max" },
-];
+// The rarity tier is a single pass whose per-operation weights make the ordering strict: one
+// operation of a higher rarity is worth more than every lower-rarity operation on the board put
+// together, so maximizing the weighted count of operations that run picks the combination that
+// runs the most Mythic operations first, then the most Legendary, and so on - however many lower
+// rarities it displaces. (A plain sum of rarity numbers would silently decide that, say, two
+// Legendaries beat one Mythic - an arbitrary bias nobody chose.) Weights are built from the
+// bottom up: the lowest rarity present is worth 1, and each higher rarity is worth 1 plus the
+// total weight of every lower-rarity operation, which is the smallest value that guarantees the
+// ordering and keeps the numbers small for the simplex solver.
+export function rarityWeights(rarities: readonly Rarity[]): Map<Rarity, number> {
+  const counts = new Map<Rarity, number>();
+  for (const rarity of rarities) counts.set(rarity, (counts.get(rarity) ?? 0) + 1);
+  const weights = new Map<Rarity, number>();
+  let lowerTotal = 0;
+  for (const rarity of RARITIES_LOW_TO_HIGH) {
+    const count = counts.get(rarity) ?? 0;
+    if (count === 0) continue;
+    const weight = lowerTotal + 1;
+    weights.set(rarity, weight);
+    lowerTotal += weight * count;
+  }
+  return weights;
+}
+
+interface PassSpec {
+  key: PassKey;
+  opType: "max" | "min";
+}
+
+interface PassPlan {
+  passes: PassSpec[];
+  // Index of the first pass after the user's priority tiers - everything from here on only decides
+  // WHICH characters fill an already-decided set of run/bonus outcomes.
+  tiebreakStartIndex: number;
+}
+
+// The first passes are the user's priority tiers in their chosen order (lexicographic - each pass's
+// achieved value gets locked in via an `equal` constraint before the next pass runs, see
+// runPasses), followed by the fixed tail that always applies regardless of priority order:
+//   1. antiFavoriteCount (min) - avoid anti-favorited characters. A soft preference: it can only
+//      choose among solutions that already satisfy every locked priority outcome, so an
+//      anti-favorited character who is the only one that works still gets used.
+//   2. favoriteScore (max) - use favorited characters.
+//   3. xpGain (max) - earn the most XP. Last, so its value is never locked and the assignment it
+//      finds is the final answer.
+// Each tail pass only ever decides WHICH specific characters fill an already-decided set of
+// run/bonus outcomes, so none of them can cost a bonus or a run.
+function buildPassPlan(priorityOrder: readonly PriorityKey[]): PassPlan {
+  const passes: PassSpec[] = priorityOrder.map((_, tierIndex) => ({ key: priorityPassKey(tierIndex), opType: "max" }));
+  const tiebreakStartIndex = passes.length;
+  passes.push(
+    { key: "antiFavoriteCount", opType: "min" },
+    { key: "favoriteScore", opType: "max" },
+    { key: "xpGain", opType: "max" },
+  );
+  return { passes, tiebreakStartIndex };
+}
 
 interface AssignRef {
   varName: string;
@@ -156,6 +198,7 @@ function buildModel(
   const eligibleCharactersByBoardGroup = new Map<string, Map<string, string[]>>();
   const participantsByBoard = new Map<string, number>();
   const usedCharacterIds = new Set<string>();
+  const weightByRarity = rarityWeights(openBoards.map(entryRarity));
 
   for (const entry of openBoards) {
     const boardId = entry.expeditionId;
@@ -174,16 +217,15 @@ function buildModel(
     addCoef(runVar, `yrun::${boardId}`, -1);
 
     priorityOrder.forEach((key, tierIndex) => {
-      const passKey = priorityPassKey(tierIndex);
       if (key === "rarity") {
         // Rarity isn't tied to bonus-objective completion like the resource rewards below - it's
-        // a property of running the board at all, so it weights runVar instead of yVar.
-        addCoef(runVar, passKey, rarity);
+        // a property of running the board at all, so it credits runVar (this operation's weight -
+        // see rarityWeights) instead of yVar.
+        addCoef(runVar, priorityPassKey(tierIndex), weightByRarity.get(rarity) ?? 0);
       } else {
-        addCoef(yVar, passKey, rewardAmount(entry.bonusRewards, key));
+        addCoef(yVar, priorityPassKey(tierIndex), rewardAmount(entry.bonusRewards, key));
       }
     });
-    addCoef(runVar, "runCount", 1);
 
     const slotConstraint = `slots::${boardId}`;
     constraints[slotConstraint] = { equal: 0 };
@@ -196,7 +238,7 @@ function buildModel(
       binaries[assignVar] = 1;
       addCoef(assignVar, slotConstraint, 1);
       addCoef(assignVar, `excl::${unit.id}`, 1);
-      addCoef(assignVar, "powerUsed", unit.power ?? 0);
+      addCoef(assignVar, "antiFavoriteCount", unit.isAntiFavorited ? 1 : 0);
       addCoef(assignVar, "xpGain", effectiveXpGain(unit));
       addCoef(assignVar, "favoriteScore", unit.isFavorited ? 1 : 0);
       assignRefs.push({ varName: assignVar, characterId: unit.id, boardId });
@@ -231,7 +273,7 @@ function buildModel(
   const model: LpModel = {
     // Overwritten before the first Solve() call in runPasses - these are just placeholders to
     // satisfy LpModel's shape.
-    optimize: priorityPassKey(0),
+    optimize: "xpGain",
     opType: "max",
     constraints,
     variables,
@@ -246,7 +288,7 @@ function buildModel(
 // can't freeze the UI thread). This bounds the WHOLE lexicographic sequence (see runPasses), not
 // each pass independently - model.timeout only ever bounds a single Solve() call (confirmed
 // against the library's own source: it computes `terminalTime = Date.now() + model.timeout` fresh
-// on every call), so setting the same value on every one of the 8 passes let the real worst case
+// on every call), so setting the same value on every one of the passes let the real worst case
 // reach 8x this - confirmed against a real hard instance where the UI looked permanently stuck
 // because every pass independently ground through its own full timeout before anything ever
 // reached the user.
@@ -265,7 +307,7 @@ function isIntegralResult(model: LpModel, result: SolveResult): boolean {
   return true;
 }
 
-// failedPassIndex (degraded only) is the index into PASS_ORDER of the pass that couldn't finish -
+// failedPassIndex (degraded only) is the index into the pass plan of the pass that couldn't finish -
 // solveBoardAssignment uses it to tell "only the tiebreak passes were lost" (every board-run and
 // bonus outcome is still optimal, see refillSlotsGreedily) from "a priority pass was lost".
 type PassesResult =
@@ -280,14 +322,14 @@ type PassesResult =
 // to the greedy solver instead of an exception. Whether the caller needs to warn the user at all
 // depends on whether the resulting assignment actually leaves a board unrun - see
 // solveBoardAssignment - not on which of these internal paths produced it.
-function runPasses(model: LpModel): PassesResult {
+function runPasses(model: LpModel, passOrder: PassSpec[]): PassesResult {
   // One shared deadline for the entire sequence - each pass's own model.timeout is however much
   // of that budget is still left, not a fresh SOLVE_TIMEOUT_MS every time (see SOLVE_TIMEOUT_MS's
   // own comment for why that matters).
   const deadline = Date.now() + SOLVE_TIMEOUT_MS;
   let lastGoodResult: SolveResult | undefined;
-  for (let i = 0; i < PASS_ORDER.length; i++) {
-    const pass = PASS_ORDER[i];
+  for (let i = 0; i < passOrder.length; i++) {
+    const pass = passOrder[i];
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) {
       console.warn(`[board-solver] out of time before pass "${pass.key}" could even start`);
@@ -300,7 +342,7 @@ function runPasses(model: LpModel): PassesResult {
     // its deadline can't interrupt (it's only checked between branch-and-bound nodes).
     const hasSignal = Object.values(model.variables).some((coefficients) => (coefficients[pass.key] ?? 0) !== 0);
     if (!hasSignal) {
-      console.log(`[board-solver] pass "${pass.key}" (${i + 1}/${PASS_ORDER.length}): skipped - objective is zero for every variable`);
+      console.log(`[board-solver] pass "${pass.key}" (${i + 1}/${passOrder.length}): skipped - objective is zero for every variable`);
       continue;
     }
     model.optimize = pass.key;
@@ -318,7 +360,7 @@ function runPasses(model: LpModel): PassesResult {
     const isIntegral = result.feasible && isIntegralResult(model, result);
     const usable = !hitTimeout && isIntegral;
     console.log(
-      `[board-solver] pass "${pass.key}" (${i + 1}/${PASS_ORDER.length}): feasible=${result.feasible} integral=${isIntegral} result=${result.result} took ${elapsedMs}ms${hitTimeout ? " (HIT TIMEOUT)" : ""}`,
+      `[board-solver] pass "${pass.key}" (${i + 1}/${passOrder.length}): feasible=${result.feasible} integral=${isIntegral} result=${result.result} took ${elapsedMs}ms${hitTimeout ? " (HIT TIMEOUT)" : ""}`,
     );
     if (!usable) {
       if (lastGoodResult) {
@@ -329,7 +371,7 @@ function runPasses(model: LpModel): PassesResult {
       return { result: null, status: "failed" };
     }
     lastGoodResult = result;
-    if (i < PASS_ORDER.length - 1) {
+    if (i < passOrder.length - 1) {
       model.constraints[pass.key] = { equal: Math.round(Number(result.result)) };
     }
   }
@@ -382,17 +424,12 @@ function avoidRank(unit: RosterCharacter): number {
   return 0;
 }
 
-// Mirrors avoidRank as a small negative penalty on the xpGain-maximizing LP pass (see buildModel),
-// rather than a flat 0 for both categories as before - that flattening was the actual bug: with
-// no growth-eligible alternative in play, the xpGain pass had no signal left to prefer an
-// anti-favorited unit (which can still gain real XP) over an XP-capped one (which never will), so
-// the final powerUsed tiebreaker alone could easily let a higher-power XP-capped unit win a slot
-// over an anti-favorited one. These penalties are far smaller in magnitude than any real
-// estimateXpGain value (ROUGH_XP_PER_LEVEL=17 per level), so they only ever matter as a tiebreaker
-// in exactly that no-better-option case - they can't outweigh a real growth-eligible candidate.
+// XP-capped units earn nothing, so they sit just below a growth-eligible unit that happens to
+// estimate to 0 XP (a small negative value rather than a flat 0). Anti-favorited units are NOT
+// penalized here - the antiFavoriteCount pass already runs before xpGain and decides how many of
+// them get used.
 function effectiveXpGain(unit: RosterCharacter): number {
-  const rank = avoidRank(unit);
-  return rank > 0 ? -rank : estimateXpGain(unit.rarity, unit.xpLevel);
+  return isXpCapped(unit.rarity, unit.xpLevel) ? -1 : estimateXpGain(unit.rarity, unit.xpLevel);
 }
 
 // Shared "who to prefer when there's no objective-coverage signal to go on" ordering for the
@@ -547,8 +584,8 @@ export function solveGreedyFallback(openBoards: ExpeditionBoardEntry[], roster: 
 }
 
 // Used when the LP's priority passes all finished (so every board-run and bonus outcome is optimal,
-// and each board's required characters are known) but a later tiebreak pass - xpGain,
-// runCount, favoriteScore or powerUsed - timed out, leaving the optional slots filled arbitrarily
+// and each board's required characters are known) but a later tiebreak pass -
+// antiFavoriteCount, favoriteScore or xpGain - timed out, leaving the optional slots filled arbitrarily
 // (that's how XP-capped characters ended up in free slots). Keeps every board's run/bonus outcome
 // and required characters exactly as the LP found them and re-fills only the optional slots with
 // the greedy fillComparator ordering (XP-capped last, then anti-favorited, then favorited, then
@@ -844,7 +881,8 @@ export function solveBoardAssignment(
     `[board-solver] solving: ${openBoards.length} open board(s), ${roster.length} roster character(s), ${variableCount} variable(s), ${constraintCount} constraint(s)`,
   );
   const solveStartedAt = performance.now();
-  const passesResult = runPasses(built.model);
+  const passPlan = buildPassPlan(priorityOrder);
+  const passesResult = runPasses(built.model, passPlan.passes);
   console.log(`[board-solver] total solve time: ${Math.round(performance.now() - solveStartedAt)}ms`);
 
   let assignment: BoardAssignmentResult;
@@ -860,10 +898,10 @@ export function solveBoardAssignment(
     );
   }
 
-  // Only the tiebreak passes (after all PRIORITY_TIER_COUNT priority passes) were lost: keep the
+  // Only the tiebreak passes (after all the priority-tier passes) were lost: keep the
   // LP's board/bonus outcomes and fix up the free slots greedily, outside the LP's timer.
   let tiebreakDegraded = false;
-  if (passesResult.status === "degraded" && passesResult.failedPassIndex >= PRIORITY_TIER_COUNT) {
+  if (passesResult.status === "degraded" && passesResult.failedPassIndex >= passPlan.tiebreakStartIndex) {
     const refillStartedAt = performance.now();
     const refilled = refillSlotsGreedily(assignment, openBoards, roster);
     if (refilled) assignment = refilled;
