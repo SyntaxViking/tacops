@@ -9,24 +9,37 @@ export interface SolveRequest {
   priorityOrder: [PriorityKey, PriorityKey, PriorityKey, PriorityKey];
   favoritedCharacterIds: string[];
   antiFavoritedCharacterIds: string[];
-  // Set by App.tsx's watchdog when a previous request for this same data never came back at all
-  // (see its own comment) - skips the LP entirely and goes straight to the greedy fallback, which
-  // can't hang the way the LP can.
+  // Selects the greedy solver instead of the LP - App.tsx runs one worker of each kind for every
+  // solve. The greedy one can't hang the way the LP can.
   forceGreedy?: boolean;
 }
 
-// "status" here is the worker-protocol outcome (did the call throw an unexpected exception);
-// "solveStatus" is solveBoardAssignment's own normal, non-exceptional outcome - "incomplete"
-// means at least one board didn't end up fully assigned (whether the LP degraded, failed
-// entirely, or the greedy fallback couldn't fully solve it), regardless of which path produced
-// it; "degraded" means only the XP tiebreaks timed out (bonus outcomes still optimal) - still a "success" at this level, just with a message worth surfacing.
+// "status" here is the worker-protocol outcome: "success" is the final answer, "checkpoint" is an
+// intermediate one, "error" means the call threw an unexpected exception.
+//
+// A checkpoint is the assignment from the last LP pass that completed so far, posted right after
+// that pass finishes. solver.Solve() is synchronous and can't be interrupted, so if a later pass
+// hangs the worker can never report anything again - the page keeps the newest checkpoint and
+// shows it if the final answer never arrives.
+//
+// "solveStatus" is solveBoardAssignment's own normal, non-exceptional outcome: "ok" fully
+// optimized; "partial" the optimizer stopped early (assignmentEntries is its last completed pass);
+// "failed" the optimizer produced nothing; "incomplete" at least one board didn't end up fully
+// assigned.
 export type SolveResponse =
   | {
       requestId: number;
       status: "success";
       assignmentEntries: Array<[string, BoardSolution]>;
-      solveStatus: "ok" | "degraded" | "incomplete";
+      solveStatus: "ok" | "partial" | "failed" | "incomplete";
       message?: string;
+      unfinishedPasses?: string[];
+    }
+  | {
+      requestId: number;
+      status: "checkpoint";
+      assignmentEntries: Array<[string, BoardSolution]>;
+      unfinishedPasses: string[];
     }
   | {
       requestId: number;
@@ -37,13 +50,22 @@ export type SolveResponse =
 self.onmessage = (event: MessageEvent<SolveRequest>) => {
   const { requestId, board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds, forceGreedy } = event.data;
   try {
-    const { assignment, status, message } = solveBoardAssignment(
+    const { assignment, status, message, unfinishedPasses } = solveBoardAssignment(
       board,
       heroes,
       priorityOrder,
       new Set(favoritedCharacterIds),
       new Set(antiFavoritedCharacterIds),
       forceGreedy,
+      (checkpointAssignment, unfinished) => {
+        const checkpoint: SolveResponse = {
+          requestId,
+          status: "checkpoint",
+          assignmentEntries: [...checkpointAssignment.entries()],
+          unfinishedPasses: unfinished,
+        };
+        self.postMessage(checkpoint);
+      },
     );
     const response: SolveResponse = {
       requestId,
@@ -51,6 +73,7 @@ self.onmessage = (event: MessageEvent<SolveRequest>) => {
       assignmentEntries: [...assignment.entries()],
       solveStatus: status,
       message,
+      unfinishedPasses,
     };
     self.postMessage(response);
   } catch (error) {
