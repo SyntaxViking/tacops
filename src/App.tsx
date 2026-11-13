@@ -30,6 +30,7 @@ import { StaleVersionBanner } from "./components/StaleVersionBanner";
 import { Toast } from "./components/Toast";
 import { registerStaleVersionHandler, startVersionCheck } from "./version-check";
 import { fetchPlayerData } from "./api/fetch-player-data";
+import { buildPlayerDataExport } from "./api/player-data-export";
 import { entryIsUnavailable } from "./board/board-view-model";
 import { activePlanetIds, fetchCrusadeData, fetchPlanetLeaderboard, resolveMyFactionId } from "./api/fetch-crusade-data";
 import { clearWebCredential, retrieveWebCredential, storeWebCredential } from "./api/store-web-credential";
@@ -45,7 +46,7 @@ import { appendTrackedSample, computeTotalHourlyRate, createTrackedPlanetState, 
 import { fetchAllPlanetHistory, fetchPlanetHistory } from "./api/fetch-planet-history";
 import { AnonymousCrusadeSection } from "./components/AnonymousCrusadeSection";
 import { trackUsage } from "./track-usage";
-import type { BoardAssignmentResult } from "./board/board-solver";
+import type { BoardAssignmentResult, BoardSolution } from "./board/board-solver";
 import type { SolveRequest, SolveResponse } from "./board/board-solver.worker";
 import type { PriorityKey } from "./board/reward-amount";
 import type { CrusadeData, CrusadeSectorMap, Environment, ExpeditionBoardEntry, GuildWarData, OnslaughtBoards, PlanetDefenseCounts, PlanetLeaderboard, PlanetRefreshEntry, PlayerResources, RawUnit } from "./api/types";
@@ -69,16 +70,26 @@ const TABS = [
 
 const FETCH_COUNTDOWN_SECONDS = 60;
 // Outer watchdog for the board-solver's optimal-solve worker (see its own effect for why this
-// exists) - if it hasn't responded by this point, it's killed and the already-computed greedy
-// result (see GREEDY_TIMEOUT_NOTE below) is used to unblock the UI instead.
+// exists) - if it hasn't responded by this point, it's killed and the UI is unblocked with its
+// latest checkpoint and/or the already-computed greedy result.
 const WATCHDOG_MS = 20_000;
 // Shown while the greedy result is up and the real optimization is still running behind the
 // spinner overlay - see the solver effect.
 const GREEDY_PREVIEW_NOTE = "This is a quick solve while a full optimization runs in the background.";
-// Shown once the optimal attempt concludes (success or failure) without ever improving on the
-// greedy result that's already on screen - same assignment, just relabeled now that nothing
-// better is coming.
-const GREEDY_TIMEOUT_NOTE = "The optimizer took too long to respond, so this is a quick fallback assignment (not necessarily optimal).";
+// Shown once the optimizer gave up without producing anything usable, leaving only the greedy
+// result - same assignment as the preview, just relabeled now that nothing better is coming.
+const GREEDY_TIMEOUT_NOTE = "The optimizer didn't finish, so this is a quick greedy assignment (not optimal).";
+
+type SolutionChoice = "optimizer" | "greedy";
+
+// When the optimizer doesn't finish but did complete some passes, both teams are kept so the user
+// can switch between them: the optimizer's last completed pass (the default) and the greedy one.
+interface SolverAlternatives {
+  optimizer: BoardAssignmentResult;
+  // Names of the optimizer passes that never completed.
+  unfinishedPasses: string[];
+  greedy: BoardAssignmentResult;
+}
 // The visible countdown must never hit 0 before WATCHDOG_MS could possibly fire - it previously
 // had its own separately-tuned value (12s) that drifted under WATCHDOG_MS's actual 20s, so the
 // spinner looked stuck for that 8s gap even though it was still legitimately working. Derived
@@ -292,6 +303,8 @@ export function App() {
   const [solverOptimizing, setSolverOptimizing] = useState(false);
   const [solverSecondsRemaining, setSolverSecondsRemaining] = useState(SOLVER_COUNTDOWN_SECONDS);
   const [assignment, setAssignment] = useState<BoardAssignmentResult>(new Map());
+  const [solverAlternatives, setSolverAlternatives] = useState<SolverAlternatives>();
+  const [solutionChoice, setSolutionChoice] = useState<SolutionChoice>("optimizer");
   const [solverError, setSolverError] = useState<string>();
   const [solverIncompleteReason, setSolverIncompleteReason] = useState<string>();
   // Two workers run in parallel for every solve (see the effect below): greedy (fast, shown
@@ -349,12 +362,14 @@ export function App() {
   // not placeholders) with a note that a better one may still be coming - the spinner stays up as
   // a translucent overlay on top of it (solverOptimizing), not hiding it, so the user can see both
   // that something was found and that work is still happening. The optimal result always
-  // supersedes it outright when it finishes (the LP is never worse than greedy, by construction);
-  // if the optimal attempt fails or times out instead, the greedy result already on screen is
-  // simply relabeled rather than recomputed - either way solverOptimizing clears and the overlay
-  // goes away within WATCHDOG_MS at the very most. Terminating and recreating both workers on
-  // every change (rather than queuing) guarantees a priority-order change doesn't have to wait
-  // behind a slow, now-stale solve.
+  // supersedes it outright when it finishes (the LP is never worse than greedy, by construction)
+  // and the greedy one is then never shown. If the optimal attempt fails to finish instead
+  // (watchdog, error, or its own deadline), the optimal worker will have posted a checkpoint after
+  // every completed pass: the page then offers that last completed pass (the default) next to the
+  // greedy result, as a radio choice - or just the greedy result if no pass ever completed. Either
+  // way solverOptimizing clears and the overlay goes away within WATCHDOG_MS at the very most.
+  // Terminating and recreating both workers on every change (rather than queuing) guarantees a
+  // priority-order change doesn't have to wait behind a slow, now-stale solve.
   useEffect(() => {
     // Mirrors solveBoardAssignment's own openBoards.length===0 fast path (board-solver.ts) - when
     // every entry is already Dispatched/Completed there's nothing to solve, so this skips
@@ -369,6 +384,7 @@ export function App() {
       setSolverOptimizing(false);
       setSolverError(undefined);
       setSolverIncompleteReason(undefined);
+      setSolverAlternatives(undefined);
       return;
     }
 
@@ -379,6 +395,8 @@ export function App() {
     setSolverOptimizing(true);
     setSolverError(undefined);
     setSolverIncompleteReason(undefined);
+    setSolverAlternatives(undefined);
+    setSolutionChoice("optimizer");
 
     const baseRequest = {
       requestId,
@@ -399,23 +417,43 @@ export function App() {
     // that ever showed up at all.
     let greedyResult: SolveResponse | undefined;
 
-    function finishWithGreedyFallback(errorIfNoGreedy: string) {
+    // The newest checkpoint the optimal worker posted (see board-solver.worker.ts): the team from
+    // its last completed pass. Kept here so it survives the worker hanging - or being terminated.
+    let optimizerCheckpoint: { assignmentEntries: Array<[string, BoardSolution]>; unfinishedPasses: string[] } | undefined;
+
+    // The optimizer stopped without a final answer (watchdog, error, or it returned "partial" or
+    // "failed"). Shows whatever it did complete plus the greedy result, defaulting to the
+    // optimizer's - or just the greedy one if the optimizer completed nothing.
+    function finishWithoutOptimalResult(errorIfNothing: string, partial = optimizerCheckpoint) {
       optimalWorkerRef.current?.terminate();
       setSolverOptimizing(false);
-      if (greedyResult?.status === "success") {
-        setAssignment(new Map(greedyResult.assignmentEntries));
+      const greedy = greedyResult?.status === "success" ? new Map(greedyResult.assignmentEntries) : undefined;
+      if (partial && greedy) {
+        const optimizer = new Map(partial.assignmentEntries);
+        setSolverAlternatives({ optimizer, unfinishedPasses: partial.unfinishedPasses, greedy });
+        setSolutionChoice("optimizer");
+        setAssignment(optimizer);
+        setSolverIncompleteReason(undefined);
+        setSolverError(undefined);
+        setSolverState("success");
+      } else if (partial) {
+        setAssignment(new Map(partial.assignmentEntries));
+        setSolverIncompleteReason(`The optimizer didn't finish, so this isn't fully optimal. Not optimized: ${partial.unfinishedPasses.join(", ")}.`);
+        setSolverError(undefined);
+        setSolverState("success");
+      } else if (greedy) {
+        setAssignment(greedy);
         setSolverIncompleteReason(GREEDY_TIMEOUT_NOTE);
         setSolverError(undefined);
         setSolverState("success");
       } else {
         // Shouldn't normally happen - greedy is polynomial and far faster than WATCHDOG_MS - but
         // there's genuinely nothing to show if it hasn't landed (or itself failed) by now.
-        setSolverError(errorIfNoGreedy);
+        setSolverError(errorIfNothing);
         setSolverIncompleteReason(undefined);
         setSolverState("error");
       }
     }
-
     greedyWorkerRef.current?.terminate();
     const greedyWorker = new Worker(new URL("./board/board-solver.worker.ts", import.meta.url), { type: "module" });
     greedyWorkerRef.current = greedyWorker;
@@ -447,23 +485,35 @@ export function App() {
     const watchdogTimer = setTimeout(() => {
       if (optimalSettled) return;
       optimalSettled = true;
-      console.warn("[App] board solver watchdog fired - the optimal attempt never returned in time, keeping the greedy result");
-      finishWithGreedyFallback("both the optimizer and the quick fallback took too long to respond");
+      console.warn("[App] board solver watchdog fired - the optimal attempt never returned in time");
+      finishWithoutOptimalResult("both the optimizer and the quick fallback took too long to respond");
     }, WATCHDOG_MS);
 
     optimalWorker.onmessage = (event: MessageEvent<SolveResponse>) => {
       if (event.data.requestId !== requestIdRef.current) return; // stale response, ignore
       if (optimalSettled) return;
+      if (event.data.status === "checkpoint") {
+        optimizerCheckpoint = { assignmentEntries: event.data.assignmentEntries, unfinishedPasses: event.data.unfinishedPasses };
+        return;
+      }
       optimalSettled = true;
       clearTimeout(watchdogTimer);
-      if (event.data.status === "success") {
+      if (event.data.status === "error") {
+        finishWithoutOptimalResult(event.data.error);
+      } else if (event.data.solveStatus === "partial") {
+        // The optimizer's own deadline ran out between passes (it returned, rather than hanging).
+        finishWithoutOptimalResult("the optimizer ran out of time", {
+          assignmentEntries: event.data.assignmentEntries,
+          unfinishedPasses: event.data.unfinishedPasses ?? [],
+        });
+      } else if (event.data.solveStatus === "failed") {
+        finishWithoutOptimalResult("the optimizer produced no result", undefined);
+      } else {
         setAssignment(new Map(event.data.assignmentEntries));
-        setSolverIncompleteReason(event.data.solveStatus !== "ok" ? event.data.message : undefined);
+        setSolverIncompleteReason(event.data.solveStatus === "incomplete" ? event.data.message : undefined);
         setSolverError(undefined);
         setSolverState("success");
         setSolverOptimizing(false);
-      } else {
-        finishWithGreedyFallback(event.data.error);
       }
     };
     optimalWorker.postMessage({ ...baseRequest, forceGreedy: false } satisfies SolveRequest);
@@ -474,6 +524,12 @@ export function App() {
       optimalWorker.terminate();
     };
   }, [board, heroes, priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds]);
+
+  function chooseSolution(choice: SolutionChoice) {
+    if (!solverAlternatives) return;
+    setSolutionChoice(choice);
+    setAssignment(solverAlternatives[choice]);
+  }
 
   // Shared by toggleDevMode's "turning off" branch and logout() below - both return to the
   // anonymous view's own default tab/view-mode, not whatever the account happened to leave set.
@@ -1343,7 +1399,13 @@ export function App() {
   }
 
   async function exportPlayerData() {
-    const contents = JSON.stringify(rawPlayerData, null, 2);
+    // Bundles the user's solver-affecting settings (favorites, priority order) into the export so a
+    // bug report carries everything needed to reproduce the exact solve they saw.
+    const contents = JSON.stringify(
+      buildPlayerDataExport(rawPlayerData, { priorityOrder, favoritedCharacterIds, antiFavoritedCharacterIds, favoritedPlanetIds }),
+      null,
+      2,
+    );
     const defaultFileName = `tacops-${environment}-player-data.json`;
     if (isTauri()) {
       const { save } = await import("@tauri-apps/plugin-dialog");
@@ -1500,6 +1562,32 @@ export function App() {
                         <p className="mt-2 text-red-600 dark:text-red-400">
                           Couldn't compute a suggested assignment: {solverError}
                         </p>
+                      )}
+                      {solverAlternatives && (
+                        <fieldset className="mt-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-base text-amber-700 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                          <legend className="px-1 font-semibold">The optimizer didn't finish. Choose a team selection:</legend>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="solution-choice"
+                              checked={solutionChoice === "optimizer"}
+                              onChange={() => chooseSolution("optimizer")}
+                            />
+                            Optimizer, last completed step (not fully optimal)
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="solution-choice"
+                              checked={solutionChoice === "greedy"}
+                              onChange={() => chooseSolution("greedy")}
+                            />
+                            Greedy (not optimal)
+                          </label>
+                          {solutionChoice === "optimizer" && solverAlternatives.unfinishedPasses.length > 0 && (
+                            <p className="mt-1 text-sm">Not optimized: {solverAlternatives.unfinishedPasses.join(", ")}.</p>
+                          )}
+                        </fieldset>
                       )}
                       {solverIncompleteReason && (
                         <p className="mt-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-base font-semibold text-amber-700 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-400">

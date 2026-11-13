@@ -1,11 +1,11 @@
+import solver from "javascript-lp-solver";
 import { describe, expect, it, vi } from "vitest";
 import {
   classifyDispatchedCharacters,
   findMinimalRequiredSubset,
-  refillSlotsGreedily,
+  rarityWeights,
   solveBoardAssignment,
   solveGreedyFallback,
-  upgradeAssignmentByReplacement,
   type GroupRequirement,
   type RosterCharacter,
 } from "./board-solver";
@@ -266,26 +266,34 @@ describe("solveGreedyFallback", () => {
     expect(result.get("exp")!.optionalCharacterIds).toEqual(["antiFavoritedOnly"]);
   });
 
-  it("prefers an anti-favorited character over an XP-capped one, even when the capped one has far higher power", () => {
-    // Reported bug: XP-capped and anti-favorited used to share one flat "avoid" tier, so this fell
-    // through to the plain power tiebreak and the capped unit (strictly the worst possible pick -
-    // it can't gain anything from being deployed) won purely on power. XP-capped must rank below
-    // anti-favorited regardless of power.
+  it("prefers an XP-capped character over an anti-favorited one, since avoiding anti-favorites outranks XP", () => {
+    // Same order as the LP's tail passes: anti-favorites are avoided first, then favorites are
+    // preferred, and XP only decides among what's left - so a capped neutral beats an uncapped
+    // anti-favorite even though the anti-favorite could still earn XP.
     const cappedHighPower = character("cappedHighPower", { rarity: Rarity.Mythic, xpLevel: 60, power: 9999 });
     const antiFavoritedLowPower = character("antiFavoritedLowPower", { power: 1, isAntiFavorited: true });
     const unsolvableBoard = board({ bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Necrons" }] });
 
     const result = solveGreedyFallback([unsolvableBoard], [cappedHighPower, antiFavoritedLowPower]);
 
-    expect(result.get("exp")!.optionalCharacterIds).toEqual(["antiFavoritedLowPower"]);
+    expect(result.get("exp")!.optionalCharacterIds).toEqual(["cappedHighPower"]);
+  });
+
+  it("prefers a favorited XP-capped character over an uncapped neutral one, since favorites outrank XP", () => {
+    const favoritedCapped = character("favoritedCapped", { rarity: Rarity.Mythic, xpLevel: 60, power: 100, isFavorited: true });
+    const neutralGrowing = character("neutralGrowing", { power: 9999 });
+    const unsolvableBoard = board({ bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Necrons" }] });
+
+    const result = solveGreedyFallback([unsolvableBoard], [favoritedCapped, neutralGrowing]);
+
+    expect(result.get("exp")!.optionalCharacterIds).toEqual(["favoritedCapped"]);
   });
 });
 
 describe("solveBoardAssignment", () => {
-  it("prefers assigning the higher-power character when the LP has no other signal to break the tie", () => {
-    // A single Common-rarity slot with no bonus objectives and no bonus rewards: every priority
-    // tier, xpGain, and runCount all tie between the two candidates, leaving the final powerUsed
-    // pass as the only thing that can decide which one gets the slot.
+  it("still fills the slot when nothing distinguishes the candidates", () => {
+    // A single Common-rarity slot with no bonus objectives and no preferences: every pass ties
+    // between the two candidates, so either may take the slot - but it must be filled.
     const weakHero: RawUnit = { id: "ultraTigurius", power: 100 };
     const strongHero: RawUnit = { id: "ultraEliminatorSgt", power: 9999 };
     const openBoard = board({ rarity: "Common", category: "all_vanguard" });
@@ -299,7 +307,111 @@ describe("solveBoardAssignment", () => {
     expect(status).toBe("ok");
     const solution = assignment.get("exp")!;
     expect(solution.run).toBe(true);
-    expect(solution.optionalCharacterIds).toEqual(["ultraEliminatorSgt"]);
+    expect(solution.optionalCharacterIds).toHaveLength(1);
+  });
+
+  it("prefers the character who earns more XP when nothing else distinguishes them", () => {
+    const weak: RawUnit = { id: "ultraTigurius", power: 100 };
+    const strong: RawUnit = { id: "ultraEliminatorSgt", power: 9999 };
+    const openBoard = board({ rarity: "Common", category: "all_vanguard" });
+
+    const { assignment } = solveBoardAssignment([openBoard], [weak, strong], ["rarity", "intel", "crusadeBomb", "crusadeNpc"]);
+
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraEliminatorSgt"]);
+  });
+
+  it("never picks an XP-capped character over one that can still earn XP", () => {
+    const capped: RawUnit = { id: "ultraEliminatorSgt", power: 9999, progressionIndex: 19, xpLevel: 60, rank: Rank.Adamantine2 - 1 };
+    const growing: RawUnit = { id: "ultraTigurius", power: 100, progressionIndex: 19, xpLevel: 10, rank: Rank.Adamantine2 - 1 };
+    const openBoard = board({ rarity: "Common", category: "all_vanguard" });
+
+    const { assignment } = solveBoardAssignment([openBoard], [capped, growing], ["rarity", "intel", "crusadeBomb", "crusadeNpc"]);
+
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
+  });
+
+  describe("partial results", () => {
+    const priority: Parameters<typeof solveBoardAssignment>[2] = ["rarity", "intel", "crusadeBomb", "crusadeNpc"];
+    const roster: RawUnit[] = [{ id: "ultraTigurius", power: 100 }, { id: "ultraEliminatorSgt", power: 5000 }];
+    const operation = () => board({ rarity: "Common", category: "all_vanguard" });
+
+    // Makes every solver.Solve() call after the first `allowed` ones come back infeasible,
+    // standing in for a pass that times out.
+    const failAfter = (allowed: number) => {
+      const realSolve = solver.Solve.bind(solver);
+      let calls = 0;
+      return vi.spyOn(solver, "Solve").mockImplementation((model) => (++calls <= allowed ? realSolve(model) : ({ feasible: false } as never)));
+    };
+
+    it("reports each pass that still has later passes as a checkpoint, with what's left to optimize", () => {
+      const checkpoints: string[][] = [];
+      const result = solveBoardAssignment([operation()], roster, priority, new Set(), new Set(), false, (assignment, unfinished) => {
+        expect(assignment.get("exp")!.run).toBe(true);
+        checkpoints.push(unfinished);
+      });
+
+      expect(result.status).toBe("ok");
+      // Only the rarity and XP passes have anything to optimize here (no rewards, no preferences),
+      // so the single checkpoint is after rarity, with XP still to go.
+      expect(checkpoints).toEqual([["XP gain"]]);
+    });
+
+    it("returns the last completed pass as a partial result when a later pass fails", () => {
+      const spy = failAfter(1); // the rarity pass completes, the XP pass doesn't
+      try {
+        const result = solveBoardAssignment([operation()], roster, priority);
+
+        expect(result.status).toBe("partial");
+        expect(result.unfinishedPasses).toEqual(["XP gain"]);
+        expect(result.assignment.get("exp")!.run).toBe(true);
+        expect(result.assignment.get("exp")!.optionalCharacterIds).toHaveLength(1);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("reports failure with an empty assignment when not even the first pass completes", () => {
+      const spy = failAfter(0);
+      try {
+        const result = solveBoardAssignment([operation()], roster, priority);
+
+        expect(result.status).toBe("failed");
+        expect(result.assignment.size).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  describe("rarity priority", () => {
+    // Mythic-eligible units: progressionIndex 19 is Mythic; intToRank adds 1 to the raw rank.
+    const mythicUnit = (id: string): RawUnit => ({ id, power: 100, progressionIndex: 19, rank: Rank.Adamantine2 - 1 });
+    const priority: Parameters<typeof solveBoardAssignment>[2] = ["rarity", "intel", "crusadeBomb", "crusadeNpc"];
+    const mythicOp = board({ expeditionId: "mythic", rarity: "Mythic", participants: 2 });
+    const legendaryA = board({ expeditionId: "legendaryA", rarity: "Legendary", participants: 1 });
+    const legendaryB = board({ expeditionId: "legendaryB", rarity: "Legendary", participants: 1 });
+
+    it("runs the one Mythic operation over two Legendary ones when the roster can only cover one option", () => {
+      // Two characters: either both go to the Mythic operation (2 slots) or one each to the two
+      // Legendary ones. Summing rarity numbers (Mythic 5 vs Legendary 4 + 4) would pick the
+      // Legendaries; strict rarity order must pick the Mythic however many Legendaries it displaces.
+      const roster = [mythicUnit("ultraTigurius"), mythicUnit("ultraEliminatorSgt")];
+
+      const { assignment } = solveBoardAssignment([legendaryA, legendaryB, mythicOp], roster, priority);
+
+      expect(assignment.get("mythic")!.run).toBe(true);
+      expect(assignment.get("legendaryA")!.run).toBe(false);
+      expect(assignment.get("legendaryB")!.run).toBe(false);
+    });
+
+    it("still runs the lower-rarity operations the higher one doesn't need characters for", () => {
+      const roster = [mythicUnit("ultraTigurius"), mythicUnit("ultraEliminatorSgt"), mythicUnit("ultraTitus")];
+
+      const { assignment } = solveBoardAssignment([legendaryA, legendaryB, mythicOp], roster, priority);
+
+      expect(assignment.get("mythic")!.run).toBe(true);
+      expect([assignment.get("legendaryA")!.run, assignment.get("legendaryB")!.run].filter(Boolean)).toHaveLength(1);
+    });
   });
 
   it("skips a tiebreak pass whose objective is zero for everyone instead of running it", () => {
@@ -321,22 +433,52 @@ describe("solveBoardAssignment", () => {
 
   it("orders a board's optionalCharacterIds by power descending", () => {
     const low: RawUnit = { id: "ultraTigurius", power: 50 };
-    const mid: RawUnit = { id: "ultraEliminatorSgt", power: 500 };
     const high: RawUnit = { id: "ultraInceptorSgt", power: 5000 };
     const openBoard = board({ rarity: "Common", category: "all_vanguard", participants: 2 });
 
     const { assignment } = solveBoardAssignment(
       [openBoard],
-      [low, mid, high],
+      [low, high],
       ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
     );
 
-    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraInceptorSgt", "ultraEliminatorSgt"]);
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraInceptorSgt", "ultraTigurius"]);
   });
 
-  it("prefers a favorited character over a higher-power one, since favoriteScore outranks powerUsed", () => {
-    // Both start with xpLevel 0 (estimateXpGain 0 either way), so xpGain and runCount tie - only
-    // the new favoriteScore pass (which runs before powerUsed) can decide this.
+  describe("anti-favorites", () => {
+    const priority: Parameters<typeof solveBoardAssignment>[2] = ["rarity", "intel", "crusadeBomb", "crusadeNpc"];
+    const openBoard = () => board({ rarity: "Common", category: "all_vanguard" });
+
+    it("avoids an anti-favorited character when another one can fill the slot", () => {
+      const { assignment } = solveBoardAssignment(
+        [openBoard()],
+        [{ id: "ultraTigurius", power: 9999 }, { id: "ultraEliminatorSgt", power: 100 }],
+        priority,
+        new Set(),
+        new Set(["ultraTigurius"]),
+      );
+
+      expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraEliminatorSgt"]);
+    });
+
+    it("still uses an anti-favorited character when nobody else can fill the slot", () => {
+      const { assignment } = solveBoardAssignment(
+        [openBoard()],
+        [{ id: "ultraTigurius", power: 100 }],
+        priority,
+        new Set(),
+        new Set(["ultraTigurius"]),
+      );
+
+      const solution = assignment.get("exp")!;
+      expect(solution.run).toBe(true);
+      expect(solution.optionalCharacterIds).toEqual(["ultraTigurius"]);
+    });
+  });
+
+  it("prefers a favorited character over a higher-power one, since favoriteScore outranks xpGain", () => {
+    // Both start with xpLevel 0 (estimateXpGain 0 either way), so xpGain ties - only the
+    // favoriteScore pass (which runs before xpGain) can decide this.
     const favoritedWeak: RawUnit = { id: "ultraTigurius", power: 100 };
     const neutralStrong: RawUnit = { id: "ultraEliminatorSgt", power: 9999 };
     const openBoard = board({ rarity: "Common", category: "all_vanguard" });
@@ -351,9 +493,9 @@ describe("solveBoardAssignment", () => {
     expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
   });
 
-  it("avoids assigning an anti-favorited character when a growth-eligible alternative exists, mirroring XP-capped avoidance", () => {
-    // xpLevel 3 is uncapped for both under a normal xp-cap check - effectiveXpGain must be the one
-    // forcing antiFavoritedStrong's contribution to zero for this to distinguish from a natural tie.
+  it("avoids assigning an anti-favorited character when another character can fill the slot, even if the anti-favorited one would earn more XP", () => {
+    // Both are uncapped and the anti-favorited one has far more power (so it would win the XP
+    // pass) - only the antiFavoriteCount pass, which runs first, can make the weaker one win.
     const antiFavoritedStrong: RawUnit = { id: "ultraEliminatorSgt", power: 9999, xpLevel: 3 };
     const neutralWeak: RawUnit = { id: "ultraTigurius", power: 100, xpLevel: 3 };
     const openBoard = board({ rarity: "Common", category: "all_vanguard" });
@@ -432,134 +574,6 @@ describe("solveBoardAssignment", () => {
   });
 });
 
-describe("refillSlotsGreedily", () => {
-  const cappedHigh = () => character("cappedHigh", { rarity: Rarity.Mythic, xpLevel: 60, power: 900 }); // xpLevelCap[Mythic] = 60
-  const growing = () => character("growing", { rarity: Rarity.Mythic, xpLevel: 10, power: 100 });
-  const needed = () => character("needed", { rarity: Rarity.Mythic, xpLevel: 10, power: 50 });
-
-  it("keeps the LP's required characters and replaces a capped optional one with an uncapped one", () => {
-    const entry = board({ participants: 2 });
-    const roster = [cappedHigh(), growing(), needed()];
-    const lp = new Map([
-      ["exp", { expeditionId: "exp", run: true, bonusCompleted: true, requiredCharacterIds: ["needed"], optionalCharacterIds: ["cappedHigh"] }],
-    ]);
-
-    const result = refillSlotsGreedily(lp, [entry], roster)!.get("exp")!;
-
-    expect(result.requiredCharacterIds).toEqual(["needed"]);
-    expect(result.optionalCharacterIds).toEqual(["growing"]);
-    expect(result.bonusCompleted).toBe(true);
-  });
-
-  it("never reuses a character another board requires", () => {
-    const a = board({ expeditionId: "a", participants: 1 });
-    const b = board({ expeditionId: "b", participants: 1 });
-    const roster = [growing(), needed()];
-    const lp = new Map([
-      ["a", { expeditionId: "a", run: true, bonusCompleted: false, requiredCharacterIds: [], optionalCharacterIds: ["growing"] }],
-      ["b", { expeditionId: "b", run: true, bonusCompleted: true, requiredCharacterIds: ["growing"], optionalCharacterIds: [] }],
-    ]);
-
-    const result = refillSlotsGreedily(lp, [a, b], roster)!;
-
-    expect(result.get("b")!.requiredCharacterIds).toEqual(["growing"]);
-    expect(result.get("a")!.optionalCharacterIds).toEqual(["needed"]);
-  });
-
-  it("returns null (keep the LP's answer) when a board can't be fully re-filled", () => {
-    const entry = board({ participants: 2 });
-    const lp = new Map([
-      ["exp", { expeditionId: "exp", run: true, bonusCompleted: false, requiredCharacterIds: [], optionalCharacterIds: ["growing", "needed"] }],
-    ]);
-
-    expect(refillSlotsGreedily(lp, [entry], [growing()])).toBeNull();
-  });
-});
-
-describe("upgradeAssignmentByReplacement", () => {
-  const custodes = (id: string, overrides: Partial<RosterCharacter> = {}) =>
-    character(id, { rarity: Rarity.Mythic, profile: profile({ faction: "Custodes", traits: ["Resilient"] }), ...overrides });
-  const resilient = (id: string, overrides: Partial<RosterCharacter> = {}) =>
-    character(id, { rarity: Rarity.Mythic, profile: profile({ faction: "Other", traits: ["Resilient"] }), ...overrides });
-  const solution = (expeditionId: string, required: string[], optional: string[] = [], bonusCompleted = true) => ({
-    expeditionId,
-    run: true,
-    bonusCompleted,
-    requiredCharacterIds: required,
-    optionalCharacterIds: optional,
-  });
-  const custodesBoard = board({ expeditionId: "custodes", bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Custodes" }] });
-  const resilientBoard = board({ expeditionId: "resilient", bonusObjectives: [{ objectiveType: "Trait", objectiveTarget: "Resilient" }] });
-
-  it("swaps an uncapped character in for a maxed one and re-covers the board she left from the pool", () => {
-    // Kariyan/Tyrith: both are Custodes and Resilient. Tyrith (uncapped) was put on the Resilient
-    // board while maxed Kariyan took the only Custodes slot. Moving Tyrith to the Custodes board
-    // needs the Resilient board re-covered by an unused uncapped unit.
-    const kari = custodes("kari", { xpLevel: 60, power: 900 }); // xpLevelCap[Mythic] = 60
-    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
-    const spare = resilient("spare", { xpLevel: 30, power: 100 });
-    const lp = new Map([
-      ["custodes", solution("custodes", ["kari"])],
-      ["resilient", solution("resilient", ["tyrith"])],
-    ]);
-
-    const result = upgradeAssignmentByReplacement(lp, [custodesBoard, resilientBoard], [kari, tyrith, spare]);
-
-    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["tyrith"]);
-    expect(result.get("resilient")!.requiredCharacterIds).toEqual(["spare"]);
-  });
-
-  it("replaces a maxed required character directly from the pool when the pool unit also satisfies the objective", () => {
-    const kari = custodes("kari", { xpLevel: 60, power: 900 });
-    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
-    const lp = new Map([["custodes", solution("custodes", ["kari"])]]);
-
-    const result = upgradeAssignmentByReplacement(lp, [custodesBoard], [kari, tyrith]);
-
-    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["tyrith"]);
-  });
-
-  it("never swaps in a unit that would break a met bonus", () => {
-    const kari = custodes("kari", { xpLevel: 60, power: 900 });
-    const outsider = resilient("outsider", { xpLevel: 10, power: 100 }); // uncapped but not Custodes
-    const lp = new Map([["custodes", solution("custodes", ["kari"])]]);
-
-    const result = upgradeAssignmentByReplacement(lp, [custodesBoard], [kari, outsider]);
-
-    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["kari"]);
-  });
-
-  it("keeps a maxed character when no uncapped alternative can cover the board she would leave", () => {
-    const kari = custodes("kari", { xpLevel: 60, power: 900 });
-    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
-    const lp = new Map([
-      ["custodes", solution("custodes", ["kari"])],
-      ["resilient", solution("resilient", ["tyrith"])],
-    ]);
-
-    const result = upgradeAssignmentByReplacement(lp, [custodesBoard, resilientBoard], [kari, tyrith]);
-
-    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["kari"]);
-    expect(result.get("resilient")!.requiredCharacterIds).toEqual(["tyrith"]);
-  });
-
-  it("stops searching and keeps the current assignment when its time budget is already spent", () => {
-    const kari = custodes("kari", { xpLevel: 60, power: 900 });
-    const tyrith = custodes("tyrith", { xpLevel: 40, power: 500 });
-    const lp = new Map([["custodes", solution("custodes", ["kari"])]]);
-
-    const result = upgradeAssignmentByReplacement(lp, [custodesBoard], [kari, tyrith], 0);
-
-    expect(result.get("custodes")!.requiredCharacterIds).toEqual(["kari"]);
-  });
-
-  it("leaves a board that isn't running untouched", () => {
-    const lp = new Map([["custodes", { expeditionId: "custodes", run: false, bonusCompleted: false, requiredCharacterIds: [], optionalCharacterIds: [] }]]);
-
-    expect(upgradeAssignmentByReplacement(lp, [custodesBoard], [custodes("kari")]).get("custodes")!.run).toBe(false);
-  });
-});
-
 describe("classifyDispatchedCharacters", () => {
   // Real character ids (getCharacterProfile looks them up in the bundled character-data.json, so
   // these can't be made-up like findMinimalRequiredSubset's own synthetic ids above):
@@ -604,5 +618,19 @@ describe("classifyDispatchedCharacters", () => {
 
     expect(result.requiredIds).toEqual(new Set());
     expect(result.optionalIds).toEqual(new Set(["ultraTigurius", "ultraEliminatorSgt"]));
+  });
+});
+
+describe("rarityWeights", () => {
+  it("makes one operation worth more than every lower-rarity operation together", () => {
+    const weights = rarityWeights([
+      Rarity.Mythic, Rarity.Mythic, Rarity.Legendary,
+      Rarity.Rare, Rarity.Rare, Rarity.Rare, Rarity.Rare,
+    ]);
+
+    expect(weights.get(Rarity.Rare)).toBe(1);
+    expect(weights.get(Rarity.Legendary)).toBe(5); // 4 Rares (4) + 1
+    expect(weights.get(Rarity.Mythic)).toBe(10); // 4 Rares (4) + 1 Legendary (5) + 1
+    expect(weights.has(Rarity.Epic)).toBe(false);
   });
 });

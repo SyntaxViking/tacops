@@ -9,11 +9,13 @@ export function DispatchedUnitsRow({
   entry,
   heroes,
   size,
+  wrap,
 }: {
   entry: ExpeditionBoardEntry;
   heroes: RawUnit[];
   // See Icon.tsx's own comment - only OperationCard's card-view row passes "sm".
   size?: "sm" | "md";
+  wrap?: boolean;
 }) {
   const dispatchedUnits = getDispatchedUnits(entry);
   if (!dispatchedUnits) {
@@ -30,7 +32,7 @@ export function DispatchedUnitsRow({
   const finishAt = entryFinishAt(entry);
   return (
     <div className="flex flex-col items-start gap-1">
-      <IconRow>
+      <IconRow wrap={wrap}>
         {sortedUnits.map((unit) =>
           unit.portraitUrl ? (
             <Icon

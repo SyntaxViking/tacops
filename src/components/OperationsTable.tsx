@@ -18,7 +18,14 @@ import { deployIconUrl } from "../board/deploy-icon";
 import type { Environment, ExpeditionBoardEntry, RawUnit } from "../api/types";
 import type { BoardAssignmentResult } from "../board/board-solver";
 
-const cellClass = "border-b border-black/10 px-3 py-2 align-top dark:border-white/15";
+// Compact on purpose: on a phone, every operation should fit on one screen without scrolling down,
+// so rows stay one line tall (nothing wraps) and the details that don't fit scroll sideways.
+const cellClass = "whitespace-nowrap border-b border-black/10 px-2 py-1 align-middle dark:border-white/15";
+
+// The first column - rarity plus the suggested characters - stays pinned while the rest of the row
+// scrolls sideways under it, so the characters are always visible. It needs an opaque background
+// (same as the page's) or the scrolled cells would show through it.
+const stickyCellClass = `${cellClass} sticky left-0 z-20 bg-white dark:bg-neutral-900`;
 
 // null = fulfillment isn't known yet (solver hasn't produced a result for the current board) -
 // stay neutral rather than guessing. A left-edge accent keeps the shared grid lines (cellClass)
@@ -55,22 +62,19 @@ export function OperationsTable({
   const sorted = sortByRarityDescending(board);
 
   return (
-    <table className="mt-4 w-full table-auto border-collapse text-left">
+    <table className="mt-2 w-max min-w-full border-collapse text-left">
       <thead>
         <tr>
-          <th className={cellClass}>Rarity</th>
-          <th className={cellClass}>Category</th>
-          <th className={cellClass}>Name</th>
+          <th className={stickyCellClass}>Characters</th>
           <th className={cellClass}>
             <Icon src={deployIconUrl()} title="Participants" />
           </th>
           <th className={cellClass}>Bonus Objectives</th>
           <th className={cellClass}>Base Rewards</th>
           <th className={cellClass}>Bonus Rewards</th>
+          <th className={cellClass}>Category</th>
+          <th className={cellClass}>Name</th>
           <th className={cellClass}>Status</th>
-          <th className={cellClass}>Required</th>
-          <th className={cellClass}>Optional</th>
-          <th className={cellClass}>Dispatched</th>
         </tr>
       </thead>
       <tbody>
@@ -81,6 +85,19 @@ export function OperationsTable({
           const name = operationName(entry.id);
           const fulfillment = unavailable || solverReady ? getEntryFulfillment(entry, assignment, heroes) : null;
 
+          // Same combined, power-sorted list with a required/optional halo as the card view (see
+          // OperationCard.tsx), so the characters read in the order to pick them.
+          const requiredIds = solution?.run ? solution.requiredCharacterIds : [];
+          const optionalIds = solution?.run ? solution.optionalCharacterIds : [];
+          const powerById = new Map(heroes.map((hero) => [hero.id, hero.power ?? null]));
+          const combinedIds = [...requiredIds, ...optionalIds].sort(
+            (a, b) => (powerById.get(b) ?? -Infinity) - (powerById.get(a) ?? -Infinity),
+          );
+          const haloById = new Map<string, "required" | "optional">([
+            ...requiredIds.map((id): [string, "required"] => [id, "required"]),
+            ...optionalIds.map((id): [string, "optional"] => [id, "optional"]),
+          ]);
+
           return (
             <tr
               key={entry.expeditionId}
@@ -90,19 +107,19 @@ export function OperationsTable({
               }}
               className={`cursor-pointer transition-opacity ${rowAccentClass(fulfillment)} ${dimmed ? "opacity-20" : ""}`}
             >
-              <td className={cellClass}>
-                <Icon src={entryRarityIconUrl(entry)} />
-              </td>
-              <td className={cellClass}>
-                <AllianceCategoryBadge entry={entry} />
-              </td>
-              <td className={cellClass}>
-                {name ?? entry.id}
-                {environment === "qa" && name && <span className="opacity-60"> ({entry.id})</span>}
+              <td className={stickyCellClass}>
+                <div className="flex items-center gap-2">
+                  <Icon src={entryRarityIconUrl(entry)} size="sm" />
+                  {unavailable ? (
+                    <DispatchedUnitsRow entry={entry} heroes={heroes} size="sm" wrap={false} />
+                  ) : (
+                    <PortraitList ids={combinedIds} haloById={haloById} size="sm" wrap={false} />
+                  )}
+                </div>
               </td>
               <td className={cellClass}>{entry.participants}</td>
               <td className={cellClass}>
-                <IconRow>
+                <IconRow wrap={false}>
                   {entry.bonusObjectives.map((o, i) => {
                     const display = getObjectiveDisplay(o);
                     if (display.badge === "no-ranged-attack" && display.iconUrl) {
@@ -117,19 +134,19 @@ export function OperationsTable({
                 </IconRow>
               </td>
               <td className={cellClass}>
-                <RewardsCell rewards={entry.baseRewards ?? []} />
+                <RewardsCell rewards={entry.baseRewards ?? []} wrap={false} />
               </td>
               <td className={cellClass}>
-                <RewardsCell rewards={entry.bonusRewards ?? []} />
+                <RewardsCell rewards={entry.bonusRewards ?? []} wrap={false} />
+              </td>
+              <td className={cellClass}>
+                <AllianceCategoryBadge entry={entry} />
+              </td>
+              <td className={cellClass}>
+                {name ?? entry.id}
+                {environment === "qa" && name && <span className="opacity-60"> ({entry.id})</span>}
               </td>
               <td className={cellClass}>{entryStatusLabel(entry)}</td>
-              <td className={cellClass}>
-                {!unavailable && <PortraitList ids={solution?.run ? solution.requiredCharacterIds : []} />}
-              </td>
-              <td className={cellClass}>
-                {!unavailable && <PortraitList ids={solution?.run ? solution.optionalCharacterIds : []} />}
-              </td>
-              <td className={cellClass}>{unavailable && <DispatchedUnitsRow entry={entry} heroes={heroes} />}</td>
             </tr>
           );
         })}
