@@ -266,27 +266,24 @@ describe("solveGreedyFallback", () => {
     expect(result.get("exp")!.optionalCharacterIds).toEqual(["antiFavoritedOnly"]);
   });
 
-  it("prefers an XP-capped character over an anti-favorited one, since avoiding anti-favorites outranks XP", () => {
-    // Same order as the LP's tail passes: anti-favorites are avoided first, then favorites are
-    // preferred, and XP only decides among what's left - so a capped neutral beats an uncapped
-    // anti-favorite even though the anti-favorite could still earn XP.
+  it("prefers an anti-favorited character over an XP-capped one, since maxed characters are a last resort", () => {
     const cappedHighPower = character("cappedHighPower", { rarity: Rarity.Mythic, xpLevel: 60, power: 9999 });
     const antiFavoritedLowPower = character("antiFavoritedLowPower", { power: 1, isAntiFavorited: true });
     const unsolvableBoard = board({ bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Necrons" }] });
 
     const result = solveGreedyFallback([unsolvableBoard], [cappedHighPower, antiFavoritedLowPower]);
 
-    expect(result.get("exp")!.optionalCharacterIds).toEqual(["cappedHighPower"]);
+    expect(result.get("exp")!.optionalCharacterIds).toEqual(["antiFavoritedLowPower"]);
   });
 
-  it("prefers a favorited XP-capped character over an uncapped neutral one, since favorites outrank XP", () => {
+  it("prefers an uncapped neutral character over a favorited XP-capped one", () => {
     const favoritedCapped = character("favoritedCapped", { rarity: Rarity.Mythic, xpLevel: 60, power: 100, isFavorited: true });
-    const neutralGrowing = character("neutralGrowing", { power: 9999 });
+    const neutralGrowing = character("neutralGrowing", { power: 1 });
     const unsolvableBoard = board({ bonusObjectives: [{ objectiveType: "Faction", objectiveTarget: "Necrons" }] });
 
     const result = solveGreedyFallback([unsolvableBoard], [favoritedCapped, neutralGrowing]);
 
-    expect(result.get("exp")!.optionalCharacterIds).toEqual(["favoritedCapped"]);
+    expect(result.get("exp")!.optionalCharacterIds).toEqual(["neutralGrowing"]);
   });
 });
 
@@ -505,6 +502,37 @@ describe("solveBoardAssignment", () => {
       [antiFavoritedStrong, neutralWeak],
       ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
       new Set(),
+      new Set(["ultraEliminatorSgt"]),
+    );
+
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
+  });
+
+  it("uses an anti-favorited character rather than an XP-capped one when one of them has to fill the slot", () => {
+    const capped: RawUnit = { id: "ultraEliminatorSgt", power: 9999, progressionIndex: 19, xpLevel: 60, rank: Rank.Adamantine2 - 1 };
+    const antiFavorited: RawUnit = { id: "ultraTigurius", power: 100, xpLevel: 3 };
+    const openBoard = board({ rarity: "Common", category: "all_vanguard" });
+
+    const { assignment } = solveBoardAssignment(
+      [openBoard],
+      [capped, antiFavorited],
+      ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
+      new Set(),
+      new Set(["ultraTigurius"]),
+    );
+
+    expect(assignment.get("exp")!.optionalCharacterIds).toEqual(["ultraTigurius"]);
+  });
+
+  it("uses an uncapped neutral character rather than a favorited XP-capped one", () => {
+    const cappedFavorite: RawUnit = { id: "ultraEliminatorSgt", power: 9999, progressionIndex: 19, xpLevel: 60, rank: Rank.Adamantine2 - 1 };
+    const neutral: RawUnit = { id: "ultraTigurius", power: 100, xpLevel: 3 };
+    const openBoard = board({ rarity: "Common", category: "all_vanguard" });
+
+    const { assignment } = solveBoardAssignment(
+      [openBoard],
+      [cappedFavorite, neutral],
+      ["rarity", "intel", "crusadeBomb", "crusadeNpc"],
       new Set(["ultraEliminatorSgt"]),
     );
 

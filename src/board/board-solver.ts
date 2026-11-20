@@ -93,7 +93,7 @@ export function groupObjectives(objectives: BonusObjective[]): ObjectiveGroup[] 
 }
 
 type PriorityPassKey = `priority${number}`;
-type PassKey = PriorityPassKey | "antiFavoriteCount" | "favoriteScore" | "xpGain";
+type PassKey = PriorityPassKey | "cappedCount" | "antiFavoriteCount" | "favoriteScore" | "xpGain";
 
 // Strict rarity order, lowest first, used to build the rarity tier's weights (see rarityWeights).
 const RARITIES_LOW_TO_HIGH: Rarity[] = [Rarity.Common, Rarity.Uncommon, Rarity.Rare, Rarity.Epic, Rarity.Legendary, Rarity.Mythic];
@@ -135,17 +135,20 @@ interface PassSpec {
 // The first passes are the user's priority tiers in their chosen order (lexicographic - each pass's
 // achieved value gets locked in via an `equal` constraint before the next pass runs, see
 // runPasses), followed by the fixed tail that always applies regardless of priority order:
-//   1. antiFavoriteCount (min) - avoid anti-favorited characters. A soft preference: it can only
+//   1. cappedCount (min) - avoid XP-capped (maxed) characters, who earn nothing. Always a last
+//      resort, ranked above the player's own preferences below.
+//   2. antiFavoriteCount (min) - avoid anti-favorited characters. A soft preference: it can only
 //      choose among solutions that already satisfy every locked priority outcome, so an
 //      anti-favorited character who is the only one that works still gets used.
-//   2. favoriteScore (max) - use favorited characters.
-//   3. xpGain (max) - earn the most XP. Last, so its value is never locked and the assignment it
+//   3. favoriteScore (max) - use favorited characters.
+//   4. xpGain (max) - earn the most XP. Last, so its value is never locked and the assignment it
 //      finds is the final answer.
 // Each tail pass only ever decides WHICH specific characters fill an already-decided set of
 // run/bonus outcomes, so none of them can cost a bonus or a run.
 function buildPassPlan(priorityOrder: readonly PriorityKey[]): PassSpec[] {
   const passes: PassSpec[] = priorityOrder.map((_, tierIndex) => ({ key: priorityPassKey(tierIndex), opType: "max" }));
   passes.push(
+    { key: "cappedCount", opType: "min" },
     { key: "antiFavoriteCount", opType: "min" },
     { key: "favoriteScore", opType: "max" },
     { key: "xpGain", opType: "max" },
@@ -230,6 +233,7 @@ function buildModel(
       binaries[assignVar] = 1;
       addCoef(assignVar, slotConstraint, 1);
       addCoef(assignVar, `excl::${unit.id}`, 1);
+      addCoef(assignVar, "cappedCount", isXpCapped(unit.rarity, unit.xpLevel) ? 1 : 0);
       addCoef(assignVar, "antiFavoriteCount", unit.isAntiFavorited ? 1 : 0);
       addCoef(assignVar, "xpGain", estimateXpGain(rarity, unit.rarity, unit.xpLevel, unit.power));
       addCoef(assignVar, "favoriteScore", unit.isFavorited ? 1 : 0);
@@ -411,22 +415,22 @@ export function findMinimalRequiredSubset(assignedIds: string[], groupRequiremen
 }
 
 // Shared "who to prefer" ordering for the greedy solver, mirroring the order the LP's tail passes
-// optimize in: avoid anti-favorited characters first, then prefer favorited ones, then prefer
-// whoever earns the most XP. XP is power-based (see estimateXpGain), and the operation's rarity
-// scales everyone's XP by the same factor, so ranking units against each other only needs
-// "XP-capped last, then higher power first" (falling back to last place, not 0, when power is
+// optimize in: avoid XP-capped characters first, then anti-favorited ones, then prefer favorited
+// ones, then prefer whoever earns the most XP. XP is power-based (see estimateXpGain), and the
+// operation's rarity scales everyone's XP by the same factor, so among uncapped characters ranking
+// only needs "higher power first" (falling back to last place, not 0, when power is
 // unknown - an uncomputed power shouldn't look weaker than a genuinely low-power character).
 // Negative return means `a` is preferred over `b`, matching Array.prototype.sort's contract.
 function fillComparator(a: RosterCharacter, b: RosterCharacter): number {
+  const aCapped = isXpCapped(a.rarity, a.xpLevel) ? 1 : 0;
+  const bCapped = isXpCapped(b.rarity, b.xpLevel) ? 1 : 0;
+  if (aCapped !== bCapped) return aCapped - bCapped;
   const aAnti = a.isAntiFavorited ? 1 : 0;
   const bAnti = b.isAntiFavorited ? 1 : 0;
   if (aAnti !== bAnti) return aAnti - bAnti;
   const aFav = a.isFavorited ? 1 : 0;
   const bFav = b.isFavorited ? 1 : 0;
   if (aFav !== bFav) return bFav - aFav;
-  const aCapped = isXpCapped(a.rarity, a.xpLevel) ? 1 : 0;
-  const bCapped = isXpCapped(b.rarity, b.xpLevel) ? 1 : 0;
-  if (aCapped !== bCapped) return aCapped - bCapped;
   return (b.power ?? -Infinity) - (a.power ?? -Infinity);
 }
 
@@ -651,6 +655,8 @@ const PRIORITY_LABELS: Record<PriorityKey, string> = {
 
 function passLabel(key: PassKey, priorityOrder: readonly PriorityKey[]): string {
   switch (key) {
+    case "cappedCount":
+      return "avoiding maxed characters";
     case "antiFavoriteCount":
       return "avoiding anti-favorites";
     case "favoriteScore":
