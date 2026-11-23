@@ -3,7 +3,7 @@ import { invokeWithTimeout } from "./invoke-with-timeout";
 import { fetchWithTimeout } from "./fetch-with-timeout";
 import characterData from "../assets/character-data.json";
 import mowData from "../assets/mow-data.json";
-import { calculateBundledUnitPowers } from "../characters/character-power";
+import { calculateBundledUnitPowersLenient } from "../characters/character-power";
 import { equippedRelicDamageProfiles } from "../characters/character-profile";
 import { extractSectorMap } from "../crusade/sector-map-extraction";
 import { extractPlanetDefenses } from "../crusade/planet-defenses-extraction";
@@ -34,6 +34,9 @@ export interface PlayerData {
   board: ExpeditionBoardEntry[];
   heroes: RawUnit[];
   machinesOfWar: RawUnit[];
+  // Ids of units whose power couldn't be calculated (see the lenient calculation above) - they're
+  // in `heroes`/`machinesOfWar` with power 0.
+  unknownUnitIds: string[];
   adViewsRemaining: number;
   resources: PlayerResources;
   heroQuestJars: HeroQuestJar[];
@@ -85,13 +88,20 @@ export async function fetchPlayerData(
     unit.extraDamageProfiles = equippedRelicDamageProfiles(unit.items, hero?.items?.items);
   }
 
-  // All-or-nothing: a single missing/stale unit definition (e.g. a unit added since the bundled
-  // GameConfig extraction) throws for the whole batch rather than returning some units with power
-  // and others without, so a mixed-confidence power state never reaches the solver. Covers both
-  // characters and Machines of War; the loop below stamps power onto whichever it matches.
+  // A unit whose power can't be calculated (typically one added since the bundled GameConfig was
+  // extracted) gets power 0 - which sorts it last and gives it no XP estimate - and is reported in
+  // unknownUnitIds so the page can tell the user, rather than one unknown unit costing everyone
+  // their power. Covers both characters and Machines of War; the loop below stamps power onto
+  // whichever it matches.
+  const unknownUnitIds: string[] = [];
   try {
-    const powers = calculateBundledUnitPowers(response);
+    const { powers, failures } = calculateBundledUnitPowersLenient(response);
     const powerByUnitId = new Map(powers.map((p) => [p.unitId, p.power]));
+    for (const failure of failures) {
+      console.error(`Failed to calculate power for ${failure.unitId} - using 0`, failure.error);
+      powerByUnitId.set(failure.unitId, 0);
+      unknownUnitIds.push(failure.unitId);
+    }
     for (const unit of units) {
       const power = powerByUnitId.get(unit.id);
       if (power !== undefined) unit.power = power;
@@ -198,6 +208,7 @@ export async function fetchPlayerData(
     board,
     heroes: units.filter((u) => characterIds.has(u.id)),
     machinesOfWar: units.filter((u) => mowIds.has(u.id)),
+    unknownUnitIds,
     // Absent (not 0) means the game hasn't reported ad-view usage yet - e.g. no ads watched today
     // - in which case the daily allotment (7) hasn't been drawn down at all.
     adViewsRemaining: hero?.player?.adViews?.currentAmount ?? 7,
