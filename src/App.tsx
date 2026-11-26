@@ -28,6 +28,7 @@ import { RolloverCooldownModal } from "./components/RolloverCooldownModal";
 import { msUntilRolloverWindowEnds } from "./rollover-window";
 import { StaleVersionBanner } from "./components/StaleVersionBanner";
 import { Toast } from "./components/Toast";
+import { NoticePill } from "./components/NoticePill";
 import { registerStaleVersionHandler, startVersionCheck } from "./version-check";
 import { fetchPlayerData } from "./api/fetch-player-data";
 import { buildPlayerDataExport } from "./api/player-data-export";
@@ -205,6 +206,8 @@ export function App() {
     new Set(),
   );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // Units whose power couldn't be calculated on the last fetch (bundled data lacks them).
+  const [unknownUnitIds, setUnknownUnitIds] = useState<string[]>([]);
   const [staleVersionDetected, setStaleVersionDetected] = useState(false);
   const [machinesOfWar, setMachinesOfWar] = useState<RawUnit[]>([]);
   const [adViewsRemaining, setAdViewsRemaining] = useState<number | null>(null);
@@ -721,6 +724,7 @@ export function App() {
       setBoard(data.board);
       setHeroes(data.heroes);
       setMachinesOfWar(data.machinesOfWar);
+      setUnknownUnitIds(data.unknownUnitIds);
       setAdViewsRemaining(data.adViewsRemaining);
       setResources(data.resources);
       setHeroQuestJars(data.heroQuestJars);
@@ -877,6 +881,7 @@ export function App() {
     setBoard([]);
     setHeroes([]);
     setMachinesOfWar([]);
+    setUnknownUnitIds([]);
     setAdViewsRemaining(null);
     setResources(null);
     setHeroQuestJars([]);
@@ -1439,6 +1444,12 @@ export function App() {
       {devModeEnabled && <CrusadePointsRateIndicator imperialRate={totalHourlyRate.imperial} devastationRate={totalHourlyRate.devastation} />}
       {staleVersionDetected && <StaleVersionBanner onReloadNow={() => window.location.reload()} />}
       {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />}
+      {unknownUnitIds.length > 0 && (
+        <NoticePill
+          message={`Character/MoW ${unknownUnitIds.join(", ")} unknown: Please contact maintainer to have it added`}
+          onDismiss={() => setUnknownUnitIds([])}
+        />
+      )}
       <h1 className="cursor-pointer text-2xl font-semibold select-none" onClick={handleTitleTap}>
         TacOps
       </h1>

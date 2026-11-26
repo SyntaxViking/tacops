@@ -23439,10 +23439,6 @@
       },
       {
         "objectiveType": "DamageType",
-        "objectiveTarget": "Physical"
-      },
-      {
-        "objectiveType": "DamageType",
         "objectiveTarget": "Psychic"
       },
       {
@@ -23549,10 +23545,6 @@
       },
       {
         "objectiveType": "DamageType",
-        "objectiveTarget": "Physical"
-      },
-      {
-        "objectiveType": "DamageType",
         "objectiveTarget": "Psychic"
       },
       {
@@ -23648,10 +23640,6 @@
       {
         "objectiveType": "Trait",
         "objectiveTarget": "Flying"
-      },
-      {
-        "objectiveType": "DamageType",
-        "objectiveTarget": "Physical"
       },
       {
         "objectiveType": "DamageType",
@@ -23781,10 +23769,6 @@
       },
       {
         "objectiveType": "DamageType",
-        "objectiveTarget": "Physical"
-      },
-      {
-        "objectiveType": "DamageType",
         "objectiveTarget": "Psychic"
       },
       {
@@ -23884,10 +23868,6 @@
       {
         "objectiveType": "Trait",
         "objectiveTarget": "Flying"
-      },
-      {
-        "objectiveType": "DamageType",
-        "objectiveTarget": "Physical"
       },
       {
         "objectiveType": "DamageType",
@@ -24006,10 +23986,6 @@
       {
         "objectiveType": "Trait",
         "objectiveTarget": "Flying"
-      },
-      {
-        "objectiveType": "DamageType",
-        "objectiveTarget": "Physical"
       },
       {
         "objectiveType": "DamageType",

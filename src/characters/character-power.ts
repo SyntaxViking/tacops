@@ -34,6 +34,11 @@ export function calculateBundledUnitPowers(response: unknown): UnitPower[] {
   return calculateUnitPowers(response, { units, items, upgrades });
 }
 
+/** As calculateBundledUnitPowers, but per-unit failures are reported instead of thrown. */
+export function calculateBundledUnitPowersLenient(response: unknown): { powers: UnitPower[]; failures: UnitPowerFailure[] } {
+  return calculateUnitPowersLenient(response, { units, items, upgrades });
+}
+
 /** As calculateBundledUnitPowers, but Machines of War are filtered out and `type` is stripped. */
 export function calculateBundledCharacterPowers(response: unknown): CharacterPower[] {
   return stripMachines(calculateBundledUnitPowers(response));
@@ -68,6 +73,34 @@ type JsonObject = Record<string, unknown>;
  * value). Results are sorted by descending power, tiebroken by unit ID.
  */
 export function calculateUnitPowers(response: unknown, gameConfigDocument: unknown): UnitPower[] {
+  const { powers, failures } = calculateUnitPowersLenient(response, gameConfigDocument);
+  if (failures.length > 0) {
+    // Same error the strict calculation has always thrown: a unit missing from the bundled config
+    // is reported by name; any other per-unit failure surfaces its own error.
+    const missing = failures.filter((failure) => failure.missingFromConfig).map((failure) => failure.unitId);
+    if (missing.length > 0) throw new Error(`GameConfig has no lineup definition for: ${missing.join(", ")}`);
+    throw failures[0].error;
+  }
+  return powers;
+}
+
+export interface UnitPowerFailure {
+  unitId: string;
+  // True when the unit isn't in the bundled GameConfig at all (a unit added since the last
+  // extraction) rather than being present but failing validation.
+  missingFromConfig: boolean;
+  error: Error;
+}
+
+/**
+ * As calculateUnitPowers, but a unit whose power can't be calculated is reported in `failures` and
+ * left out of `powers`, instead of throwing away every other unit's result along with it. Problems
+ * with the response or GameConfig as a whole (no hero state, no units config, ...) still throw.
+ */
+export function calculateUnitPowersLenient(
+  response: unknown,
+  gameConfigDocument: unknown,
+): { powers: UnitPower[]; failures: UnitPowerFailure[] } {
   const hero = findHeroState(response);
   const gameConfig = unwrapGameConfig(gameConfigDocument);
   const unitsConfig = objectAt(gameConfig, "units");
@@ -76,48 +109,53 @@ export function calculateUnitPowers(response: unknown, gameConfigDocument: unkno
   const playerItems = objectAt(objectAt(hero, "items"), "items");
   const itemConfigs = objectAt(gameConfig, "items");
   const upgradeConfigs = objectAt(gameConfig, "upgrades");
-  const result: UnitPower[] = [];
-
-  const missingUnitIds = Object.keys(playerUnits).filter((unitId) => optionalObject(lineup[unitId]) === null);
-  if (missingUnitIds.length > 0) {
-    throw new Error(`GameConfig has no lineup definition for: ${missingUnitIds.join(", ")}`);
-  }
+  const powers: UnitPower[] = [];
+  const failures: UnitPowerFailure[] = [];
 
   for (const [unitId, rawProgress] of Object.entries(playerUnits)) {
-    const progress = requireObject(rawProgress, `units.${unitId}`);
-    const unit = requireObject(lineup[unitId], `GameConfig.units.lineup.${unitId}`);
-    const traits = stringArray(unit.traits, `${unitId}.traits`);
-    const isMachine = traits.includes("MachineOfWar");
-
-    // Snowprint omits numeric fields whose value is zero.
-    const progressionIndex = integerOrDefault(progress.progressionIndex, 0, `units.${unitId}.progressionIndex`);
-    const progressionStep = getProgressionStep(unitsConfig, unitId, progressionIndex, isMachine);
-
-    let power: number;
-    if (isMachine) {
-      power = calculateMachinePower(unit, progress, progressionStep, unitsConfig);
-    } else {
-      const { stats, relicAbilityLevel } = calculateStats(
-        unitId,
-        unit,
-        progress,
-        progressionStep,
-        playerItems,
-        itemConfigs,
-        upgradeConfigs,
-      );
-      power = calculatePower(unit, progress, progressionStep, stats, relicAbilityLevel, unitsConfig);
+    if (optionalObject(lineup[unitId]) === null) {
+      failures.push({ unitId, missingFromConfig: true, error: new Error(`GameConfig has no lineup definition for: ${unitId}`) });
+      continue;
     }
+    try {
+      const progress = requireObject(rawProgress, `units.${unitId}`);
+      const unit = requireObject(lineup[unitId], `GameConfig.units.lineup.${unitId}`);
+      const traits = stringArray(unit.traits, `${unitId}.traits`);
+      const isMachine = traits.includes("MachineOfWar");
 
-    result.push({
-      unitId,
-      name: typeof unit.name === "string" ? unit.name : unitId,
-      power,
-      type: isMachine ? "machineOfWar" : "character",
-    });
+      // Snowprint omits numeric fields whose value is zero.
+      const progressionIndex = integerOrDefault(progress.progressionIndex, 0, `units.${unitId}.progressionIndex`);
+      const progressionStep = getProgressionStep(unitsConfig, unitId, progressionIndex, isMachine);
+
+      let power: number;
+      if (isMachine) {
+        power = calculateMachinePower(unit, progress, progressionStep, unitsConfig);
+      } else {
+        const { stats, relicAbilityLevel } = calculateStats(
+          unitId,
+          unit,
+          progress,
+          progressionStep,
+          playerItems,
+          itemConfigs,
+          upgradeConfigs,
+        );
+        power = calculatePower(unit, progress, progressionStep, stats, relicAbilityLevel, unitsConfig);
+      }
+
+      powers.push({
+        unitId,
+        name: typeof unit.name === "string" ? unit.name : unitId,
+        power,
+        type: isMachine ? "machineOfWar" : "character",
+      });
+    } catch (error) {
+      failures.push({ unitId, missingFromConfig: false, error: error instanceof Error ? error : new Error(String(error)) });
+    }
   }
 
-  return result.sort((a, b) => b.power - a.power || a.unitId.localeCompare(b.unitId));
+  powers.sort((a, b) => b.power - a.power || a.unitId.localeCompare(b.unitId));
+  return { powers, failures };
 }
 
 /** As calculateUnitPowers, but Machines of War are filtered out and `type` is stripped. */

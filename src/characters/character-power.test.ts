@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateCharacterPowers, calculateUnitPowers } from "./character-power";
+import { calculateCharacterPowers, calculateUnitPowers, calculateUnitPowersLenient } from "./character-power";
 
 function gameConfig(overrides: { unit?: Record<string, unknown>; items?: Record<string, unknown> } = {}) {
   return {
@@ -117,5 +117,36 @@ describe("calculateUnitPowers", () => {
     const result = calculateUnitPowers(response(), gameConfig());
 
     expect(result).toEqual([{ unitId: "testUnit", name: "Test Unit", power: 3514, type: "character" }]);
+  });
+});
+
+describe("calculateUnitPowersLenient", () => {
+  function responseWithExtraUnit(extraId: string) {
+    const base = response() as any;
+    base.player.hero.units.units[extraId] = { progressionIndex: 0, rank: 0, active: 2, passive: 2, upgrades: [] };
+    return base;
+  }
+
+  it("reports a unit missing from the GameConfig without losing the other units' powers", () => {
+    const { powers, failures } = calculateUnitPowersLenient(responseWithExtraUnit("brandNewUnit"), gameConfig());
+
+    expect(powers.map((p) => p.unitId)).toEqual(["testUnit"]);
+    expect(powers[0].power).toBe(3514);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ unitId: "brandNewUnit", missingFromConfig: true });
+  });
+
+  it("reports a unit whose own data is invalid, as a failure that isn't 'missing from config'", () => {
+    const { powers, failures } = calculateUnitPowersLenient(response({ rank: "bad" }), gameConfig());
+
+    expect(powers).toEqual([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ unitId: "testUnit", missingFromConfig: false });
+  });
+
+  it("leaves the strict calculation throwing for a missing unit", () => {
+    expect(() => calculateUnitPowers(responseWithExtraUnit("brandNewUnit"), gameConfig())).toThrow(
+      "GameConfig has no lineup definition for: brandNewUnit",
+    );
   });
 });
